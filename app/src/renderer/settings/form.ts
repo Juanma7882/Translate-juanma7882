@@ -57,6 +57,8 @@ const FIELD_MESSAGES: Record<string, string> = {
   'invalid to': 'El idioma de destino no es válido.',
   'from and to must differ': 'Elige idiomas de origen y destino distintos.',
   'invalid engines': 'Elige un conjunto de motores válido.',
+  'invalid mode': 'Elige un modo válido: automático, solo texto o solo audio.',
+  'invalid fallbackSeconds': 'La espera para pasar a audio debe ser un número entero de segundos entre 1 y 60.',
   'invalid modelsDir': 'La carpeta de modelos no es válida.',
   'invalid overlay.opacity': 'La opacidad debe estar entre 0,1 y 1.',
   'invalid overlay.fontSize': 'El tamaño de fuente debe estar entre 10 y 96 píxeles.',
@@ -69,6 +71,7 @@ const FIELD_MESSAGES: Record<string, string> = {
   'invalid overlay.showOriginal': 'La opción de mostrar el original no es válida.',
   'invalid shortcuts.selectRegion': 'El atajo para elegir región no es válido (por ejemplo, CommandOrControl+Shift+T).',
   'invalid shortcuts.togglePause': 'El atajo para pausar no es válido (por ejemplo, CommandOrControl+Shift+P).',
+  'invalid shortcuts.toggleMode': 'El atajo para cambiar de modo no es válido (por ejemplo, CommandOrControl+Shift+M).',
 }
 
 export function describeError(code: string): string {

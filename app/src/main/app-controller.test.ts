@@ -11,6 +11,25 @@ import type { RegionPicker } from './region-picker.ts'
 import type { SettingsStore } from './settings-store.ts'
 import type { WindowManager } from './windows.ts'
 
+/** Ajustes en memoria con los mismos contratos que `SettingsStore` (get, update, onChange). */
+function fakeSettings() {
+  let current = defaultSettings()
+  const listeners: ((s: typeof current) => void)[] = []
+  const settings = {
+    get: () => structuredClone(current),
+    update: (patch: Partial<typeof current>) => {
+      current = { ...current, ...patch }
+      for (const listener of listeners) listener(structuredClone(current))
+      return { ok: true }
+    },
+    onChange: (listener: (s: typeof current) => void) => {
+      listeners.push(listener)
+      return () => undefined
+    },
+  } as unknown as SettingsStore
+  return { settings }
+}
+
 class FakeHost extends EventEmitter {
   isReady = true
   sent: Command[] = []
@@ -24,7 +43,8 @@ class FakeHost extends EventEmitter {
 
 function setup() {
   const host = new FakeHost()
-  const settings = { get: () => defaultSettings(), update: () => ({ ok: true }) } as unknown as SettingsStore
+  const store = fakeSettings()
+  const settings = store.settings
   const controller = new AppController({
     host: host as unknown as EngineHost,
     windows: { get: () => undefined } as unknown as WindowManager,
@@ -34,7 +54,7 @@ function setup() {
   })
   const notices: Notice[] = []
   controller.on('notice', (n) => notices.push(n))
-  return { host, controller, notices }
+  return { host, controller, notices, store }
 }
 
 const REGION = { x: 0, y: 0, width: 10, height: 10, monitor: 0 }
@@ -80,7 +100,7 @@ test('un fallo al iniciar deja el estado en reposo y avisa', async () => {
   const { host, controller, notices } = setup()
   host.failWith = 'missing models: translate-en-es'
   assert.equal(await controller.start(REGION), false)
-  assert.deepEqual(controller.state, { running: false, paused: false })
+  assert.deepEqual(controller.state, { running: false, paused: false, mode: null })
   assert.equal(notices.length, 1)
   assert.equal(notices[0]!.code, 'models-missing')
   assert.match(notices[0]!.message, /No se pudo iniciar/)
@@ -111,4 +131,90 @@ test('pausar y reanudar llegan al motor y solo valen con una traducción en marc
   await controller.togglePause()
   assert.equal(controller.state.paused, false)
   assert.deepEqual(host.sent.map((c) => c.type), ['pause', 'resume'])
+})
+
+const tick = () => new Promise((resolve) => setImmediate(resolve))
+
+test('el modo automático y el de solo texto piden una región; el de solo audio no', async () => {
+  const { host, controller, store, notices } = setup()
+  assert.equal(await controller.start(REGION), true)
+  assert.equal(host.sent.at(-1)?.type, 'startRegion')
+  assert.deepEqual(controller.state, { running: true, paused: false, mode: 'text' })
+
+  store.settings.update({ mode: 'audio' } as never)
+  await tick()
+  assert.equal(host.sent.at(-1)?.type, 'startAudio', 'cambiar el modo reinicia la sesión en audio')
+  assert.deepEqual(controller.state, { running: true, paused: false, mode: 'audio' })
+
+  // En audio se puede empezar sin región.
+  await controller.stop()
+  assert.equal(await controller.startSaved(), true)
+  assert.equal(host.sent.at(-1)?.type, 'startAudio')
+
+  // Sin región, los otros modos avisan en vez de arrancar.
+  await controller.stop()
+  store.settings.update({ mode: 'text' } as never)
+  assert.equal(await controller.start(null), false)
+  assert.match(notices.at(-1)!.message, /región/)
+})
+
+test('el atajo cicla auto, texto, audio y vuelve a auto', async () => {
+  const { controller, store } = setup()
+  const seen: string[] = []
+  for (let i = 0; i < 4; i++) {
+    controller.cycleMode()
+    seen.push(store.settings.get().mode)
+  }
+  assert.deepEqual(seen, ['text', 'audio', 'auto', 'text'])
+})
+
+test('cambiar de modo en reposo solo guarda el ajuste', async () => {
+  const { host, controller, store } = setup()
+  controller.setMode('audio')
+  await tick()
+  assert.equal(store.settings.get().mode, 'audio')
+  assert.equal(host.sent.length, 0)
+})
+
+test('la espera del fallback también reinicia la sesión en automático', async () => {
+  const { host, controller, store } = setup()
+  await controller.start(REGION)
+  host.sent = []
+  store.settings.update({ fallbackSeconds: 9 } as never)
+  await tick()
+  assert.ok(host.sent.some((c) => c.type === 'startRegion'))
+})
+
+test('en automático el modo activo sigue los eventos del motor; en los forzados se ignoran', async () => {
+  const { host, controller, store } = setup()
+  await controller.start(REGION)
+  host.emit('event', { name: 'mode', payload: { mode: 'audio' } })
+  assert.equal(controller.state.mode, 'audio')
+  host.emit('event', { name: 'mode', payload: { mode: 'paused' } })
+  assert.deepEqual(controller.state, { running: true, paused: true, mode: 'audio' }, 'la pausa conserva el modo')
+  host.emit('event', { name: 'mode', payload: { mode: 'text' } })
+  assert.deepEqual(controller.state, { running: true, paused: false, mode: 'text' })
+
+  store.settings.update({ mode: 'text' } as never)
+  await tick()
+  host.emit('event', { name: 'mode', payload: { mode: 'audio' } })
+  assert.equal(controller.state.mode, 'text', 'en solo texto un evento rezagado no cambia el modo')
+})
+
+test('un evento de modo sin sesión no la resucita', async () => {
+  const { host, controller } = setup()
+  host.emit('event', { name: 'mode', payload: { mode: 'text' } })
+  assert.equal(controller.state.running, false)
+})
+
+test('en solo audio pausar detiene la captura y reanudar la vuelve a arrancar', async () => {
+  const { host, controller, store } = setup()
+  store.settings.update({ mode: 'audio' } as never)
+  await controller.startSaved()
+  host.sent = []
+  await controller.togglePause()
+  assert.equal(controller.state.paused, true)
+  await controller.togglePause()
+  assert.equal(controller.state.paused, false)
+  assert.deepEqual(host.sent.map((c) => c.type), ['stop', 'startAudio'])
 })

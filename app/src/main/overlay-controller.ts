@@ -9,7 +9,7 @@ import { EventEmitter } from 'node:events'
 import type { BrowserWindow } from 'electron'
 
 import { toDesktopDip } from '../shared/geometry.ts'
-import type { DipRect, OverlayStyle, OverlayText } from '../shared/ipc.ts'
+import type { DipRect, OverlayMode, OverlayStyle, OverlayText } from '../shared/ipc.ts'
 import { Channel } from '../shared/ipc.ts'
 import { placeOutside } from '../shared/overlay-placement.ts'
 import type { SavedRegion } from '../shared/settings.ts'
@@ -83,6 +83,11 @@ export class OverlayController extends EventEmitter<OverlayEvents> {
 
   show(text: OverlayText): void {
     this.window?.webContents.send(Channel.overlayShow, text)
+  }
+
+  /** Indicador del modo activo; viaja solo el nombre del modo. */
+  setMode(mode: OverlayMode): void {
+    this.window?.webContents.send(Channel.overlayMode, mode)
   }
 
   clear(): void {

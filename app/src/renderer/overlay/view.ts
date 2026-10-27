@@ -19,3 +19,6 @@ export function viewFor(text: OverlayText, style: Pick<OverlayStyle, 'showOrigin
     provisional: !text.final,
   }
 }
+
+/** Cuánto se muestra la etiqueta de modo por sí sola tras un cambio de modo. */
+export const MODE_FLASH_MS = 2500

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import type { ModelCatalog, ModelStatusInfo } from 'tr-bindings'
 
 import type { AppState, Notice } from '../../shared/ipc.ts'
+import { ACTIVE_LABELS, MODE_LABELS, MODES } from '../../shared/mode.ts'
 import type { Settings, SettingsPatch } from '../../shared/settings.ts'
 import {
   applyProgress,
@@ -31,7 +32,7 @@ function App({ api }: { api: NonNullable<typeof window.trSettings> }) {
   const [download, setDownload] = useState<Download>({ phase: 'idle' })
   const [errors, setErrors] = useState<string[]>([])
   const [notice, setNotice] = useState<Notice | null>(null)
-  const [appState, setAppState] = useState<AppState>({ running: false, paused: false })
+  const [appState, setAppState] = useState<AppState>({ running: false, paused: false, mode: null })
   const settingsRef = useRef<Settings | null>(null)
   settingsRef.current = settings
 
@@ -96,7 +97,7 @@ function App({ api }: { api: NonNullable<typeof window.trSettings> }) {
   const summary = useMemo(() => summarize(statuses), [statuses])
   const audioSummary = useMemo(() => summarize(audioStatuses), [audioStatuses])
 
-  const startDownload = useCallback(async (scope?: 'audio') => {
+  const startDownload = useCallback(async (scope?: 'audio' | 'all') => {
     const current = settingsRef.current
     if (!current) return
     setProgress({})
@@ -138,8 +139,43 @@ function App({ api }: { api: NonNullable<typeof window.trSettings> }) {
         ))}
       </div>
       <p id="app-state" class="hint">
-        {appState.running ? (appState.paused ? 'Traducción en pausa.' : 'Traduciendo.') : 'Sin traducción en curso.'}
+        {appState.running
+          ? `${appState.paused ? 'Traducción en pausa' : 'Traduciendo'}${appState.mode ? ` (modo ${ACTIVE_LABELS[appState.mode].toLowerCase()})` : ''}.`
+          : 'Sin traducción en curso.'}
       </p>
+
+      <fieldset id="mode-group">
+        <legend>Modo</legend>
+        {MODES.map((value) => (
+          <label class="inline" key={value}>
+            <input type="radio" name="mode" id={`mode-${value}`} value={value} checked={settings.mode === value} onChange={() => void save({ mode: value })} />
+            {MODE_LABELS[value]}
+          </label>
+        ))}
+        <p class="hint">
+          {settings.mode === 'auto' && 'Traduce el texto de la región y, si no hay texto, subtitula el audio del sistema; vuelve al texto cuando reaparece.'}
+          {settings.mode === 'text' && 'Solo traduce el texto de la región elegida.'}
+          {settings.mode === 'audio' && 'Solo subtitula el audio del sistema; no necesita elegir una región.'}
+        </p>
+        {settings.mode === 'auto' && (
+          <label>
+            Pasar a audio tras (segundos sin texto)
+            <input
+              id="fallbackSeconds"
+              type="number"
+              min="1"
+              max="60"
+              value={settings.fallbackSeconds}
+              onChange={(e) => void save({ fallbackSeconds: Number(e.currentTarget.value) })}
+            />
+          </label>
+        )}
+        {settings.engines === 'real' && settings.mode !== 'text' && audioStatuses.length > 0 && !audioSummary.allReady && (
+          <p id="audio-required" class="notice warning">
+            Este modo necesita los modelos de audio ({formatBytes(audioSummary.missingBytes)} por descargar); se descargan abajo, en Modelos.
+          </p>
+        )}
+      </fieldset>
 
       <fieldset>
         <legend>Idiomas</legend>
@@ -205,7 +241,7 @@ function App({ api }: { api: NonNullable<typeof window.trSettings> }) {
             </p>
           )}
           {!summary.allReady && statuses.length > 0 && (
-            <button type="button" id="download" disabled={busy} onClick={() => void startDownload()}>
+            <button type="button" id="download" disabled={busy} onClick={() => void startDownload(settings.mode === 'auto' && audioStatuses.length > 0 ? 'all' : undefined)}>
               {download.phase === 'error' ? 'Reintentar descarga' : 'Descargar modelos'}
             </button>
           )}
@@ -294,6 +330,10 @@ function App({ api }: { api: NonNullable<typeof window.trSettings> }) {
         <label>
           Pausar o reanudar
           <input id="shortcut-pause" type="text" value={settings.shortcuts.togglePause} onChange={(e) => void save({ shortcuts: { togglePause: e.currentTarget.value } })} />
+        </label>
+        <label>
+          Cambiar de modo
+          <input id="shortcut-mode" type="text" value={settings.shortcuts.toggleMode} onChange={(e) => void save({ shortcuts: { toggleMode: e.currentTarget.value } })} />
         </label>
       </fieldset>
     </main>

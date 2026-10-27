@@ -174,3 +174,40 @@ describe('applyPatch', () => {
     if (result.ok) assert.deepEqual(result.settings.lastRegion, { x: 1, y: 2, width: 30, height: 40, monitor: 0 })
   })
 })
+
+describe('modo y fallback', () => {
+  test('por defecto: automático, 3 s y atajo de modo', () => {
+    const settings = defaultSettings()
+    assert.equal(settings.mode, 'auto')
+    assert.equal(settings.fallbackSeconds, 3)
+    assert.equal(settings.shortcuts.toggleMode, 'CommandOrControl+Shift+M')
+  })
+
+  test('unos ajustes antiguos sin estos campos se completan sin avisos', () => {
+    const { shortcuts, ...rest } = defaultSettings()
+    const { mode: _m, fallbackSeconds: _f, ...old } = rest
+    const result = parseSettings({ ...old, shortcuts: { selectRegion: shortcuts.selectRegion, togglePause: shortcuts.togglePause } })
+    assert.deepEqual(result.warnings, [])
+    assert.deepEqual(result.settings, defaultSettings())
+  })
+
+  test('los tres modos son válidos y otro valor vuelve al de por defecto', () => {
+    for (const mode of ['auto', 'text', 'audio']) assert.equal(applyPatch(defaultSettings(), { mode }).ok, true, mode)
+    const bad = parseSettings({ ...defaultSettings(), mode: 'both' })
+    assert.deepEqual(bad.warnings, ['invalid mode'])
+    assert.equal(bad.settings.mode, 'auto')
+  })
+
+  test('la espera del fallback es un entero de 1 a 60', () => {
+    for (const value of [1, 3, 60]) assert.equal(applyPatch(defaultSettings(), { fallbackSeconds: value }).ok, true, String(value))
+    for (const value of [0, 61, 2.5, '5', null]) {
+      const result = applyPatch(defaultSettings(), { fallbackSeconds: value })
+      assert.deepEqual(result, { ok: false, errors: ['invalid fallbackSeconds'] }, String(value))
+    }
+  })
+
+  test('el atajo de modo se valida como los otros', () => {
+    assert.equal(applyPatch(defaultSettings(), { shortcuts: { toggleMode: 'Alt+M' } }).ok, true)
+    assert.deepEqual(applyPatch(defaultSettings(), { shortcuts: { toggleMode: 'Alt + M' } }), { ok: false, errors: ['invalid shortcuts.toggleMode'] })
+  })
+})

@@ -14,6 +14,7 @@ export type ShortcutHandlers = { [K in keyof Shortcuts]: () => void }
 const LABELS: Record<keyof Shortcuts, string> = {
   selectRegion: 'elegir región',
   togglePause: 'pausar o reanudar',
+  toggleMode: 'cambiar de modo',
 }
 
 export class ShortcutManager {

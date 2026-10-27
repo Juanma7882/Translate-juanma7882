@@ -117,6 +117,6 @@ describe('SettingsStore', () => {
     store.load()
     store.update({ from: 'ja', to: 'en' })
     const saved = JSON.parse(readFileSync(file, 'utf8'))
-    assert.deepEqual(Object.keys(saved).sort(), ['engines', 'from', 'lastRegion', 'modelsDir', 'overlay', 'shortcuts', 'to', 'version'])
+    assert.deepEqual(Object.keys(saved).sort(), ['engines', 'fallbackSeconds', 'from', 'lastRegion', 'mode', 'modelsDir', 'overlay', 'shortcuts', 'to', 'version'])
   })
 })

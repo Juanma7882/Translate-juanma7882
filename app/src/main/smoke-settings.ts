@@ -46,6 +46,7 @@ const FILES: Record<string, Buffer> = {
   'a.bin': Buffer.from(Array.from({ length: 150_000 }, (_, i) => i % 251)),
   'b.bin': Buffer.from('model-b'),
   'c.bin': Buffer.from('model-c-data'),
+  'd.bin': Buffer.from('model-d-stt-data'),
 }
 
 export interface Fixture {
@@ -81,7 +82,7 @@ export async function startFixture(): Promise<Fixture> {
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   const port = (server.address() as { port: number }).port
   const entry = (name: string) => `{"name":"${name}","url":"http://127.0.0.1:${port}/${name}","sha256":"${sha256(FILES[name]!)}","size":${FILES[name]!.length}}`
-  const json = `{"version":1,"models":{"o":{"files":[${entry('a.bin')}]},"t":{"files":[${entry('b.bin')},${entry('c.bin')}]}},"ocr":{"en":"o"},"translate":{"en-es":"t"}}`
+  const json = `{"version":1,"models":{"o":{"files":[${entry('a.bin')}]},"t":{"files":[${entry('b.bin')},${entry('c.bin')}]},"s":{"files":[${entry('d.bin')}]}},"ocr":{"en":"o"},"stt":{"en":"s"},"translate":{"en-es":"t"}}`
   const manifestPath = join(mkdtempSync(join(tmpdir(), 'tr-settings-manifest-')), 'models.json')
   writeFileSync(manifestPath, json)
   return { server, manifestPath, failing }
@@ -175,6 +176,26 @@ export async function runSettingsSmoke(host: EngineHost, windows: WindowManager,
     await waitFor(async () => !(await exists(window, '#preview .original')), 'the preview to hide the original')
     expect((await evaluate<string>(window, `document.getElementById('preview').style.fontSize`)) === '36px', 'la vista previa refleja el tamaño')
     ok('los cambios se guardan y la vista previa los refleja')
+
+    // Modo: automático por defecto (descargó también los de audio), espera del fallback y atajo.
+    expect(settings.get().mode === 'auto', 'el modo por defecto es automático')
+    expect(await exists(window, '#audio-models-ready'), 'en automático la descarga incluyó los modelos de audio')
+    expect(!(await exists(window, '#audio-required')), 'con los modelos de audio listos no hay aviso')
+    await setControl(window, '#fallbackSeconds', '10')
+    await waitFor(() => settings.get().fallbackSeconds === 10, 'fallback seconds to be saved')
+    await setControl(window, '#fallbackSeconds', '0')
+    await waitFor(async () => (await text(window, '#errors')).includes('segundos'), 'the fallback range message')
+    expect(settings.get().fallbackSeconds === 10, 'una espera fuera de rango no se guarda')
+    await setControl(window, '#mode-audio', true)
+    await waitFor(() => settings.get().mode === 'audio', 'audio mode to be saved')
+    await waitFor(async () => !(await exists(window, '#fallbackSeconds')), 'the fallback field to hide outside auto mode')
+    await setControl(window, '#mode-text', true)
+    await waitFor(() => settings.get().mode === 'text', 'text mode to be saved')
+    await setControl(window, '#mode-auto', true)
+    await waitFor(async () => (await exists(window, '#fallbackSeconds')), 'the fallback field to come back in auto mode')
+    await setControl(window, '#shortcut-mode', 'Alt+M')
+    await waitFor(() => settings.get().shortcuts.toggleMode === 'Alt+M', 'the mode shortcut to be saved')
+    ok('modo, espera del fallback y atajo de modo se guardan, validan y se reflejan en la ventana')
 
     // Valores inválidos: se explican y no se guardan.
     await setControl(window, '#fontSize', '5')

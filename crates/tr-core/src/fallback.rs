@@ -389,6 +389,75 @@ mod tests {
         assert_eq!(actions.len(), 2);
     }
 
+    /// Cuenta los cambios de modo de una secuencia (tiempos sintéticos, sin reloj real).
+    fn transitions(config: &FallbackConfig, inputs: &[Input]) -> usize {
+        let mut state = State::new();
+        let mut count = 0;
+        for input in inputs {
+            let (next, actions) = step(state, *input, config);
+            state = next;
+            count += actions
+                .iter()
+                .filter(|a| matches!(a, Action::ModeChanged(_)))
+                .count();
+        }
+        count
+    }
+
+    #[test]
+    fn text_flickering_faster_than_the_thresholds_never_switches_for_a_whole_minute() {
+        // Alterna cada 0,5 s durante 60 s, tanto empezando en texto como sin texto.
+        let config = FallbackConfig::default();
+        for start_with_text in [true, false] {
+            let inputs: Vec<_> = (0..120)
+                .map(|i| obs((i % 2 == 0) == start_with_text, f64::from(i) * 0.5))
+                .collect();
+            assert_eq!(
+                transitions(&config, &inputs),
+                0,
+                "inicio con texto: {start_with_text}"
+            );
+        }
+    }
+
+    #[test]
+    fn flicker_in_audio_mode_does_not_bounce_back_either() {
+        // Ya en audio: texto que entra y sale cada 0,5 s (nunca 1 s seguido) no vuelve a texto.
+        let config = FallbackConfig::default();
+        let mut inputs = vec![obs(false, 0.0), obs(false, 3.0)];
+        inputs.extend((0..120).map(|i| obs(i % 2 == 0, 4.0 + f64::from(i) * 0.5)));
+        assert_eq!(transitions(&config, &inputs), 1, "solo el paso a audio");
+    }
+
+    #[test]
+    fn a_sustained_change_switches_exactly_once_per_direction() {
+        let config = FallbackConfig::default();
+        let mut inputs: Vec<_> = (0..20).map(|i| obs(true, f64::from(i) * 0.2)).collect();
+        inputs.extend((0..40).map(|i| obs(false, 4.0 + f64::from(i) * 0.2)));
+        inputs.extend((0..40).map(|i| obs(true, 12.0 + f64::from(i) * 0.2)));
+        assert_eq!(transitions(&config, &inputs), 2);
+    }
+
+    #[test]
+    fn thresholds_are_configurable() {
+        let config = FallbackConfig {
+            no_text_for: Duration::from_secs(10),
+            text_for: Duration::from_secs(5),
+        };
+        let mut state = State::new();
+        for (has_text, at, expected) in [
+            (false, 0.0, Mode::Text),
+            (false, 9.9, Mode::Text),
+            (false, 10.0, Mode::Audio),
+            (true, 11.0, Mode::Audio),
+            (true, 15.9, Mode::Audio),
+            (true, 16.0, Mode::Text),
+        ] {
+            state = step(state, obs(has_text, at), &config).0;
+            assert_eq!(state.mode, expected, "t = {at}");
+        }
+    }
+
     #[test]
     fn timers_restart_after_resume() {
         // 2 s sin texto, pausa, reanuda: la ausencia previa no cuenta.

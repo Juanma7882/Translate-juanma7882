@@ -8,7 +8,7 @@ import type { WindowKind, WindowManager } from './windows.ts'
 
 const API_OF: Record<WindowKind, { global: string; keys: string[] }> = {
   selector: { global: 'trSelector', keys: ['cancel', 'confirm', 'onInit'] },
-  overlay: { global: 'trOverlay', keys: ['onClear', 'onShow', 'onStyle'] },
+  overlay: { global: 'trOverlay', keys: ['onClear', 'onMode', 'onShow', 'onStyle'] },
   settings: {
     global: 'trSettings',
     keys: ['downloadModels', 'getSettings', 'modelCatalog', 'modelStatus', 'onAppState', 'onModelProgress', 'onNotice', 'onSettingsChanged', 'updateSettings'],

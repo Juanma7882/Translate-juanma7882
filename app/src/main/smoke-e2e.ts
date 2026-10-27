@@ -27,7 +27,7 @@ function expect(condition: boolean, message: string): void {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-async function waitFor(condition: () => boolean | Promise<boolean>, what: string, ms: number): Promise<void> {
+async function waitFor(condition: () => boolean | Promise<boolean>, what: string, ms = 15_000): Promise<void> {
   const deadline = Date.now() + ms
   while (Date.now() < deadline) {
     if (await condition()) return
@@ -91,6 +91,19 @@ export async function runE2eSmoke(host: EngineHost, windows: WindowManager, disp
   const original = (await windows.get('overlay')!.webContents.executeJavaScript(`document.getElementById('original').textContent`)) as string
   expect(original === 'Hello world, this is a test.', `texto original reconocido: ${original}`)
   ok(`el overlay muestra la traducción real: "${translated}"`)
+
+  // Modo automático: sin texto en la región pasa solo a audio y, al volver el texto, regresa.
+  const modeLabel = async (): Promise<string> =>
+    (await windows.get('overlay')!.webContents.executeJavaScript(`document.getElementById('mode').textContent`)) as string
+  expect(shell.controller.state.mode === 'text' && (await modeLabel()) === 'Texto', 'la sesión empieza en modo texto')
+  page.hide()
+  await waitFor(() => shell.controller.state.mode === 'audio', `the fallback to audio (avisos: ${JSON.stringify(notices)})`, 60_000)
+  await waitFor(async () => (await modeLabel()) === 'Audio', 'the overlay to show the audio mode')
+  ok('al retirar el texto la sesión pasa sola a audio y el overlay lo indica')
+  page.show()
+  await waitFor(() => shell.controller.state.mode === 'text', 'the return to text mode', 60_000)
+  await waitFor(async () => /mundo/i.test(await overlayText()), 'the translation after returning to text', 60_000)
+  ok('al volver el texto regresa a modo texto y se traduce de nuevo')
 
   expect(notices.every((n) => n.level !== 'error'), `sin errores durante la sesión: ${JSON.stringify(notices)}`)
   await shell.controller.stop()

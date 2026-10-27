@@ -3,11 +3,12 @@
 
 import { contextBridge, ipcRenderer } from 'electron'
 
-import type { Channel, OverlayApi, OverlayStyle, OverlayText } from '../shared/ipc.ts'
+import type { Channel, OverlayApi, OverlayMode, OverlayStyle, OverlayText } from '../shared/ipc.ts'
 
 const SHOW = 'overlay:show' satisfies typeof Channel.overlayShow
 const STYLE = 'overlay:style' satisfies typeof Channel.overlayStyle
 const CLEAR = 'overlay:clear' satisfies typeof Channel.overlayClear
+const MODE = 'overlay:mode' satisfies typeof Channel.overlayMode
 
 const api: OverlayApi = {
   onShow(listener) {
@@ -18,6 +19,9 @@ const api: OverlayApi = {
   },
   onClear(listener) {
     ipcRenderer.on(CLEAR, () => listener())
+  },
+  onMode(listener) {
+    ipcRenderer.on(MODE, (_event, mode: OverlayMode) => listener(mode))
   },
 }
 

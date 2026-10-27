@@ -3,23 +3,36 @@
 import type { MenuItemConstructorOptions } from 'electron'
 
 import type { AppState } from '../shared/ipc.ts'
+import { ACTIVE_LABELS, MODE_LABELS, MODES, needsRegion } from '../shared/mode.ts'
+import type { Mode } from '../shared/mode.ts'
 
 export interface TrayActions {
   chooseRegion(): void
   translateLast(): void
   togglePause(): void
   stop(): void
+  setMode(mode: Mode): void
   openSettings(): void
   quit(): void
 }
 
-export function trayTemplate(state: AppState, hasRegion: boolean, actions: TrayActions): MenuItemConstructorOptions[] {
+/** `mode` es el modo elegido en los ajustes (el activo, si lo hay, está en `state.mode`). */
+export function trayTemplate(state: AppState, hasRegion: boolean, actions: TrayActions, mode: Mode = 'auto'): MenuItemConstructorOptions[] {
   return [
     { label: 'Elegir región…', click: () => actions.chooseRegion() },
-    { label: 'Traducir la última región', enabled: hasRegion && !state.running, click: () => actions.translateLast() },
+    {
+      label: 'Traducir la última región',
+      // En modo audio no hace falta región.
+      enabled: (hasRegion || !needsRegion(mode)) && !state.running,
+      click: () => actions.translateLast(),
+    },
     { label: state.paused ? 'Reanudar' : 'Pausar', enabled: state.running, click: () => actions.togglePause() },
     { label: 'Detener', enabled: state.running, click: () => actions.stop() },
     { type: 'separator' },
+    {
+      label: 'Modo',
+      submenu: MODES.map((m) => ({ label: MODE_LABELS[m], type: 'radio' as const, checked: m === mode, click: () => actions.setMode(m) })),
+    },
     { label: 'Ajustes…', click: () => actions.openSettings() },
     { type: 'separator' },
     { label: 'Salir', click: () => actions.quit() },
@@ -28,5 +41,6 @@ export function trayTemplate(state: AppState, hasRegion: boolean, actions: TrayA
 
 export function trayTooltip(state: AppState): string {
   if (!state.running) return 'Traductor · en reposo'
-  return state.paused ? 'Traductor · en pausa' : 'Traductor · traduciendo'
+  const active = state.mode ? ` · ${ACTIVE_LABELS[state.mode].toLowerCase()}` : ''
+  return state.paused ? `Traductor · en pausa${active}` : `Traductor · traduciendo${active}`
 }

@@ -53,6 +53,18 @@ class FakeTray implements TrayLike {
     if (!item || item.enabled === false) throw new Error(`el elemento "${prefix}" no está disponible en el menú`)
     ;(item.click as () => void)()
   }
+  /** Elige una opción del submenú "Modo" por su etiqueta. */
+  clickMode(label: string): void {
+    const submenu = this.template.find((i) => i.label === 'Modo')?.submenu as MenuItemConstructorOptions[] | undefined
+    const item = submenu?.find((i) => i.label === label)
+    if (!item) throw new Error(`no hay una opción de modo "${label}"`)
+    ;(item.click as () => void)()
+  }
+  /** Etiqueta de la opción de modo marcada. */
+  checkedMode(): string | undefined {
+    const submenu = this.template.find((i) => i.label === 'Modo')?.submenu as MenuItemConstructorOptions[] | undefined
+    return submenu?.find((i) => i.checked)?.label
+  }
   has(prefix: string): boolean {
     return this.template.some((i) => i.label?.startsWith(prefix) && i.enabled !== false)
   }
@@ -93,7 +105,7 @@ export async function runShellSmoke(host: EngineHost, windows: WindowManager, di
   expect(notices.some((n) => n.level === 'warning' && n.message.includes('Alt+Taken') && n.message.includes('Ajustes')), `aviso de atajo en conflicto: ${JSON.stringify(notices)}`)
   expect(shortcuts.active.has('CommandOrControl+Shift+T') && !shortcuts.active.has('Alt+Taken'), 'solo el atajo libre queda registrado')
   settings.update({ shortcuts: { togglePause: 'Alt+Free' } })
-  expect(shortcuts.active.has('Alt+Free') && shortcuts.active.size === 2, 'al cambiar el atajo se vuelve a registrar')
+  expect(shortcuts.active.has('Alt+Free') && shortcuts.active.size === 3, 'al cambiar el atajo se vuelve a registrar')
   ok('un atajo en conflicto se informa y uno libre se registra al cambiarlo')
 
   // Bandeja en reposo.
@@ -122,6 +134,69 @@ export async function runShellSmoke(host: EngineHost, windows: WindowManager, di
   await waitFor(() => !shell.controller.state.paused, 'resume through the shortcut')
   await waitFor(() => texts > whilePaused, 'translations after resume')
   ok('pausar desde el menú detiene el motor y el atajo lo reanuda')
+
+  // ---- Modos: el menú y el atajo alternan entre automático, solo audio y solo texto en caliente.
+  const originals: string[] = []
+  shell.controller.on('text', (t) => originals.push(t.original))
+  const overlayText = (selector: string) => overlay!.webContents.executeJavaScript(`document.querySelector(${JSON.stringify(selector)}).textContent`) as Promise<string>
+  const SCREEN = ['Hello, world', 'Where is the station?', 'Thank you very much']
+  const SPEECH = ['Good morning everyone', 'Welcome to the demo', 'See you tomorrow']
+  const nextOriginals = async (from: number, pool: string[], what: string) => {
+    await waitFor(() => originals.length > from && originals.slice(from).some((o) => pool.includes(o)), what)
+    expect(originals.slice(from).every((o) => pool.includes(o)), `solo llegan textos del modo esperado (${what}): ${originals.slice(from)}`)
+  }
+
+  expect(tray.checkedMode() === 'Automático' && shell.controller.state.mode === 'text', 'en automático la sesión empieza en texto')
+  expect(tray.tooltip.includes('texto'), `el tooltip indica el modo activo: ${tray.tooltip}`)
+  await waitFor(async () => (await overlayText('#mode')) === 'Texto', 'the mode label to read Texto')
+
+  // Menú: solo audio. La sesión sigue, ahora con subtítulos del audio y la etiqueta cambia.
+  let mark = 0
+  tray.clickMode('Solo audio')
+  await waitFor(() => shell.controller.state.mode === 'audio' && shell.controller.state.running, 'audio mode through the tray')
+  expect(settings.get().mode === 'audio' && tray.checkedMode() === 'Solo audio', 'el ajuste y la bandeja reflejan el modo')
+  await sleep(300) // deja pasar lo que el motor anterior ya había emitido
+  mark = originals.length
+  await nextOriginals(mark, SPEECH, 'audio subtitles')
+  await waitFor(async () => (await overlayText('#mode')) === 'Audio', 'the mode label to read Audio')
+  expect(tray.tooltip.includes('audio'), 'el tooltip indica audio')
+  expect(windows.get('overlay') === overlay, 'el overlay no se cierra al cambiar de modo')
+  ok('elegir "Solo audio" en la bandeja reinicia la sesión en audio y el overlay lo indica')
+
+  // Pausa en solo audio: la captura se detiene y al reanudar vuelven los subtítulos.
+  tray.click('Pausar')
+  await waitFor(() => shell.controller.state.paused, 'pause in audio mode')
+  await sleep(600)
+  mark = originals.length
+  await sleep(1200)
+  expect(originals.length === mark, 'en pausa no llegan subtítulos')
+  tray.click('Reanudar')
+  await waitFor(() => !shell.controller.state.paused, 'resume in audio mode')
+  await nextOriginals(mark, SPEECH, 'subtitles after resume')
+  ok('pausar y reanudar funcionan en solo audio')
+
+  // Atajo: audio -> automático (texto de pantalla) -> texto -> audio.
+  const toggle = shortcuts.active.get('CommandOrControl+Shift+M')!
+  mark = originals.length
+  toggle()
+  await waitFor(() => settings.get().mode === 'auto' && shell.controller.state.mode === 'text', 'auto mode through the shortcut')
+  await sleep(300)
+  mark = originals.length
+  await nextOriginals(mark, SCREEN, 'screen text after the shortcut')
+  toggle()
+  await waitFor(() => settings.get().mode === 'text' && shell.controller.state.mode === 'text', 'text-only mode through the shortcut')
+  await waitFor(async () => (await overlayText('#mode')) === 'Texto', 'the label in text-only mode')
+  toggle()
+  await waitFor(() => settings.get().mode === 'audio' && shell.controller.state.mode === 'audio', 'audio mode again through the shortcut')
+  expect(tray.checkedMode() === 'Solo audio', 'la bandeja marca el modo del atajo')
+  ok('el atajo cicla automático, solo texto y solo audio con la sesión en marcha')
+
+  // Vuelta a automático para el resto de la prueba.
+  tray.clickMode('Automático')
+  await waitFor(() => shell.controller.state.mode === 'text' && settings.get().mode === 'auto', 'back to auto')
+  await sleep(300)
+  mark = originals.length
+  await nextOriginals(mark, SCREEN, 'screen text in auto mode')
 
   tray.click('Detener')
   await waitFor(() => !shell.controller.state.running, 'stop')
@@ -174,7 +249,20 @@ export async function runShellSmoke(host: EngineHost, windows: WindowManager, di
     expect(/internet/.test(offer) && /\d/.test(offer), `la oferta explica la descarga y su tamaño: ${offer}`)
     ok('sin modelos se avisa, se abre Ajustes y se ofrece descargar con su tamaño')
 
-    // Al terminar la descarga se retoma lo que se quería hacer.
+    // En automático (el modo por defecto) el aviso lista a la vez los modelos de texto y de audio.
+    const missing = firstNotices.find((n) => n.code === 'models-missing')!.message
+    expect(/missing models: o, t, s\b|missing models: (?=.*\bo\b)(?=.*\bt\b)(?=.*\bs\b)/.test(missing), `el aviso lista los modelos de texto y de audio: ${missing}`)
+    ok('en modo automático se avisa de los modelos de texto y de audio juntos')
+
+    // Una descarga parcial (solo los de audio) no reintenta: siguen faltando los de texto.
+    await waitFor(async () => (await settingsWindow.webContents.executeJavaScript(`document.getElementById('download-audio') !== null`)) as boolean, 'the audio download button')
+    await settingsWindow.webContents.executeJavaScript(`document.getElementById('download-audio').click()`)
+    await waitFor(async () => (await settingsWindow.webContents.executeJavaScript(`document.getElementById('audio-models-ready') !== null`)) as boolean, 'the audio models to be ready')
+    await sleep(800)
+    expect(resumed === 0, 'con los modelos de texto aún sin descargar no se reintenta')
+    ok('una descarga parcial no reintenta el arranque')
+
+    // Al terminar la descarga de lo que faltaba se retoma lo que se quería hacer.
     await settingsWindow.webContents.executeJavaScript(`document.getElementById('download').click()`)
     await waitFor(() => resumed > 0, 'the translation to resume after the download', 20_000)
     ok('al terminar la descarga se reintenta la traducción pendiente')

@@ -16,7 +16,7 @@ use tr_core::fallback::{FallbackConfig, FallbackSetup, TextOrAudioPipeline};
 use tr_core::region::{RegionConfig, RegionPipeline, RegionProcessor};
 use tr_core::runner::LoopTiming;
 use tr_core::testing::FakeTranslator;
-use tr_core::{CoreError, EventSink, Lang, Region, Result};
+use tr_core::{CoreError, EventSink, Lang, Region, Result, Translator};
 
 use crate::fake::{DemoAudio, DemoOcr, DemoScreen, DemoStt};
 use tr_models::Manifest;
@@ -102,16 +102,26 @@ fn region_parts(config: &EngineConfig, from: &Lang, to: &Lang) -> Result<RegionP
     }
 }
 
-fn audio_parts(config: &EngineConfig, from: &Lang, to: &Lang) -> Result<AudioParts> {
+/// `shared_translator` (el del fallback) evita cargar dos veces el modelo de traducción.
+fn audio_parts(
+    config: &EngineConfig,
+    from: &Lang,
+    to: &Lang,
+    shared_translator: Option<Arc<dyn Translator>>,
+) -> Result<AudioParts> {
     match config.engines {
         EngineKind::Fake => Ok(AudioParts {
             audio: Box::new(DemoAudio::new(config.fake_audio_pace)),
             stt: Box::new(DemoStt::new(config.fake_latency)),
-            translator: Arc::new(FakeTranslator::new()),
+            translator: shared_translator.unwrap_or_else(|| Arc::new(FakeTranslator::new())),
         }),
-        EngineKind::Real => {
-            real::audio_parts(config.models_dir.clone(), config.manifest(), from, to)
-        }
+        EngineKind::Real => real::audio_parts(
+            config.models_dir.clone(),
+            config.manifest(),
+            from,
+            to,
+            shared_translator,
+        ),
     }
 }
 
@@ -151,9 +161,23 @@ impl Engine {
     /// Traduce el texto de una región. Si ya había algo en marcha, lo reemplaza; si el arranque
     /// falla (modelos ausentes, motor no compilado...) lo anterior sigue funcionando.
     pub fn start_region(&mut self, region: Region, from: Lang, to: Lang) -> Result<()> {
+        // Con fallback real, todo lo que falte (texto y audio) se informa de una vez.
+        if self.config.fallback.is_some() && self.config.engines == EngineKind::Real {
+            real::ensure_fallback_ready(
+                self.config.models_dir.clone(),
+                self.config.manifest(),
+                &from,
+                &to,
+            )?;
+        }
         let parts = region_parts(&self.config, &from, &to)?;
         let audio = match self.config.fallback {
-            Some(_) => Some(audio_parts(&self.config, &from, &to)?),
+            Some(_) => Some(audio_parts(
+                &self.config,
+                &from,
+                &to,
+                Some(parts.translator.clone()),
+            )?),
             None => None,
         };
         self.stop();
@@ -205,7 +229,7 @@ impl Engine {
 
     /// Subtitula el audio del sistema. Si ya había algo en marcha, lo reemplaza.
     pub fn start_audio(&mut self, from: Lang, to: Lang) -> Result<()> {
-        let parts = audio_parts(&self.config, &from, &to)?;
+        let parts = audio_parts(&self.config, &from, &to, None)?;
         self.stop();
         let processor = AudioProcessor::new(
             AudioConfig::new(from, to),

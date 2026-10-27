@@ -20,7 +20,7 @@ function fake(options: { taken?: string[]; invalid?: string[] } = {}) {
   return { api, active }
 }
 
-const handlers = (calls: string[]) => ({ selectRegion: () => calls.push('select'), togglePause: () => calls.push('pause') })
+const handlers = (calls: string[]) => ({ selectRegion: () => calls.push('select'), togglePause: () => calls.push('pause'), toggleMode: () => calls.push('mode') })
 
 test('registra ambos atajos y los invoca', () => {
   const { api, active } = fake()
@@ -31,7 +31,8 @@ test('registra ambos atajos y los invoca', () => {
   assert.deepEqual(manager.apply(shortcuts, handlers(calls)), [])
   active.get(shortcuts.selectRegion)!()
   active.get(shortcuts.togglePause)!()
-  assert.deepEqual(calls, ['select', 'pause'])
+  active.get(shortcuts.toggleMode)!()
+  assert.deepEqual(calls, ['select', 'pause', 'mode'])
   assert.equal(notices.length, 0)
 })
 
@@ -59,7 +60,7 @@ test('una combinación que el sistema rechaza con una excepción también se inf
 test('el mismo atajo para dos acciones se informa en lugar de pisarse', () => {
   const { api } = fake()
   const notices: Notice[] = []
-  const failed = new ShortcutManager(api, (n) => notices.push(n)).apply({ selectRegion: 'Alt+X', togglePause: 'alt+x' }, handlers([]))
+  const failed = new ShortcutManager(api, (n) => notices.push(n)).apply({ selectRegion: 'Alt+X', togglePause: 'alt+x', toggleMode: 'Alt+Y' }, handlers([]))
   assert.deepEqual(failed, ['togglePause'])
   assert.match(notices[0]!.message, /repite/)
 })
@@ -67,9 +68,9 @@ test('el mismo atajo para dos acciones se informa en lugar de pisarse', () => {
 test('volver a aplicar libera los atajos anteriores', () => {
   const { api, active } = fake()
   const manager = new ShortcutManager(api, () => {})
-  manager.apply({ selectRegion: 'Alt+A', togglePause: 'Alt+B' }, handlers([]))
-  manager.apply({ selectRegion: 'Alt+C', togglePause: 'Alt+D' }, handlers([]))
-  assert.deepEqual([...active.keys()].sort(), ['Alt+C', 'Alt+D'])
+  manager.apply({ selectRegion: 'Alt+A', togglePause: 'Alt+B', toggleMode: 'Alt+E' }, handlers([]))
+  manager.apply({ selectRegion: 'Alt+C', togglePause: 'Alt+D', toggleMode: 'Alt+F' }, handlers([]))
+  assert.deepEqual([...active.keys()].sort(), ['Alt+C', 'Alt+D', 'Alt+F'])
   manager.dispose()
   assert.equal(active.size, 0)
 })

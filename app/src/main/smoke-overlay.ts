@@ -129,6 +129,21 @@ export async function runOverlaySmoke(windows: WindowManager, settings: Settings
   await waitFor(async () => !(await dom(window)).provisional, 'the final replacing the provisional')
   ok('muestra original y traducción; el final reemplaza al provisional')
 
+  // Indicador de modo: la etiqueta muestra solo el nombre; con la caja oculta aparece unos segundos.
+  const label = () => window.webContents.executeJavaScript(`({ text: document.getElementById('mode').textContent, hidden: document.getElementById('box').hidden })`) as Promise<{ text: string; hidden: boolean }>
+  controller.clear()
+  await waitFor(async () => (await label()).hidden, 'the box to hide')
+  controller.setMode('audio')
+  await waitFor(async () => (await label()).text === 'Audio' && !(await label()).hidden, 'the audio label to flash')
+  controller.setMode('paused')
+  await waitFor(async () => (await label()).text === 'Pausa', 'the paused label')
+  controller.setMode('text')
+  await waitFor(async () => (await label()).text === 'Texto', 'the text label')
+  controller.show({ original: 'a', translated: 'b', final: true })
+  await waitFor(async () => !(await dom(window)).hidden, 'the text after the label')
+  expect((await label()).text === 'Texto', 'la etiqueta acompaña al texto')
+  ok('el indicador de modo muestra el nombre del modo y aparece aunque no haya texto')
+
   // La inserción es texto plano: el HTML no se interpreta.
   controller.show({ original: '<img src=x onerror="document.title=1">', translated: '<b>negrita</b>', final: true })
   await waitFor(async () => (await dom(window)).main === '<b>negrita</b>', 'the escaped text')

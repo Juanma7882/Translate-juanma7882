@@ -140,13 +140,38 @@ fn ensure_audio_compiled() -> Result<()> {
     Ok(())
 }
 
+/// Comprobación previa del fallback: motores compilados y modelos de texto **y** de audio listos.
+/// Si faltan, el error los lista juntos (sin repetidos) para que el usuario los descargue de una vez.
+pub(crate) fn ensure_fallback_ready(
+    models_dir: Option<PathBuf>,
+    manifest: &Manifest,
+    from: &Lang,
+    to: &Lang,
+) -> Result<()> {
+    ensure_compiled()?;
+    ensure_audio_compiled()?;
+    let required = manifest.required_for_all(from, to)?;
+    let manager = ModelManager::new(resolve_dir(models_dir)?);
+    let missing = manager.missing(&required);
+    if missing.is_empty() {
+        return Ok(());
+    }
+    Err(CoreError::Model(format!(
+        "missing models: {}. Download them before starting",
+        missing.join(", ")
+    )))
+}
+
 /// Construye los motores reales de audio para `from` -> `to`, con el mismo orden de comprobaciones
 /// que [`region_parts`]: la captura del sistema solo se crea cuando los modelos ya cargaron.
+///
+/// Con `shared_translator` (el fallback) no se vuelve a cargar el modelo de traducción.
 pub(crate) fn audio_parts(
     models_dir: Option<PathBuf>,
     manifest: &Manifest,
     from: &Lang,
     to: &Lang,
+    shared_translator: Option<Arc<dyn Translator>>,
 ) -> Result<AudioParts> {
     ensure_audio_compiled()?;
     let required = manifest.required_for_audio(from, to)?;
@@ -160,9 +185,13 @@ pub(crate) fn audio_parts(
     }
     let stt_spec = manifest.stt_model(from)?;
     let translation_spec = manifest.translate_model(from, to)?;
+    let translator = match shared_translator {
+        Some(shared) => shared,
+        None => translator(&manager.model_dir(translation_spec), from, to)?,
+    };
     Ok(AudioParts {
         stt: stt(&manager.model_dir(stt_spec), from)?,
-        translator: translator(&manager.model_dir(translation_spec), from, to)?,
+        translator,
         audio: audio()?,
     })
 }
@@ -275,6 +304,7 @@ mod tests {
             Manifest::embedded(),
             &lang("en"),
             &lang("es"),
+            None,
         ) else {
             panic!("debe fallar")
         };
@@ -301,6 +331,7 @@ mod tests {
                 Manifest::embedded(),
                 &lang(from),
                 &lang(to),
+                None,
             ) else {
                 panic!("debe fallar")
             };
@@ -309,6 +340,58 @@ mod tests {
                 "{from}->{to}: {error}"
             );
         }
+    }
+
+    #[cfg(all(
+        feature = "screen-xcap",
+        feature = "ocr-paddle",
+        feature = "stt-whisper",
+        feature = "audio-loopback",
+        feature = "translate-opus"
+    ))]
+    #[test]
+    fn fallback_lists_text_and_audio_models_together_without_duplicates() {
+        let Err(error) = ensure_fallback_ready(
+            Some(empty_dir("fallback-missing")),
+            Manifest::embedded(),
+            &lang("en"),
+            &lang("es"),
+        ) else {
+            panic!("debe fallar")
+        };
+        let CoreError::Model(message) = error else {
+            panic!("debe ser un error de modelo")
+        };
+        for id in ["ocr-ppocrv6-small", "stt-whisper-base", "mt-opus-en-es"] {
+            assert_eq!(
+                message.matches(id).count(),
+                1,
+                "{id} una sola vez: {message}"
+            );
+        }
+    }
+
+    #[cfg(all(
+        feature = "screen-xcap",
+        feature = "ocr-paddle",
+        feature = "stt-whisper",
+        feature = "audio-loopback",
+        feature = "translate-opus"
+    ))]
+    #[test]
+    fn fallback_rejects_unsupported_languages_before_the_models_folder() {
+        let Err(error) = ensure_fallback_ready(
+            Some(empty_dir("fallback-lang")),
+            Manifest::embedded(),
+            &lang("ko"),
+            &lang("es"),
+        ) else {
+            panic!("debe fallar")
+        };
+        assert!(
+            matches!(&error, CoreError::InvalidArgument(m) if m.contains("unsupported")),
+            "{error}"
+        );
     }
 
     #[cfg(all(feature = "screen-xcap", not(feature = "ocr-paddle")))]

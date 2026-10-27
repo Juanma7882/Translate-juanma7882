@@ -3,6 +3,9 @@
 // Solo contienen preferencias y la última región elegida: nunca contenido capturado ni traducido.
 // Los mensajes de aviso nombran el campo, no su valor.
 
+import { MODES } from './mode.ts'
+import type { Mode } from './mode.ts'
+
 export const SETTINGS_VERSION = 1
 
 /** Región en píxeles físicos, relativa al monitor `monitor` (0 = principal): lo que entiende el motor. */
@@ -34,6 +37,7 @@ export interface OverlaySettings {
 export interface Shortcuts {
   selectRegion: string
   togglePause: string
+  toggleMode: string
 }
 
 export interface Settings {
@@ -41,6 +45,10 @@ export interface Settings {
   from: string
   to: string
   engines: 'fake' | 'real'
+  /** `auto`: texto y, si no hay, audio; `text` o `audio` fuerzan un modo. */
+  mode: Mode
+  /** Segundos sin texto en la región antes de pasar a audio (modo `auto`), 1 a 60. */
+  fallbackSeconds: number
   /** Carpeta de modelos; `null` usa la de datos del usuario. */
   modelsDir: string | null
   lastRegion: SavedRegion | null
@@ -54,6 +62,8 @@ export function defaultSettings(): Settings {
     from: 'en',
     to: 'es',
     engines: 'real',
+    mode: 'auto',
+    fallbackSeconds: 3,
     modelsDir: null,
     lastRegion: null,
     overlay: {
@@ -67,7 +77,7 @@ export function defaultSettings(): Settings {
       hideAfterMs: 4000,
       showOriginal: true,
     },
-    shortcuts: { selectRegion: 'CommandOrControl+Shift+T', togglePause: 'CommandOrControl+Shift+P' },
+    shortcuts: { selectRegion: 'CommandOrControl+Shift+T', togglePause: 'CommandOrControl+Shift+P', toggleMode: 'CommandOrControl+Shift+M' },
   }
 }
 
@@ -164,6 +174,8 @@ export function parseSettings(raw: unknown): ParseResult {
     from: reader.pattern(raw, 'from', 'from', defaults.from, LANG_PATTERN),
     to: reader.pattern(raw, 'to', 'to', defaults.to, LANG_PATTERN),
     engines: reader.oneOf(raw, 'engines', 'engines', defaults.engines, ['fake', 'real']),
+    mode: reader.oneOf(raw, 'mode', 'mode', defaults.mode, MODES),
+    fallbackSeconds: reader.number(raw, 'fallbackSeconds', 'fallbackSeconds', defaults.fallbackSeconds, 1, 60, true),
     modelsDir: modelsDirOk && modelsDirValue !== undefined ? (modelsDirValue as string | null) : defaults.modelsDir,
     lastRegion: readRegion(reader, raw.lastRegion),
     overlay: {
@@ -180,6 +192,7 @@ export function parseSettings(raw: unknown): ParseResult {
     shortcuts: {
       selectRegion: reader.pattern(shortcutSource, 'selectRegion', 'shortcuts.selectRegion', defaults.shortcuts.selectRegion, ACCELERATOR_PATTERN),
       togglePause: reader.pattern(shortcutSource, 'togglePause', 'shortcuts.togglePause', defaults.shortcuts.togglePause, ACCELERATOR_PATTERN),
+      toggleMode: reader.pattern(shortcutSource, 'toggleMode', 'shortcuts.toggleMode', defaults.shortcuts.toggleMode, ACCELERATOR_PATTERN),
     },
   }
   // Los idiomas no pueden coincidir: es una combinación sin sentido.

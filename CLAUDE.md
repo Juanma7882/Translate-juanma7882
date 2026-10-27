@@ -43,6 +43,7 @@ Desarrollo en WSL (Ubuntu); el repo vive en `~/proyectos/translate`. Se corre to
 - `xcap` enlaza `-lgbm`: hay un symlink en `~/.local/lib`, de ahí `export LIBRARY_PATH=$HOME/.local/lib:$LIBRARY_PATH` al compilar (y `LD_LIBRARY_PATH` con esa carpeta al ejecutar).
 - Modelos reales para pruebas: `cargo run --release -p tr-models --example fetch -- ~/.cache/translate-test-models en es` (y `es en`); se pasan con `TR_MODELS_DIR`.
 - Audio (Hito 3): la captura de Linux habla con PulseAudio/PipeWire en Rust puro (WSLg sirve: `PULSE_SERVER=unix:/mnt/wslg/PulseServer`). Modelos: `fetch -- <carpeta> en es audio`; tests reales: `TR_MODELS_DIR=<carpeta> cargo test --release -p tr-adapters --test stt_real -- --ignored --test-threads=1`, `-p tr-adapters --test audio_real -- --ignored` y `-p tr-engine --test real_audio -- --ignored`. Windows/macOS: `docs/validation/windows-hito-3.md`; decisiones en `docs/adr/0004-audio-stt.md`.
+- Fallback (Hito 4): modos `auto`/`text`/`audio` en Ajustes (por defecto `auto`, necesita modelos de texto y de audio: `fetch -- <carpeta> en es all`). Test real: `TR_MODELS_DIR=<carpeta> scripts/with-xvfb.sh cargo test --release -p tr-engine --test real_fallback -- --ignored`; smoke de la app completa en automático: `TR_SMOKE=e2e` bajo `scripts/with-xvfb.sh`. Windows/macOS: `docs/validation/windows-hito-4.md`; decisiones en `docs/adr/0005-fallback.md`.
 - Para comprobar que algo funciona sin red: `unshare -rn <comando>`.
 
 ## Comandos

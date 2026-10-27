@@ -5,7 +5,8 @@
 
 import type { MenuItemConstructorOptions } from 'electron'
 
-import type { Notice } from '../shared/ipc.ts'
+import type { AppState, Notice } from '../shared/ipc.ts'
+import { scopeForMode } from '../shared/mode.ts'
 import { AppController } from './app-controller.ts'
 import type { EngineHost } from './engine-host.ts'
 import { ModelsService } from './models-service.ts'
@@ -71,6 +72,7 @@ export class AppShell {
 
     this.controller.on('text', (text) => this.overlay.show(text))
     this.controller.on('state', (state) => {
+      this.syncMode(state)
       void this.syncOverlay(state.running)
       this.refreshTray()
     })
@@ -82,10 +84,39 @@ export class AppShell {
     })
     // Al terminar una descarga que se pidió por faltar modelos, se retoma lo que se quería hacer.
     this.models.onDownloaded(() => {
-      if (!this.awaitingModels) return
-      this.awaitingModels = false
-      void this.controller.startSaved()
+      if (this.awaitingModels) void this.retryWhenReady()
     })
+  }
+
+  /** Retoma lo pendiente solo cuando están listos los modelos del ámbito del modo (auto: texto y audio). */
+  private async retryWhenReady(): Promise<void> {
+    const { from, to, mode } = this.deps.settings.get()
+    try {
+      const statuses = await this.models.status(from, to, scopeForMode(mode))
+      if (statuses.some((s) => s.state !== 'ready')) return // sigue faltando algo: se espera otra descarga
+    } catch {
+      // Si no se puede consultar, se intenta igual: el arranque informará de lo que falte.
+    }
+    if (!this.awaitingModels) return
+    this.awaitingModels = false
+    void this.controller.startSaved()
+  }
+
+  /** Último estado enviado al overlay, para borrar el texto solo cuando cambia de verdad el modo. */
+  private shownMode: AppState['mode'] = null
+
+  private syncMode(state: AppState): void {
+    if (!state.running) {
+      this.shownMode = null
+      return
+    }
+    if (state.mode !== this.shownMode) {
+      const changed = this.shownMode !== null
+      this.shownMode = state.mode
+      // El texto anterior no corresponde al modo nuevo.
+      if (changed) this.overlay.clear()
+    }
+    if (state.mode) this.overlay.setMode(state.paused ? 'paused' : state.mode)
   }
 
   start(): void {
@@ -107,6 +138,7 @@ export class AppShell {
     chooseRegion: () => void this.controller.chooseRegion(),
     translateLast: () => void this.controller.startSaved(),
     togglePause: () => void this.controller.togglePause(),
+    setMode: (mode) => this.controller.setMode(mode),
     stop: () => void this.controller.stop(),
     openSettings: () => void this.deps.windows.openSettings(),
     quit: () => this.deps.quit(),
@@ -134,6 +166,8 @@ export class AppShell {
     if (running && !this.overlayOpen) {
       this.overlayOpen = true
       await this.overlay.open(this.deps.settings.get().lastRegion)
+      const { mode, paused } = this.controller.state
+      if (mode) this.overlay.setMode(paused ? 'paused' : mode)
     } else if (!running && this.overlayOpen) {
       this.overlayOpen = false
       this.overlay.close()
@@ -144,11 +178,12 @@ export class AppShell {
     this.shortcutManager.apply(this.deps.settings.get().shortcuts, {
       selectRegion: () => this.actions.chooseRegion(),
       togglePause: () => this.actions.togglePause(),
+      toggleMode: () => this.controller.cycleMode(),
     })
   }
 
   private refreshTray(): void {
     const state = this.controller.state
-    this.deps.tray.update(trayTemplate(state, this.deps.settings.get().lastRegion !== null, this.actions), trayTooltip(state))
+    this.deps.tray.update(trayTemplate(state, this.deps.settings.get().lastRegion !== null, this.actions, this.deps.settings.get().mode), trayTooltip(state))
   }
 }

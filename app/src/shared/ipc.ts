@@ -6,6 +6,7 @@
 
 import type { ModelCatalog, ModelScope, ModelStatusInfo } from 'tr-bindings'
 
+import type { ActiveMode } from './mode.ts'
 import type { Settings, SettingsPatch, UpdateResult } from './settings.ts'
 
 /** Rectángulo en píxeles de interfaz (DIP), relativo a la esquina de la ventana. */
@@ -23,6 +24,7 @@ export const Channel = {
   overlayShow: 'overlay:show',
   overlayStyle: 'overlay:style',
   overlayClear: 'overlay:clear',
+  overlayMode: 'overlay:mode',
   settingsGet: 'settings:get',
   settingsUpdate: 'settings:update',
   settingsChanged: 'settings:changed',
@@ -68,13 +70,19 @@ export interface OverlayApi {
   onShow(listener: (text: OverlayText) => void): void
   onStyle(listener: (style: OverlayStyle) => void): void
   onClear(listener: () => void): void
+  /** Modo activo (solo su nombre, nunca contenido). */
+  onMode(listener: (mode: OverlayMode) => void): void
 }
 
 // ---------------------------------------------------------------------------------- settings
 
 export type ModelProgress = { model: string; downloaded: number; total: number | null }
 
-export type AppState = { running: boolean; paused: boolean }
+/** Modo que se muestra en el overlay. */
+export type OverlayMode = ActiveMode | 'paused'
+
+/** `mode` es el modo activo de la sesión en marcha (`null` en reposo); en pausa conserva el último. */
+export type AppState = { running: boolean; paused: boolean; mode: ActiveMode | null }
 
 /** Aviso para el usuario: describe qué pasó, nunca incluye texto capturado ni traducido. */
 export interface Notice {

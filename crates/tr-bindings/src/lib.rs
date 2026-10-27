@@ -3,6 +3,10 @@
 //! API: `startRegionTranslation`, `startAudioSubtitles`, `stop`, `pause`, `resume`, `configure`,
 //! `modelStatus`, `downloadModels` y los registros `onTranslation`, `onSubtitle`, `onError`,
 //! `onModelProgress`, `onModeChanged`. Capturas y audio nunca cruzan hacia JS.
+//!
+//! Modos: `startRegionTranslation` con `autoFallback: true` es el modo automático (texto con paso
+//! a audio) y es el único que emite `onModeChanged`; sin fallback es "solo texto" y
+//! `startAudioSubtitles` es "solo audio": en ambos el llamador conoce el modo por la orden que dio.
 
 mod events;
 mod models;

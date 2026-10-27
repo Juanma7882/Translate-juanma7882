@@ -44,6 +44,10 @@ interface Pending {
 /** Órdenes que pueden tardar minutos y no deben cortarse por tiempo. */
 const UNBOUNDED: ReadonlySet<Command['type']> = new Set(['downloadModels'])
 
+/** Arrancar cargando modelos reales (OCR, traducción, voz) puede tardar bastante más que una orden normal. */
+const START_TIMEOUT_MS = 120_000
+const STARTS: ReadonlySet<Command['type']> = new Set(['startRegion', 'startAudio'])
+
 export class EngineHost extends EventEmitter<HostEvents> {
   private readonly options: EngineHostOptions
   private readonly restartBaseMs: number
@@ -110,7 +114,7 @@ export class EngineHost extends EventEmitter<HostEvents> {
         : setTimeout(() => {
             this.pending.delete(id)
             reject(new Error(`engine did not answer "${command.type}" in time`))
-          }, this.requestTimeoutMs)
+          }, STARTS.has(command.type) ? (this.options.requestTimeoutMs ?? START_TIMEOUT_MS) : this.requestTimeoutMs)
       this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject, timer })
       child.postMessage({ ...command, id })
     })
