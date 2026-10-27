@@ -26,6 +26,19 @@ pub trait AudioCapture: Send {
 pub trait SpeechToText: Send {
     /// Procesa un trozo y devuelve los segmentos nuevos (parciales o finales).
     fn push(&mut self, chunk: &AudioChunk) -> Result<Vec<Segment>>;
+
+    /// Como [`push`](Self::push), pero informa si tras la ventana hay silencio (`closes_utterance`):
+    /// el motor puede usarlo para cerrar la frase con un segmento final. Por defecto se ignora.
+    fn push_window(&mut self, chunk: &AudioChunk, closes_utterance: bool) -> Result<Vec<Segment>> {
+        let _ = closes_utterance;
+        self.push(chunk)
+    }
+
+    /// La intervención terminó sin una ventana de cierre con audio nuevo (la última ya se envió):
+    /// devuelve lo que quedara pendiente como segmento final. Por defecto no hay nada pendiente.
+    fn end_utterance(&mut self) -> Result<Vec<Segment>> {
+        Ok(Vec::new())
+    }
 }
 
 pub trait Translator: Send + Sync {

@@ -7,9 +7,29 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+# Cada motor real se puede excluir del build; el conjunto `Real` informa cuál falta.
+[features]
+default = ["screen-xcap", "ocr-paddle", "translate-opus", "stt-whisper", "audio-loopback"]
+screen-xcap = ["tr-adapters/screen-xcap"]
+ocr-paddle = ["tr-adapters/ocr-paddle"]
+translate-opus = ["tr-adapters/translate-opus"]
+stt-whisper = ["tr-adapters/stt-whisper"]
+audio-loopback = ["tr-adapters/audio-loopback"]
+
 [dependencies]
 tr-core.workspace = true
+tr-models.workspace = true
+tr-adapters.workspace = true
 crossbeam-channel.workspace = true
+
+[dev-dependencies]
+# Solo para la prueba de punta a punta con captura real (tests/real_pipeline.rs).
+image = { workspace = true, features = ["png"] }
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+xcb = "1.7.1"
+# Solo para reproducir audio en el test de punta a punta (tests/real_audio.rs).
+pulseaudio.workspace = true
 
 [lints]
 workspace = true

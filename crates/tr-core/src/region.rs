@@ -291,6 +291,21 @@ mod tests {
     }
 
     #[test]
+    fn a_black_frame_is_just_a_frame_without_text() {
+        // Contenido protegido (DRM) o pantalla apagada: el sistema entrega negro, no un error.
+        let mut rig = rig();
+        for _ in 0..3 {
+            assert!(!rig.processor.process(&Frame::solid(16, 16, 0)));
+        }
+        assert!(rig.sink.is_empty(), "sin eventos ni errores");
+        assert_eq!(
+            rig.ocr.calls(),
+            1,
+            "frames negros idénticos no repiten el OCR"
+        );
+    }
+
+    #[test]
     fn has_text_reflects_the_ocr_result() {
         let mut rig = rig();
         rig.ocr.push_empty();

@@ -108,6 +108,8 @@ pub struct AudioProcessor {
     silence: Duration,
     /// Habla acumulada que todavía no se envió al STT.
     unsent_speech: usize,
+    /// Se envió alguna ventana de la intervención en curso.
+    had_windows: bool,
     prev_text: String,
 }
 
@@ -133,6 +135,7 @@ impl AudioProcessor {
             in_speech: false,
             silence: Duration::ZERO,
             unsent_speech: 0,
+            had_windows: false,
             prev_text: String::new(),
         }
     }
@@ -149,6 +152,7 @@ impl AudioProcessor {
         self.in_speech = false;
         self.silence = Duration::ZERO;
         self.unsent_speech = 0;
+        self.had_windows = false;
         self.prev_text.clear();
     }
 
@@ -195,7 +199,14 @@ impl AudioProcessor {
     fn flush(&mut self) {
         if self.unsent_speech >= duration_to_samples(self.config.min_speech) {
             self.send_window(false);
+        } else if self.had_windows {
+            // Ya se enviaron ventanas de esta intervención: avisar de que terminó.
+            match self.stt.end_utterance() {
+                Ok(segments) => segments.into_iter().for_each(|s| self.handle_segment(s)),
+                Err(error) => self.sink.emit(Event::from(&error)),
+            }
         }
+        self.had_windows = false;
         self.buffer = Vec::new();
         self.in_speech = false;
         self.silence = Duration::ZERO;
@@ -214,8 +225,9 @@ impl AudioProcessor {
             self.buffer.clear();
         }
         self.unsent_speech = 0;
+        self.had_windows = keep_overlap;
 
-        match self.stt.push(&window) {
+        match self.stt.push_window(&window, !keep_overlap) {
             Ok(segments) => segments.into_iter().for_each(|s| self.handle_segment(s)),
             Err(error) => self.sink.emit(Event::from(&error)),
         }
@@ -475,6 +487,71 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    /// STT que anota si cada ventana llegó marcada como de cierre.
+    #[derive(Clone, Default)]
+    struct CloseRecorder(
+        Arc<std::sync::Mutex<Vec<bool>>>,
+        Arc<std::sync::Mutex<usize>>,
+    );
+
+    impl SpeechToText for CloseRecorder {
+        fn push(&mut self, _chunk: &AudioChunk) -> Result<Vec<Segment>> {
+            self.0.lock().unwrap().push(false);
+            Ok(Vec::new())
+        }
+
+        fn push_window(&mut self, _chunk: &AudioChunk, closes: bool) -> Result<Vec<Segment>> {
+            self.0.lock().unwrap().push(closes);
+            Ok(Vec::new())
+        }
+
+        fn end_utterance(&mut self) -> Result<Vec<Segment>> {
+            *self.1.lock().unwrap() += 1;
+            Ok(Vec::new())
+        }
+    }
+
+    #[test]
+    fn only_the_last_window_of_an_utterance_is_marked_as_closing() {
+        let recorder = CloseRecorder::default();
+        let mut config = AudioConfig::new(lang("en"), lang("es"));
+        config.window = Duration::from_secs(1);
+        config.overlap = Duration::from_millis(250);
+        let mut processor = AudioProcessor::new(
+            config,
+            Box::new(recorder.clone()),
+            Arc::new(FakeTranslator::new()),
+            Arc::new(TranslationCache::default()),
+            Arc::new(RecordingSink::new()),
+            Arc::new(FakeClock::new()),
+        );
+        let mut position = Duration::ZERO;
+        for amplitude in std::iter::repeat_n(SPEECH, 25).chain(std::iter::repeat_n(0.0, 5)) {
+            let samples = vec![amplitude; duration_to_samples(Duration::from_millis(CHUNK_MS))];
+            processor.push(AudioChunk::new(samples, position));
+            position += Duration::from_millis(CHUNK_MS);
+        }
+        let marks = recorder.0.lock().unwrap().clone();
+        assert!(marks.len() >= 3, "{marks:?}");
+        let ended = *recorder.1.lock().unwrap();
+        // O la última ventana va marcada como de cierre, o se avisa con `end_utterance` (si la
+        // última ventana coincidió con el final del habla y no quedó audio nuevo que enviar).
+        let last_closes = marks[marks.len() - 1];
+        assert!(marks[..marks.len() - 1].iter().all(|c| !c), "{marks:?}");
+        assert!(
+            last_closes || ended == 1,
+            "{marks:?}, end_utterance: {ended}"
+        );
+    }
+
+    #[test]
+    fn a_stt_without_close_support_still_receives_every_window_through_push() {
+        let mut rig = rig();
+        rig.feed(SPEECH, 10);
+        rig.feed(0.0, 4);
+        assert!(rig.stt.pushes() >= 1, "FakeStt solo implementa push");
     }
 
     #[test]

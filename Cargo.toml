@@ -1,11 +1,11 @@
 [workspace]
 resolver = "3"
-members = ["crates/tr-core", "crates/tr-engine", "crates/tr-bindings"]
+members = ["crates/tr-core", "crates/tr-models", "crates/tr-adapters", "crates/tr-engine", "crates/tr-bindings"]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.95"
 license = "MIT"
 publish = false
 
@@ -19,7 +19,32 @@ napi = "3.15.0"
 napi-derive = "3.6.13"
 napi-build = "2.6.0"
 
+# Hito 2 (verificadas 2026-10-27: activas, MIT/Apache-2.0).
+# `oar-ocr` exige rustc 1.95 y fija `ort = "=2.0.0-rc.13"`: toda la ML del workspace usa esa versión.
+xcap = "0.9.8"
+oar-ocr = { version = "=0.10.2", default-features = false, features = ["simd"] }
+# Sin `tls-native` (arrastra openssl-sys y exige libssl-dev): ver docs/adr/0003-ocr-translation-engines.md.
+ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "ndarray", "copy-dylibs", "download-binaries", "tls-rustls"] }
+sentencepiece-model = "0.1.4"
+spm_precompiled = "0.1.4"
+ndarray = "0.17.2"
+image = { version = "0.25.10", default-features = false }
+ureq = "3.5.0"
+sha2 = "0.11.1"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+
+# Hito 3 (verificadas 2026-10-27: activas, MIT/Apache-2.0).
+# `realfft` (sobre RustFFT, Rust puro) para el espectrograma de Whisper.
+realfft = "=3.5.1"
+# Captura de audio del sistema: `cpal` (WASAPI loopback en Windows, CoreAudio en macOS) y, en Linux,
+# `pulseaudio` (cliente PulseAudio/PipeWire en Rust puro, sin libpulse-dev ni libasound2-dev).
+cpal = "=0.18.2"
+pulseaudio = "=0.3.2"
+
 tr-core = { path = "crates/tr-core" }
+tr-models = { path = "crates/tr-models" }
+tr-adapters = { path = "crates/tr-adapters", default-features = false }
 tr-engine = { path = "crates/tr-engine" }
 
 # `unsafe` se prohíbe con #![forbid(unsafe_code)] en tr-core y tr-engine; las macros de napi

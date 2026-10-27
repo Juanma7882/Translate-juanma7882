@@ -9,11 +9,26 @@
  */
 export declare const __napiBindingTarget: 'native' | 'wasm32-wasi' | 'wasm32-wasip1'
 
-/** Aplica opciones al motor. Detiene lo que esté en marcha. */
+/**
+ * Aplica opciones al motor. Si alguna es inválida falla sin cambiar nada; si todas lo son,
+ * detiene lo que esté en marcha.
+ */
 export declare function configure(options: EngineOptions): void
+
+/**
+ * Descarga los modelos que falten para el par (`scope`: `text`, `audio` o `all`); el avance llega
+ * por `onModelProgress`.
+ */
+export declare function downloadModels(from: string, to: string, scopeName?: string | undefined | null): Promise<void>
 
 /** Opciones del motor; todas opcionales. Se aplican en el próximo arranque. */
 export interface EngineOptions {
+  /** Conjunto de motores: `fake` (demostración, por defecto) o `real`. */
+  engines?: string
+  /** Carpeta de modelos (ruta absoluta). Por defecto, la de datos del usuario. */
+  modelsDir?: string
+  /** Ruta de un manifiesto de modelos alternativo (JSON), p. ej. con un espejo propio. Avanzado. */
+  manifestPath?: string
   /** Milisegundos entre capturas de pantalla. */
   frameIntervalMs?: number
   /** Pasar a audio automáticamente cuando no hay texto en la región. */
@@ -32,15 +47,44 @@ export interface ErrorEvent {
   message: string
 }
 
+export interface LangPair {
+  from: string
+  to: string
+}
+
 export interface ModeEvent {
   /** `text`, `audio` o `paused`. */
   mode: string
+}
+
+/** Idiomas y pares disponibles según el manifiesto de modelos. */
+export declare function modelCatalog(): ModelCatalog
+
+/** Idiomas y pares para los que hay modelos (lo que la interfaz puede ofrecer). */
+export interface ModelCatalog {
+  /** Idiomas que el OCR sabe reconocer. */
+  ocrLanguages: Array<string>
+  /** Idiomas que el reconocimiento de voz sabe transcribir (subtítulos del audio). */
+  sttLanguages: Array<string>
+  /** Pares de traducción disponibles. */
+  pairs: Array<LangPair>
 }
 
 export interface ModelProgressEvent {
   model: string
   downloaded: number
   total?: number
+}
+
+/** Estado de los modelos necesarios para `from` -> `to` (`scope`: `text`, `audio` o `all`). */
+export declare function modelStatus(from: string, to: string, scopeName?: string | undefined | null): Promise<Array<ModelStatusInfo>>
+
+export interface ModelStatusInfo {
+  id: string
+  /** `missing`, `downloading` o `ready`. */
+  state: string
+  /** Tamaño total de los archivos del modelo, en bytes. */
+  size: number
 }
 
 export declare function onError(callback: (event: ErrorEvent) => void): void
@@ -53,7 +97,13 @@ export declare function onSubtitle(callback: (event: SubtitleEvent) => void): vo
 
 export declare function onTranslation(callback: (event: TranslationEvent) => void): void
 
-/** Rectángulo de pantalla en píxeles físicos. */
+/** Pausa la captura (y el audio, si lo hay). No hace nada si no hay una traducción de región en marcha. */
+export declare function pause(): void
+
+/** Uso interno de `api.js`: cuántos eventos de progreso de modelos se han emitido en total. */
+export declare function progressEventsEmitted(): number
+
+/** Rectángulo de pantalla en píxeles físicos, relativo al monitor indicado. */
 export interface Rect {
   x: number
   y: number
@@ -62,6 +112,9 @@ export interface Rect {
   /** Monitor (0 = principal). */
   monitor?: number
 }
+
+/** Reanuda tras una pausa, en el modo previo. */
+export declare function resume(): void
 
 /** Subtitula el audio del sistema. Reemplaza lo que estuviera en marcha. */
 export declare function startAudioSubtitles(from: string, to: string): void

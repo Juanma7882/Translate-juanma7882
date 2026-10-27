@@ -836,11 +836,17 @@ function __napiStampBindingTarget(exportsObject, target) {
 module.exports.__napiBindingTarget = __napiStampBindingTarget(nativeBinding, __napiLoadedBindingTarget)
 module.exports = nativeBinding
 module.exports.configure = nativeBinding.configure
+module.exports.downloadModels = nativeBinding.downloadModels
+module.exports.modelCatalog = nativeBinding.modelCatalog
+module.exports.modelStatus = nativeBinding.modelStatus
 module.exports.onError = nativeBinding.onError
 module.exports.onModeChanged = nativeBinding.onModeChanged
 module.exports.onModelProgress = nativeBinding.onModelProgress
 module.exports.onSubtitle = nativeBinding.onSubtitle
 module.exports.onTranslation = nativeBinding.onTranslation
+module.exports.pause = nativeBinding.pause
+module.exports.progressEventsEmitted = nativeBinding.progressEventsEmitted
+module.exports.resume = nativeBinding.resume
 module.exports.startAudioSubtitles = nativeBinding.startAudioSubtitles
 module.exports.startRegionTranslation = nativeBinding.startRegionTranslation
 module.exports.stop = nativeBinding.stop

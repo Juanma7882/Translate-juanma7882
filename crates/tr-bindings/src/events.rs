@@ -2,6 +2,7 @@
 //!
 //! Solo cruzan texto y metadatos; nunca píxeles ni audio.
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
@@ -102,9 +103,21 @@ fn mode_name(mode: Mode) -> &'static str {
 /// Convierte los eventos del núcleo y los entrega a los callbacks registrados.
 pub struct BindingSink(pub Arc<Callbacks>);
 
+/// Eventos de progreso de modelos emitidos desde el arranque del proceso. `api.js` lo usa para
+/// saber cuántos le faltan por recibir: la promesa de una descarga y sus eventos viajan por
+/// canales distintos hacia JS y no llegan necesariamente en orden.
+static MODEL_PROGRESS_EMITTED: AtomicU64 = AtomicU64::new(0);
+
+pub fn model_progress_emitted() -> u64 {
+    MODEL_PROGRESS_EMITTED.load(Ordering::Acquire)
+}
+
 impl EventSink for BindingSink {
     fn emit(&self, event: Event) {
         let callbacks = &self.0;
+        if matches!(event, Event::ModelProgress { .. }) {
+            MODEL_PROGRESS_EMITTED.fetch_add(1, Ordering::AcqRel);
+        }
         match event {
             Event::Translation {
                 original,

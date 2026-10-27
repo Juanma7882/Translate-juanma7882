@@ -103,6 +103,57 @@ fn production_sources(crate_dir: &str) -> Vec<(PathBuf, String)> {
         .collect()
 }
 
+/// Único crate autorizado a escribir a disco (modelos): ver `tr-models`.
+const WRITER_CRATE: &str = "tr-models";
+
+fn all_crates() -> Vec<String> {
+    let crates = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let mut names: Vec<String> = fs::read_dir(crates)
+        .unwrap()
+        .map(|e| e.unwrap())
+        .filter(|e| e.path().join("src").is_dir())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
+}
+
+/// Todos los crates salvo el autorizado: un crate nuevo queda vigilado sin tocar este test.
+fn scanned_crates() -> Vec<String> {
+    all_crates()
+        .into_iter()
+        .filter(|c| c != WRITER_CRATE)
+        .collect()
+}
+
+#[test]
+fn every_crate_is_scanned_except_the_model_writer() {
+    let scanned = scanned_crates();
+    for must in ["tr-core", "tr-engine", "tr-bindings"] {
+        assert!(
+            scanned.iter().any(|c| c == must),
+            "{must} debe vigilarse: {scanned:?}"
+        );
+    }
+    assert!(!scanned.iter().any(|c| c == WRITER_CRATE));
+}
+
+#[test]
+fn only_the_model_writer_may_lift_the_disk_write_lint() {
+    let mut offenders = Vec::new();
+    for crate_dir in scanned_crates() {
+        for (path, code) in production_sources(&crate_dir) {
+            if code.contains("disallowed_methods") && code.contains("allow(") {
+                offenders.push(path.display().to_string());
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "solo {WRITER_CRATE} puede desactivar el lint: {offenders:#?}"
+    );
+}
+
 #[test]
 fn production_code_has_no_disk_or_print_apis() {
     let forbidden = [
@@ -117,8 +168,8 @@ fn production_code_has_no_disk_or_print_apis() {
         "fs::copy",
     ];
     let mut offenses = Vec::new();
-    for crate_dir in ["tr-core", "tr-engine"] {
-        for (path, code) in production_sources(crate_dir) {
+    for crate_dir in scanned_crates() {
+        for (path, code) in production_sources(&crate_dir) {
             for needle in forbidden {
                 // Los comentarios pueden mencionar estas APIs.
                 let used = code

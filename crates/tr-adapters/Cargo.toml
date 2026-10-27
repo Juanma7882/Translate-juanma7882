@@ -1,0 +1,50 @@
+[package]
+name = "tr-adapters"
+description = "Adaptadores de los puertos de tr-core: captura, OCR y traducción reales"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# Cada motor va tras su feature: se puede compilar con todos, con uno solo o con ninguno.
+[features]
+default = ["screen-xcap", "ocr-paddle", "translate-opus", "stt-whisper", "audio-loopback"]
+screen-xcap = ["dep:xcap"]
+ocr-paddle = ["dep:oar-ocr", "dep:ort", "dep:image"]
+translate-opus = ["dep:ort", "dep:sentencepiece-model", "dep:spm_precompiled", "dep:serde_json"]
+stt-whisper = ["dep:ort", "dep:realfft", "dep:serde_json"]
+# Captura del audio del sistema: cpal (Windows/macOS) o pulseaudio (Linux), según el destino.
+audio-loopback = ["dep:cpal", "dep:pulseaudio"]
+
+# Los adaptadores solo LEEN modelos (rutas que les entrega la composición); nunca escriben.
+[dependencies]
+tr-core.workspace = true
+xcap = { workspace = true, optional = true }
+oar-ocr = { workspace = true, optional = true }
+ort = { workspace = true, optional = true }
+image = { workspace = true, optional = true }
+sentencepiece-model = { workspace = true, optional = true }
+spm_precompiled = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+realfft = { workspace = true, optional = true }
+
+# Captura de audio: Linux habla el protocolo de PulseAudio/PipeWire en Rust puro; Windows y macOS
+# usan cpal. En Linux no se enlaza ALSA (cpal exigiría libasound2-dev).
+[target.'cfg(target_os = "linux")'.dependencies]
+pulseaudio = { workspace = true, optional = true }
+
+[target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
+cpal = { workspace = true, optional = true }
+
+[dev-dependencies]
+# Solo para decodificar los PNG de prueba (tests/fixtures).
+image = { workspace = true, features = ["png"] }
+
+# Solo para dibujar una ventana de color conocido en el test de captura real (xcb 1.7.1, MIT,
+# verificada el 2026-10-27; ya forma parte del árbol de `xcap`).
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+xcb = "1.7.1"
+
+[lints]
+workspace = true
