@@ -1,0 +1,26 @@
+{
+  "name": "translate-app",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Traductor de pantalla y audio (shell de Electron)",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "typecheck": "tsc --noEmit",
+    "smoke": "npm run build && TR_SMOKE=1 electron . --no-sandbox"
+  },
+  "dependencies": {
+    "tr-bindings": "file:../crates/tr-bindings"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "electron": "44.9.3",
+    "electron-vite": "5.0.0",
+    "typescript": "5.9.3",
+    "vite": "7.3.7"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}
