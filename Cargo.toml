@@ -1,0 +1,32 @@
+[workspace]
+resolver = "3"
+members = ["crates/tr-core", "crates/tr-engine", "crates/tr-bindings"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT"
+publish = false
+
+# Versiones verificadas el 2026-10-27 (activas, licencia MIT/Apache-2.0).
+[workspace.dependencies]
+thiserror = "2.0.21"
+crossbeam-channel = "0.5.17"
+lru = "0.19.0"
+# napi-rs: MIT, actualizados en 2026-10, MSRV 1.88.
+napi = "3.15.0"
+napi-derive = "3.6.13"
+napi-build = "2.6.0"
+
+tr-core = { path = "crates/tr-core" }
+tr-engine = { path = "crates/tr-engine" }
+
+# `unsafe` se prohíbe con #![forbid(unsafe_code)] en tr-core y tr-engine; las macros de napi
+# generan código unsafe, así que tr-bindings no puede heredar un forbid global.
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+# Nada de contenido a logs: imprimir está prohibido (ver docs/adr/0002-architecture.md).
+print_stdout = "deny"
+print_stderr = "deny"
+dbg_macro = "deny"

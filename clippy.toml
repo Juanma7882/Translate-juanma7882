@@ -1,0 +1,9 @@
+# Regla no negociable: capturas, audio, texto y traducciones nunca se escriben a disco.
+# Excepción prevista: el crate `tr-models` (modelos y configuración), con #![allow] justificado.
+disallowed-methods = [
+    { path = "std::fs::write", reason = "nada de contenido a disco; ver docs/adr/0002-architecture.md" },
+    { path = "std::fs::copy", reason = "nada de contenido a disco" },
+    { path = "std::fs::File::create", reason = "nada de contenido a disco" },
+    { path = "std::fs::File::create_new", reason = "nada de contenido a disco" },
+    { path = "std::fs::OpenOptions::open", reason = "nada de contenido a disco" },
+]
