@@ -1,0 +1,165 @@
+//! Integración del Engine con los motores de demostración.
+
+use std::sync::Arc;
+use std::time::Duration;
+
+use tr_core::fallback::FallbackConfig;
+use tr_core::runner::LoopTiming;
+use tr_core::testing::RecordingSink;
+use tr_core::{Event, Lang, Mode, Region};
+use tr_engine::{Engine, EngineConfig};
+
+const WAIT: Duration = Duration::from_secs(5);
+
+fn fast_config() -> EngineConfig {
+    EngineConfig {
+        timing: LoopTiming {
+            interval: Duration::from_millis(5),
+            idle_interval: Duration::from_millis(5),
+        },
+        fake_audio_pace: Duration::from_millis(2),
+        ..EngineConfig::default()
+    }
+}
+
+fn engine(config: EngineConfig) -> (Engine, RecordingSink) {
+    let sink = RecordingSink::new();
+    (Engine::new(config, Arc::new(sink.clone())), sink)
+}
+
+fn region() -> Region {
+    Region::new(0, 0, 32, 32, 0).unwrap()
+}
+
+fn lang(code: &str) -> Lang {
+    Lang::new(code).unwrap()
+}
+
+fn translations(events: &[Event]) -> Vec<(String, String)> {
+    events
+        .iter()
+        .filter_map(|e| match e {
+            Event::Translation {
+                original,
+                translated,
+                ..
+            } => Some((original.clone(), translated.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn region_translation_runs_end_to_end_and_stops() {
+    let (mut engine, sink) = engine(fast_config());
+    engine
+        .start_region(region(), lang("en"), lang("es"))
+        .unwrap();
+    assert!(engine.is_running());
+
+    assert!(sink.wait_until(WAIT, |e| translations(e).len() >= 2));
+    let first = translations(&sink.events());
+    assert_eq!(
+        first[0],
+        ("Hello, world".into(), "[es] Hello, world".into())
+    );
+    assert_eq!(first[1].0, "Where is the station?");
+
+    engine.stop();
+    assert!(!engine.is_running());
+    let count = sink.len();
+    std::thread::sleep(Duration::from_millis(100));
+    assert_eq!(sink.len(), count, "sin eventos después de stop");
+}
+
+#[test]
+fn audio_subtitles_run_end_to_end_and_stop() {
+    let (mut engine, sink) = engine(fast_config());
+    engine.start_audio(lang("en"), lang("es")).unwrap();
+    assert!(sink.wait_until(WAIT, |e| e.iter().any(|ev| matches!(
+        ev,
+        Event::Subtitle { original, translated: Some(t), is_final: true, .. }
+            if original == "Good morning everyone" && t == "[es] Good morning everyone"
+    ))));
+    engine.stop();
+    let count = sink.len();
+    std::thread::sleep(Duration::from_millis(100));
+    assert_eq!(sink.len(), count);
+}
+
+#[test]
+fn region_with_fallback_starts_in_text_mode() {
+    let config = EngineConfig {
+        fallback: Some(FallbackConfig::default()),
+        ..fast_config()
+    };
+    let (mut engine, sink) = engine(config);
+    engine
+        .start_region(region(), lang("en"), lang("es"))
+        .unwrap();
+    assert!(sink.wait_until(WAIT, |e| {
+        e.first() == Some(&Event::ModeChanged { mode: Mode::Text }) && !translations(e).is_empty()
+    }));
+    engine.stop();
+}
+
+#[test]
+fn starting_again_replaces_the_running_pipeline() {
+    let (mut engine, sink) = engine(fast_config());
+    engine
+        .start_region(region(), lang("en"), lang("es"))
+        .unwrap();
+    assert!(sink.wait_until(WAIT, |e| !translations(e).is_empty()));
+    engine.start_audio(lang("en"), lang("fr")).unwrap();
+    sink.take();
+    assert!(sink.wait_until(WAIT, |e| {
+        e.iter().any(|ev| matches!(ev, Event::Subtitle { .. }))
+    }));
+    assert!(
+        translations(&sink.events()).is_empty(),
+        "el pipeline de región ya no emite"
+    );
+    engine.stop();
+}
+
+#[test]
+fn stop_returns_quickly_even_with_long_capture_intervals() {
+    let config = EngineConfig {
+        timing: LoopTiming {
+            interval: Duration::from_secs(5),
+            idle_interval: Duration::from_secs(5),
+        },
+        fake_audio_pace: Duration::from_secs(5),
+        ..EngineConfig::default()
+    };
+    let (mut engine, _sink) = engine(config);
+    for start_audio in [false, true] {
+        if start_audio {
+            engine.start_audio(lang("en"), lang("es")).unwrap();
+        } else {
+            engine
+                .start_region(region(), lang("en"), lang("es"))
+                .unwrap();
+        }
+        std::thread::sleep(Duration::from_millis(50)); // los hilos ya están esperando su turno
+        let started = std::time::Instant::now();
+        engine.stop();
+        assert!(
+            started.elapsed() < Duration::from_millis(300),
+            "stop() tardó {:?}",
+            started.elapsed()
+        );
+    }
+}
+
+#[test]
+fn pause_and_resume_are_safe_in_every_state() {
+    let (mut engine, _sink) = engine(fast_config());
+    engine.pause(); // sin nada en marcha
+    engine.resume();
+    engine.start_audio(lang("en"), lang("es")).unwrap();
+    engine.pause(); // el audio puro ignora pausa
+    engine.resume();
+    engine.stop();
+    engine.stop(); // idempotente
+}
