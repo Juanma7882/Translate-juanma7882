@@ -5,7 +5,9 @@ import type {
   EngineOptions,
   ErrorEvent,
   ModeEvent,
+  ModelCatalog,
   ModelProgressEvent,
+  ModelStatusInfo,
   Rect,
   SubtitleEvent,
   TranslationEvent,
@@ -31,11 +33,23 @@ export type Command =
   | { type: 'startRegion'; rect: Rect; from: string; to: string }
   | { type: 'startAudio'; from: string; to: string }
   | { type: 'stop' }
+  | { type: 'pause' }
+  | { type: 'resume' }
+  | { type: 'modelCatalog' }
+  | { type: 'modelStatus'; from: string; to: string }
+  | { type: 'downloadModels'; from: string; to: string }
+
+/** Qué devuelve cada orden al completarse. */
+export type CommandResult<C extends Command> = C extends { type: 'modelStatus' }
+  ? ModelStatusInfo[]
+  : C extends { type: 'modelCatalog' }
+    ? ModelCatalog
+    : void
 
 export type Request = Command & { id: number }
 
 /** Mensajes del motor hacia main. */
 export type WorkerMessage =
   | { type: 'ready' }
-  | { type: 'reply'; id: number; error?: string }
+  | { type: 'reply'; id: number; value?: unknown; error?: string }
   | ({ type: 'event' } & EngineEvent)

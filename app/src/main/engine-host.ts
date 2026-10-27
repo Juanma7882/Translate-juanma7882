@@ -6,9 +6,10 @@
 
 import { EventEmitter } from 'node:events'
 
-import { utilityProcess, type UtilityProcess } from 'electron'
+import { utilityProcess } from 'electron'
+import type { UtilityProcess } from 'electron'
 
-import type { Command, EngineEvent, WorkerMessage } from '../shared/protocol'
+import type { Command, CommandResult, EngineEvent, WorkerMessage } from '../shared/protocol.ts'
 
 export interface EngineHostOptions {
   /** Ruta del script del proceso utilitario. */
@@ -18,6 +19,7 @@ export interface EngineHostOptions {
   restartMaxMs?: number
   /** Si el proceso vivió al menos esto, la siguiente caída vuelve a empezar desde la base. */
   stableMs?: number
+  /** Tiempo máximo para que el motor responda a una orden (las descargas no tienen límite). */
   requestTimeoutMs?: number
 }
 
@@ -34,12 +36,16 @@ interface HostEvents {
 }
 
 interface Pending {
-  resolve: () => void
+  resolve: (value: unknown) => void
   reject: (error: Error) => void
-  timer: NodeJS.Timeout
+  timer: NodeJS.Timeout | null
 }
 
+/** Órdenes que pueden tardar minutos y no deben cortarse por tiempo. */
+const UNBOUNDED: ReadonlySet<Command['type']> = new Set(['downloadModels'])
+
 export class EngineHost extends EventEmitter<HostEvents> {
+  private readonly options: EngineHostOptions
   private readonly restartBaseMs: number
   private readonly restartMaxMs: number
   private readonly stableMs: number
@@ -54,8 +60,9 @@ export class EngineHost extends EventEmitter<HostEvents> {
   private nextId = 1
   private readonly pending = new Map<number, Pending>()
 
-  constructor(private readonly options: EngineHostOptions) {
+  constructor(options: EngineHostOptions) {
     super()
+    this.options = options
     this.restartBaseMs = options.restartBaseMs ?? 250
     this.restartMaxMs = options.restartMaxMs ?? 5000
     this.stableMs = options.stableMs ?? 10_000
@@ -92,17 +99,19 @@ export class EngineHost extends EventEmitter<HostEvents> {
     })
   }
 
-  /** Envía una orden y espera la confirmación del motor. */
-  send(command: Command): Promise<void> {
+  /** Envía una orden y espera su resultado (p. ej. el estado de los modelos). */
+  send<C extends Command>(command: C): Promise<CommandResult<C>> {
     const child = this.child
     if (!child || !this.ready) return Promise.reject(new Error('engine is not ready'))
     const id = this.nextId++
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id)
-        reject(new Error(`engine did not answer "${command.type}" in time`))
-      }, this.requestTimeoutMs)
-      this.pending.set(id, { resolve, reject, timer })
+    return new Promise<CommandResult<C>>((resolve, reject) => {
+      const timer = UNBOUNDED.has(command.type)
+        ? null
+        : setTimeout(() => {
+            this.pending.delete(id)
+            reject(new Error(`engine did not answer "${command.type}" in time`))
+          }, this.requestTimeoutMs)
+      this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject, timer })
       child.postMessage({ ...command, id })
     })
   }
@@ -140,8 +149,8 @@ export class EngineHost extends EventEmitter<HostEvents> {
         const pending = this.pending.get(message.id)
         if (!pending) return
         this.pending.delete(message.id)
-        clearTimeout(pending.timer)
-        if (message.error === undefined) pending.resolve()
+        if (pending.timer) clearTimeout(pending.timer)
+        if (message.error === undefined) pending.resolve(message.value)
         else pending.reject(new Error(message.error))
         return
       }
@@ -158,7 +167,7 @@ export class EngineHost extends EventEmitter<HostEvents> {
     this.child = null
     this.ready = false
     for (const pending of this.pending.values()) {
-      clearTimeout(pending.timer)
+      if (pending.timer) clearTimeout(pending.timer)
       pending.reject(new Error('engine process exited'))
     }
     this.pending.clear()
