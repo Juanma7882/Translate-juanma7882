@@ -21,6 +21,7 @@ import {
 
 const catalog: ModelCatalog = {
   ocrLanguages: ['en', 'es', 'ja', 'fr'],
+  sttLanguages: ['en', 'es', 'ja'],
   pairs: [
     { from: 'en', to: 'es' },
     { from: 'es', to: 'en' },
@@ -32,8 +33,8 @@ const status = (id: string, state: ModelStatusInfo['state'], size: number): Mode
 describe('idiomas', () => {
   test('el origen solo ofrece idiomas con OCR y con algún par de traducción', () => {
     assert.deepEqual(sourceLanguages(catalog), ['en', 'es'], 'ja y fr tienen OCR pero ningún par')
-    assert.deepEqual(sourceLanguages({ ocrLanguages: [], pairs: [{ from: 'en', to: 'es' }] }), [], 'sin OCR no se ofrece')
-    assert.deepEqual(sourceLanguages({ ocrLanguages: ['en'], pairs: [] }), [])
+    assert.deepEqual(sourceLanguages({ ocrLanguages: [], sttLanguages: [], pairs: [{ from: 'en', to: 'es' }] }), [], 'sin OCR no se ofrece')
+    assert.deepEqual(sourceLanguages({ ocrLanguages: ['en'], sttLanguages: [], pairs: [] }), [])
   })
 
   test('el destino depende del origen', () => {
@@ -46,7 +47,7 @@ describe('idiomas', () => {
     assert.deepEqual(pickPair(catalog, 'en', 'es'), { from: 'en', to: 'es' })
     assert.deepEqual(pickPair(catalog, 'es', 'es'), { from: 'es', to: 'en' }, 'el destino se ajusta al origen nuevo')
     assert.deepEqual(pickPair(catalog, 'ja', 'es'), { from: 'en', to: 'es' }, 'un origen sin pares pasa al primero disponible')
-    assert.equal(pickPair({ ocrLanguages: [], pairs: [] }, 'en', 'es'), null)
+    assert.equal(pickPair({ ocrLanguages: [], sttLanguages: [], pairs: [] }, 'en', 'es'), null)
   })
 
   test('languageError rechaza idiomas iguales y pares sin modelos', () => {

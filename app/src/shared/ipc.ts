@@ -4,7 +4,7 @@
 // `window.trSettings`); nunca ve `ipcRenderer`, Node ni el sistema de archivos. Solo viajan
 // parámetros de control, texto de traducciones y metadatos.
 
-import type { ModelCatalog, ModelStatusInfo } from 'tr-bindings'
+import type { ModelCatalog, ModelScope, ModelStatusInfo } from 'tr-bindings'
 
 import type { Settings, SettingsPatch, UpdateResult } from './settings.ts'
 
@@ -88,8 +88,8 @@ export interface SettingsApi {
   getSettings(): Promise<Settings>
   updateSettings(patch: SettingsPatch): Promise<UpdateResult>
   modelCatalog(): Promise<ModelCatalog>
-  modelStatus(from: string, to: string): Promise<ModelStatusInfo[]>
-  downloadModels(from: string, to: string): Promise<void>
+  modelStatus(from: string, to: string, scope?: ModelScope): Promise<ModelStatusInfo[]>
+  downloadModels(from: string, to: string, scope?: ModelScope): Promise<void>
   onSettingsChanged(listener: (settings: Settings) => void): void
   onModelProgress(listener: (progress: ModelProgress) => void): void
   onAppState(listener: (state: AppState) => void): void

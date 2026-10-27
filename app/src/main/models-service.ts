@@ -4,7 +4,7 @@
 // `configure` detiene lo que el motor tenga en marcha, así que solo se llama cuando no hay una
 // traducción en curso (o al arrancar una, que es justo cuando se quiere).
 
-import type { EngineOptions, ModelCatalog, ModelStatusInfo } from 'tr-bindings'
+import type { EngineOptions, ModelCatalog, ModelScope, ModelStatusInfo } from 'tr-bindings'
 
 import { engineOptionsFrom } from './engine-options.ts'
 import type { EngineHost } from './engine-host.ts'
@@ -58,9 +58,10 @@ export class ModelsService {
     return this.host.send({ type: 'modelCatalog' })
   }
 
-  async status(from: string, to: string): Promise<ModelStatusInfo[]> {
+  /** `scope`: modelos de texto (por defecto), de audio o ambos. */
+  async status(from: string, to: string, scope?: ModelScope): Promise<ModelStatusInfo[]> {
     await this.ensureConfigured()
-    return this.host.send({ type: 'modelStatus', from, to })
+    return this.host.send({ type: 'modelStatus', from, to, scope })
   }
 
   /** Avisa cada vez que una descarga termina bien. */
@@ -69,9 +70,9 @@ export class ModelsService {
   }
 
   /** Descarga lo que falte; el avance llega como eventos `modelProgress` del motor. */
-  async download(from: string, to: string): Promise<void> {
+  async download(from: string, to: string, scope?: ModelScope): Promise<void> {
     await this.ensureConfigured()
-    await this.host.send({ type: 'downloadModels', from, to })
+    await this.host.send({ type: 'downloadModels', from, to, scope })
     for (const listener of this.downloadedListeners) listener()
   }
 }

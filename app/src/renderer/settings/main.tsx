@@ -26,6 +26,7 @@ function App({ api }: { api: NonNullable<typeof window.trSettings> }) {
   const [settings, setSettings] = useState<Settings | null>(null)
   const [catalog, setCatalog] = useState<ModelCatalog | null>(null)
   const [statuses, setStatuses] = useState<ModelStatusInfo[]>([])
+  const [audioStatuses, setAudioStatuses] = useState<ModelStatusInfo[]>([])
   const [progress, setProgress] = useState<DownloadProgress>({})
   const [download, setDownload] = useState<Download>({ phase: 'idle' })
   const [errors, setErrors] = useState<string[]>([])
@@ -40,6 +41,12 @@ function App({ api }: { api: NonNullable<typeof window.trSettings> }) {
         setStatuses(await api.modelStatus(from, to))
       } catch {
         setStatuses([])
+      }
+      // Los modelos de audio (voz) pueden no existir para este idioma: sin fila en ese caso.
+      try {
+        setAudioStatuses(await api.modelStatus(from, to, 'audio'))
+      } catch {
+        setAudioStatuses([])
       }
     },
     [api],
@@ -64,7 +71,10 @@ function App({ api }: { api: NonNullable<typeof window.trSettings> }) {
   const to = settings?.to
   useEffect(() => {
     if (from && to && engines === 'real') void refreshStatus(from, to)
-    else setStatuses([])
+    else {
+      setStatuses([])
+      setAudioStatuses([])
+    }
   }, [from, to, engines, refreshStatus])
 
   const save = useCallback(
@@ -84,14 +94,15 @@ function App({ api }: { api: NonNullable<typeof window.trSettings> }) {
   )
 
   const summary = useMemo(() => summarize(statuses), [statuses])
+  const audioSummary = useMemo(() => summarize(audioStatuses), [audioStatuses])
 
-  const startDownload = useCallback(async () => {
+  const startDownload = useCallback(async (scope?: 'audio') => {
     const current = settingsRef.current
     if (!current) return
     setProgress({})
     setDownload({ phase: 'running' })
     try {
-      await api.downloadModels(current.from, current.to)
+      await api.downloadModels(current.from, current.to, scope)
       setDownload({ phase: 'idle' })
     } catch (error) {
       setDownload({ phase: 'error', message: error instanceof Error ? error.message : 'No se pudieron descargar los modelos.' })
@@ -103,7 +114,7 @@ function App({ api }: { api: NonNullable<typeof window.trSettings> }) {
 
   const sources = catalog ? sourceLanguages(catalog) : [settings.from]
   const targets = catalog ? targetLanguages(catalog, settings.from) : [settings.to]
-  const percent = overallPercent(progress, summary.missing)
+  const percent = overallPercent(progress, [...summary.missing, ...audioSummary.missing])
   const overlay = settings.overlay
   const busy = download.phase === 'running'
 
@@ -197,6 +208,25 @@ function App({ api }: { api: NonNullable<typeof window.trSettings> }) {
             <button type="button" id="download" disabled={busy} onClick={() => void startDownload()}>
               {download.phase === 'error' ? 'Reintentar descarga' : 'Descargar modelos'}
             </button>
+          )}
+          {audioStatuses.length > 0 && (
+            <div id="audio-models">
+              <h2>Subtítulos del audio</h2>
+              <ul>
+                {audioStatuses.map((model) => (
+                  <li key={model.id} data-state={model.state}>
+                    {model.id} · {formatBytes(model.size)} · {model.state === 'ready' ? 'listo' : model.state === 'downloading' ? 'descargando' : 'falta'}
+                  </li>
+                ))}
+              </ul>
+              {audioSummary.allReady ? (
+                <p id="audio-models-ready">Los modelos de audio están listos.</p>
+              ) : (
+                <button type="button" id="download-audio" disabled={busy} onClick={() => void startDownload('audio')}>
+                  Descargar modelos de audio ({formatBytes(audioSummary.missingBytes)})
+                </button>
+              )}
+            </div>
           )}
         </fieldset>
       )}

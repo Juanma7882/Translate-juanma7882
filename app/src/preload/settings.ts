@@ -20,8 +20,8 @@ const api: SettingsApi = {
   getSettings: () => ipcRenderer.invoke(GET),
   updateSettings: (patch) => ipcRenderer.invoke(UPDATE, patch),
   modelCatalog: () => ipcRenderer.invoke(MODELS_CATALOG),
-  modelStatus: (from, to) => ipcRenderer.invoke(MODELS_STATUS, from, to),
-  downloadModels: (from, to) => ipcRenderer.invoke(MODELS_DOWNLOAD, from, to),
+  modelStatus: (from, to, scope) => ipcRenderer.invoke(MODELS_STATUS, from, to, scope),
+  downloadModels: (from, to, scope) => ipcRenderer.invoke(MODELS_DOWNLOAD, from, to, scope),
   onSettingsChanged(listener) {
     ipcRenderer.on(CHANGED, (_event, settings: Settings) => listener(settings))
   },

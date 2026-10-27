@@ -7,6 +7,7 @@ import type {
   ModeEvent,
   ModelCatalog,
   ModelProgressEvent,
+  ModelScope,
   ModelStatusInfo,
   Rect,
   SubtitleEvent,
@@ -36,8 +37,8 @@ export type Command =
   | { type: 'pause' }
   | { type: 'resume' }
   | { type: 'modelCatalog' }
-  | { type: 'modelStatus'; from: string; to: string }
-  | { type: 'downloadModels'; from: string; to: string }
+  | { type: 'modelStatus'; from: string; to: string; scope?: ModelScope }
+  | { type: 'downloadModels'; from: string; to: string; scope?: ModelScope }
 
 /** Qué devuelve cada orden al completarse. */
 export type CommandResult<C extends Command> = C extends { type: 'modelStatus' }

@@ -2,6 +2,7 @@
 
 import { ipcMain } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
+import type { ModelScope } from 'tr-bindings'
 
 import { Channel } from '../shared/ipc.ts'
 import type { AppState, ModelProgress, Notice } from '../shared/ipc.ts'
@@ -12,6 +13,11 @@ import type { EngineHost } from './engine-host.ts'
 import type { ModelsService } from './models-service.ts'
 import type { SettingsStore } from './settings-store.ts'
 import type { WindowManager } from './windows.ts'
+
+/** El ámbito llega del renderer: solo se aceptan los valores conocidos (por defecto, texto). */
+function parseScope(value: unknown): ModelScope | undefined {
+  return value === 'audio' || value === 'all' || value === 'text' ? value : undefined
+}
 
 export interface SettingsIpcDeps {
   windows: WindowManager
@@ -41,8 +47,8 @@ export function registerSettingsIpc({ windows, settings, models, host, controlle
   handle(Channel.settingsGet, () => settings.get())
   handle(Channel.settingsUpdate, (patch: unknown) => settings.update(patch))
   handle(Channel.modelsCatalog, () => models.catalog())
-  handle(Channel.modelsStatus, (from: string, to: string) => models.status(String(from), String(to)))
-  handle(Channel.modelsDownload, (from: string, to: string) => models.download(String(from), String(to)))
+  handle(Channel.modelsStatus, (from: string, to: string, scope?: unknown) => models.status(String(from), String(to), parseScope(scope)))
+  handle(Channel.modelsDownload, (from: string, to: string, scope?: unknown) => models.download(String(from), String(to), parseScope(scope)))
 
   const onSettings = settings.onChange((s: Settings) => toWindow(Channel.settingsChanged, s))
   const onEvent = (event: EngineEvent): void => {

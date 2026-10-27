@@ -56,9 +56,9 @@ async function run(request: Request): Promise<unknown> {
     case 'modelCatalog':
       return engine.modelCatalog()
     case 'modelStatus':
-      return engine.modelStatus(request.from, request.to)
+      return engine.modelStatus(request.from, request.to, request.scope)
     case 'downloadModels':
-      return engine.downloadModels(request.from, request.to)
+      return engine.downloadModels(request.from, request.to, request.scope)
     default: {
       const unknown: never = request
       throw new Error(`unknown command: ${JSON.stringify(unknown)}`)
