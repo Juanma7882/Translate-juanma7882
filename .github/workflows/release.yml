@@ -1,0 +1,156 @@
+name: Release
+
+# Se dispara al empujar un tag `v*` (p. ej. v0.1.0). Construye el módulo nativo y el paquete de cada
+# plataforma y adjunta los artefactos a una release en BORRADOR (se revisa y se publica a mano).
+# Sin secretos de firma el release sale sin firmar: ver docs/release.md.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch: # solo construye y sube artefactos al run; no crea release
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux-x64, os: ubuntu-24.04, platform: linux, builder: "--linux --x64" }
+          - { name: win-x64, os: windows-2022, platform: win, builder: "--win --x64" }
+          - { name: mac-arm64, os: macos-14, platform: mac, builder: "--mac --arm64" }
+          - { name: mac-x64, os: macos-15-intel, platform: mac, builder: "--mac --x64" }
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: La versión de la app coincide con el tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          version="$(node -p "require('./app/package.json').version")"
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::el tag $GITHUB_REF_NAME no coincide con app/package.json ($version)"
+            exit 1
+          fi
+
+      - name: Dependencias del sistema (Linux)
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config clang libclang-dev \
+            libgbm-dev libegl-dev libwayland-dev libxcb1-dev libxcb-randr0-dev libxcb-shm0-dev \
+            libxcb-xfixes0-dev libpipewire-0.3-dev libspa-0.2-dev libasound2-dev libdbus-1-dev \
+            xvfb xauth libgtk-3-0t64 libnss3 libxss1 libxtst6 libatk-bridge2.0-0t64 rpm fakeroot
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            crates/tr-bindings/package-lock.json
+            app/package-lock.json
+
+      - name: Módulo nativo (release)
+        working-directory: crates/tr-bindings
+        run: |
+          npm ci
+          npm run build
+          npm test
+
+      - name: App (instalar, comprobar, compilar, preparar el nativo)
+        working-directory: app
+        run: |
+          npm ci
+          npm run typecheck
+          npm test
+          npm run build
+          npm run stage:native
+
+      # Los secretos no se pueden evaluar en `if:` de un paso; se vuelcan a variables de este paso.
+      - name: Decidir firma y notarización
+        shell: bash
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          extra=""
+          if [ "${{ matrix.platform }}" = "mac" ]; then
+            if [ -z "$CSC_LINK" ]; then
+              echo "::warning::sin CSC_LINK: el paquete de macOS saldrá SIN firmar ni notarizar"
+              echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
+            elif [ -n "$APPLE_ID" ] && [ -n "$APPLE_APP_SPECIFIC_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
+              echo "firma y notarización de macOS activadas"
+              extra="-c.mac.notarize=true"
+            else
+              echo "::warning::hay certificado pero faltan APPLE_*: se firma sin notarizar"
+            fi
+          elif [ "${{ matrix.platform }}" = "win" ]; then
+            if [ -z "$WIN_CSC_LINK" ]; then
+              echo "::warning::sin WIN_CSC_LINK: el instalador de Windows saldrá SIN firmar"
+            else
+              echo "firma de Windows activada"
+            fi
+          fi
+          echo "EB_EXTRA=$extra" >> "$GITHUB_ENV"
+
+      - name: electron-builder (sin publicar)
+        working-directory: app
+        shell: bash
+        env:
+          # Cada plataforma usa su propio certificado; vacío = sin firmar.
+          CSC_LINK: ${{ matrix.platform == 'win' && secrets.WIN_CSC_LINK || secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ matrix.platform == 'win' && secrets.WIN_CSC_KEY_PASSWORD || secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npx electron-builder ${{ matrix.builder }} --publish never $EB_EXTRA
+
+      - name: Prueba de humo del paquete (Linux)
+        if: matrix.platform == 'linux'
+        run: scripts/with-xvfb.sh scripts/verify-package.sh --skip-build
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: translate-${{ matrix.name }}
+          path: |
+            app/dist/Translate-*
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: release en borrador
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+          pattern: translate-*
+          merge-multiple: true
+      - name: Listar
+        run: ls -la artifacts
+      - uses: softprops/action-gh-release@v3
+        with:
+          draft: true
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          files: artifacts/*

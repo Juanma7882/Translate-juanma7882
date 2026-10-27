@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  test:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux, os: ubuntu-24.04 }
+          - { name: windows, os: windows-2022 }
+          - { name: macos, os: macos-14 }
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Dependencias del sistema (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          # Compilación: xcap (gbm, wayland, xcb, pipewire), bindgen (clang), audio (alsa).
+          # Ejecución de Electron y de los smokes: gtk, nss, xvfb.
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config clang libclang-dev \
+            libgbm-dev libegl-dev libwayland-dev libxcb1-dev libxcb-randr0-dev libxcb-shm0-dev \
+            libxcb-xfixes0-dev libpipewire-0.3-dev libspa-0.2-dev libasound2-dev libdbus-1-dev \
+            libgtk-3-0t64 libnss3 libxss1 libxtst6 libatk-bridge2.0-0t64 xvfb xauth
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            crates/tr-bindings/package-lock.json
+            app/package-lock.json
+
+      - name: Formato, lints y pruebas de Rust
+        run: |
+          cargo fmt --check
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --workspace
+
+      - name: Módulo nativo y pruebas de Node
+        working-directory: crates/tr-bindings
+        run: |
+          npm ci
+          npm run build:debug
+          npm test
+
+      - name: App (typecheck, pruebas y build)
+        working-directory: app
+        run: |
+          npm ci
+          npm run typecheck
+          npm test
+          npm run build
+
+      - name: Pruebas de humo (Linux, bajo xvfb)
+        if: runner.os == 'Linux'
+        working-directory: app
+        run: |
+          for smoke in 1 windows selector settings shell; do
+            echo "::group::TR_SMOKE=$smoke"
+            TR_SMOKE=$smoke ../scripts/with-xvfb.sh npx electron . --no-sandbox
+            echo "::endgroup::"
+          done
+
+      - name: Paquete en modo directorio (Linux) y prueba de humo del paquete
+        if: runner.os == 'Linux'
+        run: |
+          scripts/with-xvfb.sh scripts/verify-package.sh
+
+  workflows:
+    name: validar workflows
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: actionlint
+        run: |
+          bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
+          ./actionlint -color

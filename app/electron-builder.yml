@@ -1,0 +1,76 @@
+# Empaquetado con electron-builder (26.x). Ver docs/release.md.
+#
+# Local, sin publicar:   npm run pack:dir   (directorio, solo la plataforma actual)
+#                        npm run dist       (instaladores de la plataforma actual)
+# Nunca se publica desde aquí (`--publish never`): publica el workflow release.yml.
+appId: io.github.juan.translate
+productName: Translate
+copyright: Copyright (c) Translate
+
+directories:
+  output: dist
+  buildResources: build
+
+# Solo el código ya compilado por electron-vite. preact y tr-bindings están en devDependencies:
+# el primero va dentro del bundle del renderer; el segundo viaja como extraResources (abajo).
+files:
+  - out/**
+  - package.json
+  - '!**/*.map'
+
+# El módulo nativo va FUERA del asar (dlopen no carga desde un asar). `npm run stage:native` lo deja
+# en build/native: api.js, index.js, *.node y las librerías dinámicas que lo acompañan. El proceso
+# utilitario lo encuentra en `process.resourcesPath/native` (app/src/engine/native-path.ts).
+extraResources:
+  - from: build/native
+    to: native
+
+asar: true
+npmRebuild: false # no hay módulos nativos de Node: el .node es de napi-rs (ABI estable)
+
+# Firma y notarización: desactivadas salvo que existan los secretos (ver docs/release.md).
+# Sin CSC_LINK electron-builder no firma; la notarización la activa el workflow con
+# `-c.mac.notarize=true` solo si hay APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD y APPLE_TEAM_ID.
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  artifactName: ${productName}-${version}-win-x64.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+
+mac:
+  category: public.app-category.utilities
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+  artifactName: ${productName}-${version}-mac-${arch}.${ext}
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  notarize: false
+  extendInfo:
+    NSScreenCaptureUsageDescription: Translate lee el texto de la región que eliges para traducirlo.
+    NSMicrophoneUsageDescription: Translate escucha el audio para generar subtítulos traducidos.
+    NSAudioCaptureUsageDescription: Translate captura el audio del sistema para generar subtítulos traducidos.
+
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+  category: Utility
+  artifactName: ${productName}-${version}-linux-${arch}.${ext}
+deb:
+  # Dependencias de la captura (xcap) además de las de Electron, que añade electron-builder.
+  depends:
+    - libgbm1
+    - libxcb1
+    - libwayland-client0
+    - libasound2 | libasound2t64

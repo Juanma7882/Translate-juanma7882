@@ -3,4 +3,5 @@ node_modules
 dist
 out
 *.node
+/app/build/native
 models/
