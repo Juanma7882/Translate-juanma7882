@@ -27,9 +27,16 @@ La aplicación SHALL permitir, con motores falsos, iniciar una traducción de re
 - **WHEN** se inicia una traducción con motores falsos
 - **THEN** el proceso principal recibe al menos un evento de traducción generado por el núcleo
 
-### Requirement: Sin ventanas de producto
-Este alcance MUST NOT incluir el selector de región, el overlay ni la ventana de ajustes.
+### Requirement: Ventanas de producto
+La aplicación SHALL ofrecer las ventanas de producto (selector de región, overlay y ajustes), cada una aislada del sistema de archivos y de Node, comunicándose con el proceso principal solo mediante una interfaz mínima y tipada.
 
-#### Scenario: Alcance
-- **WHEN** se ejecuta la aplicación mínima
-- **THEN** no existen ventanas de producto; la verificación se hace por consola o prueba automatizada
+#### Scenario: Aislamiento de las ventanas
+- **WHEN** se abre cualquier ventana de producto
+- **THEN** su código de interfaz no tiene acceso directo a Node ni al sistema de archivos y solo usa la interfaz expuesta por el proceso principal
+
+### Requirement: Flujo con motores reales
+La aplicación SHALL poder, con motores reales y modelos listos, capturar una región, reconocer y traducir su texto y mostrarlo en el overlay.
+
+#### Scenario: Región con texto conocido
+- **WHEN** se traduce una región que muestra un texto conocido
+- **THEN** el proceso principal recibe una traducción de ese texto y el overlay la muestra
