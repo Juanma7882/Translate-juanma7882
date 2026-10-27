@@ -1,0 +1,26 @@
+[package]
+name = "tr-bindings"
+description = "Capa napi-rs hacia JavaScript"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+tr-engine.workspace = true
+napi.workspace = true
+napi-derive.workspace = true
+
+[build-dependencies]
+napi-build.workspace = true
+
+# No hereda `[lints] workspace = true`: las macros de napi generan código unsafe.
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+print_stdout = "deny"
+print_stderr = "deny"
+dbg_macro = "deny"

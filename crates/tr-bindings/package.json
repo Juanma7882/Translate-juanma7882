@@ -1,0 +1,35 @@
+{
+  "name": "tr-bindings",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Módulo nativo (napi-rs) del traductor",
+  "main": "api.js",
+  "types": "api.d.ts",
+  "files": [
+    "api.js",
+    "api.d.ts",
+    "index.js",
+    "index.d.ts",
+    "*.node"
+  ],
+  "napi": {
+    "binaryName": "tr-bindings",
+    "targets": [
+      "x86_64-unknown-linux-gnu",
+      "x86_64-pc-windows-msvc",
+      "x86_64-apple-darwin",
+      "aarch64-apple-darwin"
+    ]
+  },
+  "scripts": {
+    "build": "napi build --platform --release",
+    "build:debug": "napi build --platform",
+    "test": "node --test \"test/*.test.js\""
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "3.10.9"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
