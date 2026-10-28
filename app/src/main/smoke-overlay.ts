@@ -8,7 +8,8 @@ import { app } from 'electron'
 
 import { toDesktopDip } from '../shared/geometry.ts'
 import type { SavedRegion } from '../shared/settings.ts'
-import { OverlayController } from './overlay-controller.ts'
+import { OverlayController, overlayHeight } from './overlay-controller.ts'
+import { registerOverlayIpc } from './overlay-ipc.ts'
 import type { DisplaySource } from './region-picker.ts'
 import type { SettingsStore } from './settings-store.ts'
 import type { WindowManager } from './windows.ts'
@@ -58,6 +59,35 @@ async function dom(window: Electron.BrowserWindow): Promise<Dom> {
   })()`)) as Dom
 }
 
+let current: Electron.BrowserWindow | undefined
+
+function currentWindow(): Electron.BrowserWindow {
+  if (!current) throw new Error('no overlay window')
+  return current
+}
+
+async function colors(): Promise<{ text: string; background: string; clamp: string; truncated: boolean; height: number }> {
+  return (await currentWindow().webContents.executeJavaScript(`(() => {
+    const box = document.getElementById('box')
+    const t = document.getElementById('translated')
+    return {
+      text: getComputedStyle(box).color,
+      background: getComputedStyle(box).backgroundColor,
+      clamp: getComputedStyle(t).webkitLineClamp,
+      truncated: t.scrollHeight > t.clientHeight + 1,
+      height: t.clientHeight,
+    }
+  })()`)) as { text: string; background: string; clamp: string; truncated: boolean; height: number }
+}
+
+async function moveView(): Promise<{ visible: boolean; bar: boolean; text: string }> {
+  return (await currentWindow().webContents.executeJavaScript(`(() => ({
+    visible: !document.getElementById('box').hidden,
+    bar: !document.getElementById('move-bar').hidden,
+    text: document.getElementById('translated').textContent,
+  }))()`)) as { visible: boolean; bar: boolean; text: string }
+}
+
 /** Rutas de archivos bajo `dirs` que contienen alguno de los `needles` (búsqueda de contenido). */
 function filesContaining(dirs: string[], needles: string[]): string[] {
   const found: string[] = []
@@ -102,6 +132,7 @@ export async function runOverlaySmoke(windows: WindowManager, settings: Settings
   const scale = primary.scaleFactor
   const region: SavedRegion = { x: Math.round(300 * scale), y: Math.round(100 * scale), width: Math.round(600 * scale), height: Math.round(80 * scale), monitor: 0 }
   const window = await controller.open(region)
+  current = window
   expect(window.isVisible(), 'el overlay está visible')
   expect(window.isAlwaysOnTop(), 'el overlay está siempre encima')
   expect(!window.isFocusable(), 'el overlay no acepta foco')
@@ -172,6 +203,71 @@ export async function runOverlaySmoke(windows: WindowManager, settings: Settings
   await waitFor(async () => !(await dom(window)).hidden, 'the text to appear')
   await waitFor(async () => (await dom(window)).hidden, 'the text to hide itself', 3000)
   ok('se oculta solo pasado el tiempo configurado')
+
+  // Colores y límite de líneas.
+  expect(settings.update({ overlay: { textColor: '#ffee00', backgroundColor: '#102030', opacity: 1, maxLines: 1, fontSize: 30, width: 400, hideAfterMs: 0 } }).ok, 'cambiar colores y líneas')
+  controller.show({ original: 'Hello', translated: 'Esta es una traducción muy larga que no cabe en una sola línea de la ventana del overlay y debe cortarse', final: true })
+  await waitFor(async () => !(await dom(window)).hidden, 'the long text')
+  await waitFor(async () => (await colors()).text === 'rgb(255, 238, 0)', 'the text colour')
+  const look = await colors()
+  expect(look.background === 'rgb(16, 32, 48)', `fondo: ${look.background}`)
+  expect(look.clamp === '1' && look.truncated && look.height <= 30 * 1.3 * 1.5, `una línea con el resto cortado: ${JSON.stringify(look)}`)
+  expect(window.getBounds().height === overlayHeight(30, 1), `el alto de la ventana sigue al límite: ${window.getBounds().height}`)
+  settings.update({ overlay: { maxLines: 3 } })
+  await waitFor(async () => (await colors()).clamp === '3' && (await colors()).height > look.height * 2, 'three lines to be shown')
+  expect(window.getBounds().height === overlayHeight(30, 3), `alto con tres líneas: ${window.getBounds().height}`)
+  settings.update({ overlay: { maxLines: 2, width: 700, hideAfterMs: 300 } })
+  ok('colores y límite de líneas se aplican en vivo y la ventana ajusta su alto')
+
+  // Modo mover: la ventana acepta el ratón, se arrastra y se fija la posición; fuera del modo no se mueve.
+  const disposeIpc = registerOverlayIpc({ windows, overlay: controller, isRunning: () => true })
+  const still = window.getBounds()
+  await window.webContents.executeJavaScript('window.trOverlay.drag(50, 50)')
+  await sleep(150)
+  expect(window.getBounds().x === still.x && window.getBounds().y === still.y, 'fuera del modo mover el arrastre se ignora')
+  controller.clear()
+  await waitFor(async () => (await dom(window)).hidden, 'the box to hide before moving')
+  await controller.beginMove()
+  expect(controller.moving, 'modo mover activo')
+  await waitFor(async () => (await moveView()).visible && (await moveView()).bar, 'the move handle')
+  expect((await moveView()).text === 'Aquí aparecerá la traducción', 'texto de ejemplo en el modo mover')
+  const start = window.getBounds()
+  await window.webContents.executeJavaScript('window.trOverlay.drag(40, 25)')
+  await waitFor(() => window.getBounds().x === start.x + 40 && window.getBounds().y === start.y + 25, 'the window to follow the drag')
+  await window.webContents.executeJavaScript('window.trOverlay.drag(-100000, -100000)')
+  await waitFor(() => window.getBounds().y === primary.workArea.y, 'the drag to stay on screen')
+  expect(window.getBounds().x + window.getBounds().width >= primary.workArea.x + 48, 'siempre queda un trozo visible')
+  await window.webContents.executeJavaScript('window.trOverlay.drag(100000, 100000)')
+  await waitFor(() => window.getBounds().y <= primary.workArea.y + primary.workArea.height - 48, 'the drag to stay on screen (bottom)')
+  const atEdge = window.getBounds()
+  await window.webContents.executeJavaScript('window.trOverlay.drag(-300, -300)')
+  await waitFor(() => window.getBounds().x === atEdge.x - 300 && window.getBounds().y === atEdge.y - 300, 'the window to come back from the edge')
+  // Arrastre con el puntero: los eventos llevan la posición en pantalla (screenX/Y) y la ventana sigue el desplazamiento.
+  const beforePointer = window.getBounds()
+  await window.webContents.executeJavaScript(`(() => {
+    const box = document.getElementById('box')
+    const fire = (type, x, y) => box.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 7, button: 0, screenX: x, screenY: y }))
+    fire('pointerdown', 500, 400)
+    fire('pointermove', 520, 410)
+    fire('pointermove', 530, 420)
+    fire('pointerup', 530, 420)
+    fire('pointermove', 900, 900)
+  })()`)
+  await waitFor(() => window.getBounds().x === beforePointer.x + 30 && window.getBounds().y === beforePointer.y + 20, `the pointer to drag the window by (30, 20), now ${JSON.stringify(window.getBounds())}`)
+  await sleep(150)
+  expect(window.getBounds().x === beforePointer.x + 30, 'tras soltar, mover el puntero no arrastra')
+  await window.webContents.executeJavaScript(`document.getElementById('move-done').click()`)
+  await waitFor(() => !controller.moving, 'the move mode to end')
+  const saved = settings.get().overlay
+  const finalBounds = window.getBounds()
+  expect(saved.placement === 'manual' && saved.x === finalBounds.x && saved.y === finalBounds.y, `posición manual guardada: ${JSON.stringify(saved)} vs ${JSON.stringify(finalBounds)}`)
+  await waitFor(async () => (await dom(window)).hidden && !(await moveView()).bar, 'the placeholder to disappear')
+  await window.webContents.executeJavaScript('window.trOverlay.drag(30, 30)')
+  await sleep(150)
+  expect(window.getBounds().x === finalBounds.x && window.getBounds().y === finalBounds.y, 'terminado el modo, el arrastre vuelve a ignorarse')
+  disposeIpc()
+  settings.update({ overlay: { placement: 'auto' } })
+  ok('el modo mover arrastra el overlay, lo mantiene en pantalla, guarda la posición manual y vuelve a ignorar el ratón')
 
   // Posición manual encima de la región: avisa de que se superpone.
   const target = { x: desktop.rect.x + 10, y: desktop.rect.y + 5 }

@@ -4,7 +4,9 @@
 // `configure` detiene lo que el motor tenga en marcha, así que solo se llama cuando no hay una
 // traducción en curso (o al arrancar una, que es justo cuando se quiere).
 
-import type { EngineOptions, ModelCatalog, ModelScope, ModelStatusInfo } from 'tr-bindings'
+import type { EngineOptions, ModelCatalog, ModelInventory, ModelScope, ModelStatusInfo } from 'tr-bindings'
+
+import type { DeleteResult, DirCheck, DirFailure } from '../shared/ipc.ts'
 
 import { engineOptionsFrom } from './engine-options.ts'
 import type { EngineHost } from './engine-host.ts'
@@ -74,5 +76,42 @@ export class ModelsService {
     await this.ensureConfigured()
     await this.host.send({ type: 'downloadModels', from, to, scope })
     for (const listener of this.downloadedListeners) listener()
+  }
+
+  /** Todos los modelos del manifiesto con su espacio en disco. */
+  async inventory(): Promise<ModelInventory> {
+    await this.ensureConfigured()
+    return this.host.send({ type: 'modelInventory' })
+  }
+
+  /** Borra un modelo. Nunca con una traducción en marcha (los modelos están en uso). */
+  async deleteModel(id: string): Promise<DeleteResult> {
+    if (this.isRunning()) return { ok: false, reason: 'running' }
+    await this.ensureConfigured()
+    try {
+      const freed = await this.host.send({ type: 'deleteModel', modelId: id })
+      return { ok: true, freed }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (message.includes('being downloaded')) return { ok: false, reason: 'downloading' }
+      if (message.includes('unknown model') || message.includes('not a valid model name')) return { ok: false, reason: 'unknown' }
+      if (message.includes('translation is running')) return { ok: false, reason: 'running' }
+      return { ok: false, reason: 'failed' }
+    }
+  }
+
+  /** Cancela la descarga en curso; lo descargado se conserva para reanudar. */
+  async cancelDownload(): Promise<void> {
+    await this.host.whenReady()
+    await this.host.send({ type: 'cancelDownload' })
+  }
+
+  /** Comprueba una carpeta de modelos candidata; no se cambia con una traducción en marcha. */
+  async validateDir(path: string): Promise<DirCheck> {
+    if (this.isRunning()) return { ok: false, reason: 'running' }
+    if (path.trim() === '') return { ok: false, reason: 'empty' }
+    await this.host.whenReady()
+    const check = await this.host.send({ type: 'validateModelsDir', path })
+    return check.ok ? { ok: true } : { ok: false, reason: (check.reason ?? 'not-writable') as DirFailure }
   }
 }

@@ -163,3 +163,43 @@ fn pause_and_resume_are_safe_in_every_state() {
     engine.stop();
     engine.stop(); // idempotente
 }
+
+#[test]
+fn the_translation_cache_survives_a_restart_of_the_session() {
+    let (mut engine, sink) = engine(fast_config());
+    engine
+        .start_region(region(), lang("en"), lang("es"))
+        .unwrap();
+    assert!(sink.wait_until(WAIT, |e| translations(e).len() >= 2));
+    engine.stop();
+    let before = engine.cache_stats();
+    assert!(before.inserts >= 2, "{before:?}");
+
+    // Nueva sesión con el mismo par: los mismos textos salen de la caché.
+    engine
+        .start_region(region(), lang("en"), lang("es"))
+        .unwrap();
+    assert!(sink.wait_until(WAIT, |e| translations(e).len() >= 4));
+    engine.stop();
+    let after = engine.cache_stats();
+    assert!(after.hits > before.hits, "{before:?} -> {after:?}");
+}
+
+#[test]
+fn the_interface_performance_options_override_the_base_tuning() {
+    use tr_engine::PerformanceConfig;
+    let mut config = EngineConfig::default();
+    config.perf.beam_size = 1;
+    config.perf.ocr_max_side = 640;
+    assert_eq!(config.perf_config().beam_size, 1);
+    config.performance = PerformanceConfig {
+        intra_threads: Some(3),
+        beam_width: Some(4),
+    };
+    let perf = config.perf_config();
+    assert_eq!((perf.intra_threads, perf.beam_size), (3, 4));
+    assert_eq!(
+        perf.ocr_max_side, 640,
+        "lo que la interfaz no pide se conserva"
+    );
+}

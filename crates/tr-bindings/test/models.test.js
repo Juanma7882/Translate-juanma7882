@@ -121,7 +121,7 @@ describe('configuración de motores', () => {
   test('los motores reales rechazan un par no soportado como argumento inválido', async () => {
     api.configure({ engines: 'real', modelsDir: tempDir('pair') })
     assert.throws(
-      () => api.startRegionTranslation(REGION, 'en', 'fr'),
+      () => api.startRegionTranslation(REGION, 'en', 'ru'),
       (e) => e.code === 'InvalidArg' && /unsupported translation pair/.test(e.message),
     )
     // Los motores reales de audio también exigen sus modelos (reconocimiento de voz + traducción).
@@ -208,7 +208,8 @@ describe('modelos', () => {
   test('el catálogo del manifiesto incluido ofrece los pares y los idiomas reales', () => {
     api.configure({ modelsDir: tempDir('embedded-catalog') })
     const catalog = api.modelCatalog()
-    assert.deepEqual(catalog.pairs, [{ from: 'en', to: 'es' }, { from: 'es', to: 'en' }])
+    const wanted = ['de-en', 'en-de', 'en-es', 'en-fr', 'en-it', 'es-en', 'es-fr', 'fr-en', 'fr-es', 'it-en']
+    assert.deepEqual(catalog.pairs.map((p) => `${p.from}-${p.to}`), wanted)
     for (const lang of ['en', 'es', 'fr', 'de', 'pt', 'it', 'ja', 'zh']) assert.ok(catalog.ocrLanguages.includes(lang), lang)
   })
 

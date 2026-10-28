@@ -1,5 +1,6 @@
-// Preload del overlay: solo recibe texto y estilo; no puede enviar nada al proceso principal.
-// Importa de `shared/` únicamente tipos (ver `selector.ts`).
+// Preload del overlay: recibe texto y estilo. Lo único que puede enviar es el desplazamiento de
+// un arrastre y el fin del modo "mover", que el proceso principal solo atiende mientras ese modo
+// está activo. Importa de `shared/` únicamente tipos (ver `selector.ts`).
 
 import { contextBridge, ipcRenderer } from 'electron'
 
@@ -9,6 +10,9 @@ const SHOW = 'overlay:show' satisfies typeof Channel.overlayShow
 const STYLE = 'overlay:style' satisfies typeof Channel.overlayStyle
 const CLEAR = 'overlay:clear' satisfies typeof Channel.overlayClear
 const MODE = 'overlay:mode' satisfies typeof Channel.overlayMode
+const MOVE_MODE = 'overlay:move-mode' satisfies typeof Channel.overlayMoveMode
+const DRAG = 'overlay:drag' satisfies typeof Channel.overlayDrag
+const MOVE_DONE = 'overlay:move-done' satisfies typeof Channel.overlayMoveDone
 
 const api: OverlayApi = {
   onShow(listener) {
@@ -22,6 +26,15 @@ const api: OverlayApi = {
   },
   onMode(listener) {
     ipcRenderer.on(MODE, (_event, mode: OverlayMode) => listener(mode))
+  },
+  onMoveMode(listener) {
+    ipcRenderer.on(MOVE_MODE, (_event, active: boolean) => listener(active))
+  },
+  drag(dx, dy) {
+    ipcRenderer.send(DRAG, dx, dy)
+  },
+  endMove() {
+    ipcRenderer.send(MOVE_DONE)
   },
 }
 

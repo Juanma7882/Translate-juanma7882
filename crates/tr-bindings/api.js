@@ -119,6 +119,20 @@ module.exports = {
       await settleProgress()
     }
   },
+  async modelInventory() {
+    return native.modelInventory()
+  },
+  // Los errores síncronos (sesión en marcha) también llegan como rechazo de la promesa.
+  async deleteModel(id) {
+    return native.deleteModel(id)
+  },
+  // Cancela la descarga en curso; `downloadModels` se rechaza con "download cancelled".
+  async cancelModelDownload() {
+    native.cancelModelDownload()
+  },
+  validateModelsDir(path) {
+    return native.validateModelsDir(path)
+  },
   onTranslation: subscribe('translation'),
   onSubtitle: subscribe('subtitle'),
   onError: subscribe('error'),

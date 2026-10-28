@@ -4,7 +4,7 @@
 // `window.trSettings`); nunca ve `ipcRenderer`, Node ni el sistema de archivos. Solo viajan
 // parámetros de control, texto de traducciones y metadatos.
 
-import type { ModelCatalog, ModelScope, ModelStatusInfo } from 'tr-bindings'
+import type { ModelCatalog, ModelInventory, ModelScope, ModelStatusInfo } from 'tr-bindings'
 
 import type { ActiveMode } from './mode.ts'
 import type { Settings, SettingsPatch, UpdateResult } from './settings.ts'
@@ -32,6 +32,19 @@ export const Channel = {
   modelsStatus: 'models:status',
   modelsDownload: 'models:download',
   modelsProgress: 'models:progress',
+  modelsInventory: 'models:inventory',
+  modelsDelete: 'models:delete',
+  modelsCancel: 'models:cancel',
+  modelsValidateDir: 'models:validate-dir',
+  modelsPickDir: 'models:pick-dir',
+  settingsReset: 'settings:reset',
+  settingsExport: 'settings:export',
+  settingsImport: 'settings:import',
+  overlayMove: 'overlay:move',
+  overlayMoveState: 'overlay:move-state',
+  overlayMoveMode: 'overlay:move-mode',
+  overlayDrag: 'overlay:drag',
+  overlayMoveDone: 'overlay:move-done',
   appState: 'app:state',
   appNotice: 'app:notice',
 } as const
@@ -64,6 +77,9 @@ export interface OverlayStyle {
   fontFamily: string
   showOriginal: boolean
   hideAfterMs: number
+  textColor: string
+  backgroundColor: string
+  maxLines: number
 }
 
 export interface OverlayApi {
@@ -72,6 +88,12 @@ export interface OverlayApi {
   onClear(listener: () => void): void
   /** Modo activo (solo su nombre, nunca contenido). */
   onMode(listener: (mode: OverlayMode) => void): void
+  /** Entra o sale del modo "mover": el overlay deja de ser atravesable y muestra un asa. */
+  onMoveMode(listener: (active: boolean) => void): void
+  /** Desplazamiento del arrastre en píxeles de interfaz; solo se atiende en modo mover. */
+  drag(dx: number, dy: number): void
+  /** Termina el modo mover y guarda la posición. */
+  endMove(): void
 }
 
 // ---------------------------------------------------------------------------------- settings
@@ -92,12 +114,42 @@ export interface Notice {
   code?: 'models-missing'
 }
 
+/** Por qué no se pudo borrar un modelo. */
+export type DeleteFailure = 'running' | 'downloading' | 'unknown' | 'failed'
+
+export type DeleteResult = { ok: true; freed: number } | { ok: false; reason: DeleteFailure }
+
+/** Por qué una carpeta de modelos no sirve (códigos del motor, más `running` si hay una sesión). */
+export type DirFailure = 'not-absolute' | 'parent-references' | 'root' | 'not-a-folder' | 'not-writable' | 'running' | 'empty'
+
+export type DirCheck = { ok: true } | { ok: false; reason: DirFailure }
+
+/** Resultado de exportar o importar preferencias. `canceled`: el usuario cerró el diálogo. */
+export type TransferResult = { ok: true; settings?: Settings } | { ok: false; canceled?: boolean; errors?: string[] }
+
 export interface SettingsApi {
   getSettings(): Promise<Settings>
   updateSettings(patch: SettingsPatch): Promise<UpdateResult>
+  /** Restablece las preferencias (conserva la región y la carpeta de modelos). */
+  resetSettings(): Promise<UpdateResult>
+  /** Guarda las preferencias en un archivo elegido por el usuario (sin región ni rutas). */
+  exportSettings(): Promise<TransferResult>
+  /** Lee unas preferencias de un archivo elegido por el usuario; todo o nada. */
+  importSettings(): Promise<TransferResult>
   modelCatalog(): Promise<ModelCatalog>
   modelStatus(from: string, to: string, scope?: ModelScope): Promise<ModelStatusInfo[]>
   downloadModels(from: string, to: string, scope?: ModelScope): Promise<void>
+  /** Todos los modelos con su espacio en disco. */
+  modelInventory(): Promise<ModelInventory>
+  deleteModel(id: string): Promise<DeleteResult>
+  /** Cancela la descarga en curso (lo descargado se conserva para reanudar). */
+  cancelDownload(): Promise<void>
+  validateModelsDir(path: string): Promise<DirCheck>
+  /** Diálogo del sistema para elegir carpeta; `null` si se cancela. */
+  pickModelsDir(): Promise<string | null>
+  /** Activa o desactiva el modo "mover overlay"; devuelve si quedó activo. */
+  moveOverlay(active: boolean): Promise<boolean>
+  onMoveState(listener: (active: boolean) => void): void
   onSettingsChanged(listener: (settings: Settings) => void): void
   onModelProgress(listener: (progress: ModelProgress) => void): void
   onAppState(listener: (state: AppState) => void): void

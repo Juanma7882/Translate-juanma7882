@@ -6,6 +6,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use tr_adapters::perf::PerfConfig;
 use tr_core::{
     AudioCapture, CoreError, Lang, OcrEngine, Result, ScreenCapture, SpeechToText, Translator,
 };
@@ -25,6 +26,13 @@ pub(crate) struct AudioParts {
     pub translator: Arc<dyn Translator>,
 }
 
+/// Espera a un hilo de carga de modelo; un pánico se informa como error de modelo.
+fn join_load<T>(handle: std::thread::ScopedJoinHandle<'_, Result<T>>) -> Result<T> {
+    handle
+        .join()
+        .unwrap_or_else(|_| Err(CoreError::Model("model loading panicked".into())))
+}
+
 fn not_available(engine: &str) -> CoreError {
     CoreError::InvalidArgument(format!(
         "the {engine} engine is not available in this build"
@@ -41,24 +49,34 @@ fn screen() -> Result<Box<dyn ScreenCapture>> {
 }
 
 #[cfg(feature = "ocr-paddle")]
-fn ocr(model_dir: &Path, languages: &[&str]) -> Result<Box<dyn OcrEngine>> {
-    Ok(Box::new(tr_adapters::ocr::PaddleOcr::load(
-        model_dir, languages,
+fn ocr(model_dir: &Path, languages: &[&str], perf: &PerfConfig) -> Result<Box<dyn OcrEngine>> {
+    Ok(Box::new(tr_adapters::ocr::PaddleOcr::load_with(
+        model_dir, languages, perf,
     )?))
 }
 #[cfg(not(feature = "ocr-paddle"))]
-fn ocr(_model_dir: &Path, _languages: &[&str]) -> Result<Box<dyn OcrEngine>> {
+fn ocr(_model_dir: &Path, _languages: &[&str], _perf: &PerfConfig) -> Result<Box<dyn OcrEngine>> {
     Err(not_available("OCR"))
 }
 
 #[cfg(feature = "translate-opus")]
-fn translator(model_dir: &Path, from: &Lang, to: &Lang) -> Result<Arc<dyn Translator>> {
-    Ok(Arc::new(tr_adapters::translate::OpusMt::load(
-        model_dir, from, to,
+fn translator(
+    model_dir: &Path,
+    from: &Lang,
+    to: &Lang,
+    perf: &PerfConfig,
+) -> Result<Arc<dyn Translator>> {
+    Ok(Arc::new(tr_adapters::translate::OpusMt::load_with(
+        model_dir, from, to, perf,
     )?))
 }
 #[cfg(not(feature = "translate-opus"))]
-fn translator(_model_dir: &Path, _from: &Lang, _to: &Lang) -> Result<Arc<dyn Translator>> {
+fn translator(
+    _model_dir: &Path,
+    _from: &Lang,
+    _to: &Lang,
+    _perf: &PerfConfig,
+) -> Result<Arc<dyn Translator>> {
     Err(not_available("translation"))
 }
 
@@ -72,13 +90,13 @@ fn audio() -> Result<Box<dyn AudioCapture>> {
 }
 
 #[cfg(feature = "stt-whisper")]
-fn stt(model_dir: &Path, from: &Lang) -> Result<Box<dyn SpeechToText>> {
-    Ok(Box::new(tr_adapters::stt::WhisperStt::load(
-        model_dir, from,
+fn stt(model_dir: &Path, from: &Lang, perf: &PerfConfig) -> Result<Box<dyn SpeechToText>> {
+    Ok(Box::new(tr_adapters::stt::WhisperStt::load_with(
+        model_dir, from, perf,
     )?))
 }
 #[cfg(not(feature = "stt-whisper"))]
-fn stt(_model_dir: &Path, _from: &Lang) -> Result<Box<dyn SpeechToText>> {
+fn stt(_model_dir: &Path, _from: &Lang, _perf: &PerfConfig) -> Result<Box<dyn SpeechToText>> {
     Err(not_available("speech recognition"))
 }
 
@@ -105,6 +123,7 @@ pub(crate) fn region_parts(
     manifest: &Manifest,
     from: &Lang,
     to: &Lang,
+    perf: &PerfConfig,
 ) -> Result<RegionParts> {
     ensure_compiled()?;
     let required = manifest.required_for(from, to)?;
@@ -120,9 +139,15 @@ pub(crate) fn region_parts(
     let ocr_spec = manifest.ocr_model(from)?;
     let translation_spec = manifest.translate_model(from, to)?;
     let languages = manifest.ocr_languages_for(&ocr_spec.id);
+    // El OCR y el traductor se cargan a la vez: el arranque dura lo que el más lento.
+    let (ocr, translator) = std::thread::scope(|scope| {
+        let ocr = scope.spawn(|| ocr(&manager.model_dir(ocr_spec), &languages, perf));
+        let translator = translator(&manager.model_dir(translation_spec), from, to, perf);
+        (join_load(ocr), translator)
+    });
     Ok(RegionParts {
-        ocr: ocr(&manager.model_dir(ocr_spec), &languages)?,
-        translator: translator(&manager.model_dir(translation_spec), from, to)?,
+        ocr: ocr?,
+        translator: translator?,
         screen: screen()?,
     })
 }
@@ -172,6 +197,7 @@ pub(crate) fn audio_parts(
     from: &Lang,
     to: &Lang,
     shared_translator: Option<Arc<dyn Translator>>,
+    perf: &PerfConfig,
 ) -> Result<AudioParts> {
     ensure_audio_compiled()?;
     let required = manifest.required_for_audio(from, to)?;
@@ -185,13 +211,18 @@ pub(crate) fn audio_parts(
     }
     let stt_spec = manifest.stt_model(from)?;
     let translation_spec = manifest.translate_model(from, to)?;
-    let translator = match shared_translator {
-        Some(shared) => shared,
-        None => translator(&manager.model_dir(translation_spec), from, to)?,
-    };
+    // El reconocimiento de voz y el traductor (si no viene compartido) se cargan a la vez.
+    let (stt, translator) = std::thread::scope(|scope| {
+        let stt = scope.spawn(|| stt(&manager.model_dir(stt_spec), from, perf));
+        let translator = match shared_translator {
+            Some(shared) => Ok(shared),
+            None => translator(&manager.model_dir(translation_spec), from, to, perf),
+        };
+        (join_load(stt), translator)
+    });
     Ok(AudioParts {
-        stt: stt(&manager.model_dir(stt_spec), from)?,
-        translator,
+        stt: stt?,
+        translator: translator?,
         audio: audio()?,
     })
 }
@@ -225,6 +256,7 @@ mod tests {
             Manifest::embedded(),
             &lang("en"),
             &lang("es"),
+            &PerfConfig::default(),
         ) else {
             panic!("debe fallar")
         };
@@ -250,6 +282,7 @@ mod tests {
             Manifest::embedded(),
             &lang("ko"),
             &lang("es"),
+            &PerfConfig::default(),
         ) else {
             panic!("debe fallar")
         };
@@ -261,7 +294,8 @@ mod tests {
             Some(empty_dir("pair")),
             Manifest::embedded(),
             &lang("en"),
-            &lang("fr"),
+            &lang("ru"),
+            &PerfConfig::default(),
         ) else {
             panic!("debe fallar")
         };
@@ -283,6 +317,7 @@ mod tests {
             Manifest::embedded(),
             &lang("en"),
             &lang("es"),
+            &PerfConfig::default(),
         ) else {
             panic!("debe fallar")
         };
@@ -305,6 +340,7 @@ mod tests {
             &lang("en"),
             &lang("es"),
             None,
+            &PerfConfig::default(),
         ) else {
             panic!("debe fallar")
         };
@@ -325,13 +361,14 @@ mod tests {
     ))]
     #[test]
     fn audio_rejects_unsupported_languages_before_the_models_folder() {
-        for (from, to) in [("ko", "es"), ("en", "fr")] {
+        for (from, to) in [("ko", "es"), ("en", "ru")] {
             let Err(error) = audio_parts(
                 Some(empty_dir("audio-lang")),
                 Manifest::embedded(),
                 &lang(from),
                 &lang(to),
                 None,
+                &PerfConfig::default(),
             ) else {
                 panic!("debe fallar")
             };
@@ -402,6 +439,7 @@ mod tests {
             Manifest::embedded(),
             &lang("en"),
             &lang("es"),
+            &PerfConfig::default(),
         ) else {
             panic!("debe fallar")
         };

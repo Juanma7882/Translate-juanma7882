@@ -44,6 +44,7 @@ Desarrollo en WSL (Ubuntu); el repo vive en `~/proyectos/translate`. Se corre to
 - Modelos reales para pruebas: `cargo run --release -p tr-models --example fetch -- ~/.cache/translate-test-models en es` (y `es en`); se pasan con `TR_MODELS_DIR`.
 - Audio (Hito 3): la captura de Linux habla con PulseAudio/PipeWire en Rust puro (WSLg sirve: `PULSE_SERVER=unix:/mnt/wslg/PulseServer`). Modelos: `fetch -- <carpeta> en es audio`; tests reales: `TR_MODELS_DIR=<carpeta> cargo test --release -p tr-adapters --test stt_real -- --ignored --test-threads=1`, `-p tr-adapters --test audio_real -- --ignored` y `-p tr-engine --test real_audio -- --ignored`. Windows/macOS: `docs/validation/windows-hito-3.md`; decisiones en `docs/adr/0004-audio-stt.md`.
 - Fallback (Hito 4): modos `auto`/`text`/`audio` en Ajustes (por defecto `auto`, necesita modelos de texto y de audio: `fetch -- <carpeta> en es all`). Test real: `TR_MODELS_DIR=<carpeta> scripts/with-xvfb.sh cargo test --release -p tr-engine --test real_fallback -- --ignored`; smoke de la app completa en automático: `TR_SMOKE=e2e` bajo `scripts/with-xvfb.sh`. Windows/macOS: `docs/validation/windows-hito-4.md`; decisiones en `docs/adr/0005-fallback.md`.
+- Gestión de modelos y ajustes (Hito 5B): inventario/borrado/cancelar/reanudar (`Range`) y carpeta validada en `tr-models` (único que borra disco, solo ids del manifiesto), pares extra en `models.json` (prueba real: `TR_MODELS_DIR=<carpeta> cargo test --release -p tr-engine --test real_pairs -- --ignored`), Ajustes en pestañas, overlay con colores/líneas/modo mover y `EngineOptions.performance` (enganche para 5A). Decisiones en `docs/adr/0007-gestion-modelos.md`; Windows/macOS: `docs/validation/windows-hito-5.md`.
 - Para comprobar que algo funciona sin red: `unshare -rn <comando>`.
 
 ## Comandos
@@ -55,6 +56,7 @@ TR_MODELS_DIR=~/.cache/translate-test-models scripts/with-xvfb.sh cargo test --r
 cd crates/tr-bindings && npm run build:debug && npm test      # módulo nativo + tests de Node (npm run build = release)
 cd app && npm run typecheck && npm test                        # tipos + tests unitarios (node --test sobre TS)
 cd app && npm run build && TR_SMOKE=<1|windows|selector|flow|overlay|settings|shell> electron . --no-sandbox   # pruebas de humo
+cargo run --release -p tr-adapters --example perf -- <mt|ocr|stt|audio|frame|capture>   # mediciones (solo números); método y presupuestos en docs/perf/hito-5.md
 scripts/verify-package.sh   # empaquetado linux-x64 (dir) + TR_SMOKE=1 con el .node empaquetado; ver docs/release.md
 cd app && TR_MODELS_DIR=~/.cache/translate-test-models npm run smoke:e2e   # E2E real: ventana -> selector -> OCR -> traducción -> overlay
 ```

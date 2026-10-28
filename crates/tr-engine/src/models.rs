@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use tr_core::{CoreError, Event, EventSink, Lang, Result};
+pub use tr_models::DirProblem;
 use tr_models::{Manifest, ModelManager, ModelState};
 
 /// Estado de un modelo necesario para un par de idiomas.
@@ -196,10 +197,90 @@ impl Models {
         Ok(())
     }
 
-    /// Interrumpe la descarga en curso, si la hay.
+    /// Interrumpe la descarga en curso, si la hay. Lo ya descargado se conserva para reanudar.
     pub fn cancel(&self) {
         self.inner.cancel.store(true, Ordering::Release);
     }
+
+    /// Todos los modelos del manifiesto con su estado y el espacio que ocupan en disco.
+    pub fn inventory(&self) -> Inventory {
+        let inner = &self.inner;
+        let mut total_bytes = 0;
+        let models = inner
+            .manifest
+            .models()
+            .map(|spec| {
+                let usage = inner.manager.usage(spec);
+                total_bytes += usage.total();
+                ModelInfo {
+                    id: spec.id.clone(),
+                    roles: inner
+                        .manifest
+                        .roles_of(&spec.id)
+                        .into_iter()
+                        .map(|(kind, key)| ModelRole {
+                            kind: kind.name(),
+                            key,
+                        })
+                        .collect(),
+                    state: inner.manager.state(spec),
+                    size: spec.total_size(),
+                    disk_bytes: usage.bytes,
+                    partial_bytes: usage.partial_bytes,
+                }
+            })
+            .collect();
+        Inventory {
+            dir: inner.manager.dir().to_owned(),
+            models,
+            total_bytes,
+        }
+    }
+
+    /// Borra un modelo del manifiesto (por su identificador) y devuelve los bytes liberados.
+    /// Rechaza ids desconocidos y modelos que se están descargando.
+    pub fn delete(&self, id: &str) -> Result<u64> {
+        let spec = self
+            .inner
+            .manifest
+            .model(id)
+            .ok_or_else(|| CoreError::InvalidArgument(format!("unknown model `{id}`")))?;
+        self.inner.manager.delete(spec)
+    }
+
+    /// Comprueba que `path` sirve como carpeta de modelos (ver [`ModelManager::validate_dir`]).
+    pub fn validate_dir(path: &std::path::Path) -> std::result::Result<(), DirProblem> {
+        ModelManager::validate_dir(path)
+    }
+}
+
+/// Para qué sirve un modelo: `kind` es `ocr`, `stt` o `translate`; `key`, el idioma o el par.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelRole {
+    pub kind: &'static str,
+    pub key: String,
+}
+
+/// Un modelo del manifiesto con su estado y su espacio en disco.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelInfo {
+    pub id: String,
+    pub roles: Vec<ModelRole>,
+    pub state: ModelState,
+    /// Tamaño completo según el manifiesto.
+    pub size: u64,
+    /// Bytes presentes en disco de sus archivos.
+    pub disk_bytes: u64,
+    /// Bytes de descargas a medias.
+    pub partial_bytes: u64,
+}
+
+/// Modelos del manifiesto y espacio total ocupado en la carpeta.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Inventory {
+    pub dir: PathBuf,
+    pub models: Vec<ModelInfo>,
+    pub total_bytes: u64,
 }
 
 #[cfg(test)]

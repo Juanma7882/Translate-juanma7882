@@ -14,5 +14,5 @@ mod manifest;
 pub mod testing;
 
 pub use download::sha256_hex;
-pub use manager::{ModelManager, ModelProgress, ModelState};
-pub use manifest::{FileSpec, Manifest, ModelSpec};
+pub use manager::{DirProblem, ModelManager, ModelProgress, ModelState, ModelUsage};
+pub use manifest::{FileSpec, Manifest, ModelKind, ModelSpec};

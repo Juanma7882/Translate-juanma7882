@@ -8,6 +8,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
+use tr_adapters::perf::PerfConfig;
 use tr_core::Clock;
 use tr_core::audio::{AudioConfig, AudioPipeline, AudioProcessor, AudioRunner};
 use tr_core::cache::{DEFAULT_CAPACITY, TranslationCache};
@@ -48,6 +49,16 @@ impl FromStr for EngineKind {
     }
 }
 
+/// Parámetros de rendimiento que llegan desde la interfaz. `None` = valor por defecto del motor.
+/// Se aplican sobre [`EngineConfig::perf`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct PerformanceConfig {
+    /// Hilos de cálculo de cada sesión de ONNX Runtime (`intra_threads`).
+    pub intra_threads: Option<usize>,
+    /// Anchura del haz de la búsqueda de la traducción (1 = voraz).
+    pub beam_width: Option<usize>,
+}
+
 #[derive(Debug, Clone)]
 pub struct EngineConfig {
     pub engines: EngineKind,
@@ -55,6 +66,11 @@ pub struct EngineConfig {
     /// `Some` activa el paso automático a audio cuando no hay texto en la región.
     pub fallback: Option<FallbackConfig>,
     pub cache_capacity: usize,
+    /// Parámetros de rendimiento opcionales (hilos, haz) que llegan desde la interfaz.
+    pub performance: PerformanceConfig,
+    /// Afinación base de los motores (lado de detección del OCR, modo de poca memoria...);
+    /// `performance` la sobrescribe donde trae valor. Ver `docs/adr/0006-rendimiento.md`.
+    pub perf: PerfConfig,
     /// Carpeta de modelos; por defecto la de datos del usuario según el sistema.
     pub models_dir: Option<PathBuf>,
     /// Manifiesto de modelos alternativo (por ejemplo, con un espejo propio). `None` usa el incluido.
@@ -72,6 +88,8 @@ impl Default for EngineConfig {
             timing: LoopTiming::default(),
             fallback: None,
             cache_capacity: DEFAULT_CAPACITY,
+            performance: PerformanceConfig::default(),
+            perf: PerfConfig::default(),
             models_dir: None,
             manifest: None,
             fake_audio_pace: Duration::from_millis(100),
@@ -82,6 +100,18 @@ impl Default for EngineConfig {
 
 impl EngineConfig {
     /// El manifiesto configurado o, por defecto, el incluido en el binario.
+    /// Afinación efectiva de los motores: la base más lo que pidió la interfaz.
+    pub fn perf_config(&self) -> PerfConfig {
+        let mut perf = self.perf;
+        if let Some(threads) = self.performance.intra_threads {
+            perf.intra_threads = threads;
+        }
+        if let Some(beam) = self.performance.beam_width {
+            perf.beam_size = beam;
+        }
+        perf
+    }
+
     fn manifest(&self) -> &Manifest {
         self.manifest
             .as_deref()
@@ -96,9 +126,13 @@ fn region_parts(config: &EngineConfig, from: &Lang, to: &Lang) -> Result<RegionP
             ocr: Box::new(DemoOcr::new(config.fake_latency)),
             translator: Arc::new(FakeTranslator::new()),
         }),
-        EngineKind::Real => {
-            real::region_parts(config.models_dir.clone(), config.manifest(), from, to)
-        }
+        EngineKind::Real => real::region_parts(
+            config.models_dir.clone(),
+            config.manifest(),
+            from,
+            to,
+            &config.perf_config(),
+        ),
     }
 }
 
@@ -121,6 +155,7 @@ fn audio_parts(
             from,
             to,
             shared_translator,
+            &config.perf_config(),
         ),
     }
 }
@@ -136,16 +171,26 @@ pub struct Engine {
     sink: Arc<dyn EventSink>,
     clock: Arc<dyn Clock>,
     active: Option<Active>,
+    /// Una sola caché para toda la vida del motor: sobrevive a pausas, cambios de modo y
+    /// reinicios de sesión (la clave ya incluye el par de idiomas).
+    cache: Arc<TranslationCache>,
 }
 
 impl Engine {
     pub fn new(config: EngineConfig, sink: Arc<dyn EventSink>) -> Self {
+        let cache = Arc::new(TranslationCache::new(config.cache_capacity));
         Self {
             config,
             sink,
             clock: Arc::new(SystemClock::new()),
             active: None,
+            cache,
         }
+    }
+
+    /// Contadores de la caché de traducciones (solo números).
+    pub fn cache_stats(&self) -> tr_core::cache::CacheStats {
+        self.cache.stats()
     }
 
     pub fn is_running(&self) -> bool {
@@ -182,7 +227,7 @@ impl Engine {
         };
         self.stop();
 
-        let cache = Arc::new(TranslationCache::new(self.config.cache_capacity));
+        let cache = Arc::clone(&self.cache);
         let processor = RegionProcessor::new(
             RegionConfig::new(from.clone(), to.clone()),
             parts.ocr,
@@ -235,7 +280,7 @@ impl Engine {
             AudioConfig::new(from, to),
             parts.stt,
             parts.translator,
-            Arc::new(TranslationCache::new(self.config.cache_capacity)),
+            Arc::clone(&self.cache),
             self.sink.clone(),
             self.clock.clone(),
         );

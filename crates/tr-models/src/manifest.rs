@@ -19,6 +19,24 @@ pub struct FileSpec {
     pub size: u64,
 }
 
+/// Para qué se usa un modelo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModelKind {
+    Ocr,
+    Stt,
+    Translate,
+}
+
+impl ModelKind {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Ocr => "ocr",
+            Self::Stt => "stt",
+            Self::Translate => "translate",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModelSpec {
     pub id: String,
@@ -151,6 +169,26 @@ impl Manifest {
         self.models.get(id)
     }
 
+    /// Todos los modelos del manifiesto, ordenados por identificador.
+    pub fn models(&self) -> impl Iterator<Item = &ModelSpec> {
+        self.models.values()
+    }
+
+    /// Para qué sirve el modelo `id`: tipo y claves (idiomas de OCR o voz, o pares `en-es`).
+    pub fn roles_of(&self, id: &str) -> Vec<(ModelKind, String)> {
+        let pick = |table: &BTreeMap<String, String>, kind: ModelKind| {
+            table
+                .iter()
+                .filter(|(_, model)| model.as_str() == id)
+                .map(|(key, _)| (kind, key.clone()))
+                .collect::<Vec<_>>()
+        };
+        let mut roles = pick(&self.ocr, ModelKind::Ocr);
+        roles.extend(pick(&self.stt, ModelKind::Stt));
+        roles.extend(pick(&self.translate, ModelKind::Translate));
+        roles
+    }
+
     /// Modelo de OCR para el idioma de origen.
     pub fn ocr_model(&self, lang: &Lang) -> Result<&ModelSpec> {
         self.ocr
@@ -249,6 +287,59 @@ mod tests {
         Lang::new(code).unwrap()
     }
 
+    #[test]
+    fn the_embedded_manifest_offers_the_additional_pairs_with_immutable_urls() {
+        let manifest = Manifest::embedded();
+        let pairs = manifest.translation_pairs();
+        for pair in [
+            ("en", "es"),
+            ("es", "en"),
+            ("en", "fr"),
+            ("fr", "en"),
+            ("en", "de"),
+            ("de", "en"),
+            ("en", "it"),
+            ("it", "en"),
+            ("es", "fr"),
+            ("fr", "es"),
+        ] {
+            assert!(pairs.contains(&pair), "falta el par {pair:?}");
+            let model = manifest
+                .translate_model(&lang(pair.0), &lang(pair.1))
+                .unwrap();
+            assert_eq!(model.files.len(), 5, "{}", model.id);
+            for file in &model.files {
+                // Una revisión fija (40 hex) en la URL: el contenido no cambia por debajo.
+                assert!(
+                    file.url
+                        .split('/')
+                        .any(|s| s.len() == 40 && s.bytes().all(|b| b.is_ascii_hexdigit())),
+                    "{}: {}",
+                    model.id,
+                    file.url
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn roles_describe_what_each_model_is_for() {
+        let manifest = Manifest::embedded();
+        assert_eq!(
+            manifest.roles_of("mt-opus-en-fr"),
+            [(ModelKind::Translate, "en-fr".to_owned())]
+        );
+        let ocr = manifest.roles_of("ocr-ppocrv6-small");
+        assert!(ocr.iter().all(|(k, _)| *k == ModelKind::Ocr));
+        assert!(ocr.iter().any(|(_, k)| k == "ja"));
+        assert!(manifest.roles_of("nope").is_empty());
+        assert_eq!(
+            manifest.models().count(),
+            manifest.models().collect::<Vec<_>>().len()
+        );
+        assert_eq!(ModelKind::Stt.name(), "stt");
+    }
+
     fn manifest_json(file: &str) -> String {
         format!(
             r#"{{"version":1,"models":{{"m":{{"files":[{file}]}}}},"ocr":{{"en":"m"}},"translate":{{"en-es":"m"}}}}"#
@@ -266,7 +357,9 @@ mod tests {
     fn the_embedded_manifest_is_valid_and_complete() {
         let m = Manifest::embedded();
         assert!(m.ocr_languages().contains(&"en") && m.ocr_languages().contains(&"ja"));
-        assert_eq!(m.translation_pairs(), [("en", "es"), ("es", "en")]);
+        let pairs = m.translation_pairs();
+        assert!(pairs.contains(&("en", "es")) && pairs.contains(&("es", "en")));
+        assert_eq!(pairs.len(), 10);
         for model in ["ocr-ppocrv6-small", "mt-opus-en-es", "mt-opus-es-en"] {
             assert!(m.model(model).is_some(), "{model}");
         }
@@ -379,7 +472,7 @@ mod tests {
         let m = Manifest::embedded();
         for error in [
             m.ocr_model(&lang("ko")).unwrap_err(),
-            m.translate_model(&lang("en"), &lang("fr")).unwrap_err(),
+            m.translate_model(&lang("en"), &lang("ru")).unwrap_err(),
             m.required_for(&lang("ja"), &lang("es")).unwrap_err(),
         ] {
             assert!(
@@ -398,6 +491,14 @@ mod tests {
             "mt-opus-es-en",
             "stt-whisper-base",
             "stt-whisper-tiny",
+            "mt-opus-en-fr",
+            "mt-opus-fr-en",
+            "mt-opus-en-de",
+            "mt-opus-de-en",
+            "mt-opus-en-it",
+            "mt-opus-it-en",
+            "mt-opus-es-fr",
+            "mt-opus-fr-es",
         ] {
             for f in &m.model(id).unwrap().files {
                 assert_eq!(f.sha256.len(), 64, "{id}/{}", f.name);

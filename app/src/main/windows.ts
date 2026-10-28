@@ -54,7 +54,7 @@ export class WindowManager {
   }
 
   openSettings(options: OpenOptions = {}): Promise<BrowserWindow> {
-    return this.open('settings', { width: 760, height: 700, minWidth: 560, minHeight: 480, title: 'Ajustes · Traductor' }, options)
+    return this.open('settings', { width: 860, height: 780, minWidth: 600, minHeight: 520, title: 'Ajustes · Traductor' }, options)
   }
 
   close(kind: WindowKind): void {

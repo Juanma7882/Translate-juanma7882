@@ -1,6 +1,6 @@
 // De los ajustes del usuario a las opciones del motor.
 
-import type { EngineOptions } from 'tr-bindings'
+import type { EngineOptions, PerformanceOptions } from 'tr-bindings'
 
 import type { Settings } from '../shared/settings.ts'
 
@@ -15,5 +15,12 @@ export function engineOptionsFrom(settings: Settings): EngineOptions {
     options.autoFallback = true
     options.fallbackNoTextMs = settings.fallbackSeconds * 1000
   }
+  // `0` es "automático": no se envía y el motor usa su valor por defecto.
+  const { intraThreads, beamWidth, cacheCapacity } = settings.performance
+  const performance: PerformanceOptions = {}
+  if (intraThreads > 0) performance.intraThreads = intraThreads
+  if (beamWidth > 0) performance.beamWidth = beamWidth
+  if (cacheCapacity > 0) performance.cacheCapacity = cacheCapacity
+  if (Object.keys(performance).length > 0) options.performance = performance
   return options
 }

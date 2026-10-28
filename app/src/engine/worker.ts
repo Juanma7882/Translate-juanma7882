@@ -59,6 +59,15 @@ async function run(request: Request): Promise<unknown> {
       return engine.modelStatus(request.from, request.to, request.scope)
     case 'downloadModels':
       return engine.downloadModels(request.from, request.to, request.scope)
+    case 'modelInventory':
+      return engine.modelInventory()
+    case 'deleteModel':
+      return engine.deleteModel(request.modelId)
+    case 'cancelDownload':
+      await engine.cancelModelDownload()
+      return undefined
+    case 'validateModelsDir':
+      return engine.validateModelsDir(request.path)
     default: {
       const unknown: never = request
       throw new Error(`unknown command: ${JSON.stringify(unknown)}`)

@@ -835,9 +835,12 @@ function __napiStampBindingTarget(exportsObject, target) {
 // linked import resolves to `undefined`.
 module.exports.__napiBindingTarget = __napiStampBindingTarget(nativeBinding, __napiLoadedBindingTarget)
 module.exports = nativeBinding
+module.exports.cancelModelDownload = nativeBinding.cancelModelDownload
 module.exports.configure = nativeBinding.configure
+module.exports.deleteModel = nativeBinding.deleteModel
 module.exports.downloadModels = nativeBinding.downloadModels
 module.exports.modelCatalog = nativeBinding.modelCatalog
+module.exports.modelInventory = nativeBinding.modelInventory
 module.exports.modelStatus = nativeBinding.modelStatus
 module.exports.onError = nativeBinding.onError
 module.exports.onModeChanged = nativeBinding.onModeChanged
@@ -850,3 +853,4 @@ module.exports.resume = nativeBinding.resume
 module.exports.startAudioSubtitles = nativeBinding.startAudioSubtitles
 module.exports.startRegionTranslation = nativeBinding.startRegionTranslation
 module.exports.stop = nativeBinding.stop
+module.exports.validateModelsDir = nativeBinding.validateModelsDir

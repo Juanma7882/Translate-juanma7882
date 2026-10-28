@@ -13,6 +13,7 @@ import { AppShell } from './app-shell.ts'
 import type { TrayLike } from './app-shell.ts'
 import type { EngineHost } from './engine-host.ts'
 import type { DisplaySource } from './region-picker.ts'
+import { scriptedFiles } from './settings-ipc.ts'
 import { SettingsStore } from './settings-store.ts'
 import { startFixture } from './smoke-settings.ts'
 import type { WindowManager } from './windows.ts'
@@ -97,7 +98,7 @@ export async function runShellSmoke(host: EngineHost, windows: WindowManager, di
   const tray = new FakeTray()
   const shortcuts = new FakeShortcuts(['Alt+Taken'])
   const notices: Notice[] = []
-  const shell = new AppShell({ host, windows, settings, displays, tray, shortcuts, notify: (n) => notices.push(n), quit: () => notices.push({ level: 'info', message: 'quit' }) })
+  const shell = new AppShell({ host, windows, settings, displays, tray, shortcuts, notify: (n) => notices.push(n), quit: () => notices.push({ level: 'info', message: 'quit' }), files: scriptedFiles() })
   shell.start()
   await host.whenReady()
 
@@ -198,6 +199,19 @@ export async function runShellSmoke(host: EngineHost, windows: WindowManager, di
   mark = originals.length
   await nextOriginals(mark, SCREEN, 'screen text in auto mode')
 
+  // Apariencia en vivo y mover el overlay con la sesión en marcha (no se cierra al terminar).
+  settings.update({ overlay: { textColor: '#ffee00', maxLines: 3 } })
+  await waitFor(async () => (await overlay!.webContents.executeJavaScript(`document.documentElement.style.getPropertyValue('--text-color')`)) === '#ffee00', 'the live text colour')
+  await shell.overlay.beginMove()
+  const before = overlay!.getBounds()
+  await overlay!.webContents.executeJavaScript('window.trOverlay.drag(15, 10)')
+  await waitFor(() => overlay!.getBounds().x === before.x + 15 && overlay!.getBounds().y === before.y + 10, 'the drag to move the overlay')
+  await overlay!.webContents.executeJavaScript(`document.getElementById('move-done').click()`)
+  await waitFor(() => !shell.overlay.moving, 'the move to end')
+  expect(settings.get().overlay.placement === 'manual' && windows.get('overlay') === overlay && shell.controller.state.running, 'la posición queda manual y la sesión sigue con su overlay')
+  settings.update({ overlay: { placement: 'auto' } })
+  ok('colores en vivo y mover el overlay no interrumpen la sesión')
+
   tray.click('Detener')
   await waitFor(() => !shell.controller.state.running, 'stop')
   await waitFor(() => windows.get('overlay') === undefined, 'the overlay to close')
@@ -226,6 +240,7 @@ export async function runShellSmoke(host: EngineHost, windows: WindowManager, di
       shortcuts: new FakeShortcuts([]),
       notify: (n) => firstNotices.push(n),
       quit: () => {},
+      files: scriptedFiles(),
       engineOverrides: () => ({ modelsDir, manifestPath: fixture.manifestPath }),
     })
     first.start()

@@ -28,10 +28,11 @@ fn serve(slow: bool) -> Served {
     ];
     let route = |body: &Vec<u8>| {
         if slow {
-            Route::Slow {
+            Route::Resumable {
                 body: body.clone(),
                 chunk: 10_000,
                 delay: Duration::from_millis(30),
+                cut_first_at: None,
             }
         } else {
             Route::Body(body.clone())
@@ -238,5 +239,85 @@ fn cancelling_stops_the_download_and_leaves_nothing_valid() {
             .unwrap()
             .iter()
             .all(|s| s.state == ModelState::Ready)
+    );
+}
+
+#[test]
+fn the_inventory_reports_roles_state_and_disk_usage_and_delete_frees_it() {
+    let served = serve(false);
+    let (models, _sink) = models(&served, "inventory");
+    let empty = models.inventory();
+    assert_eq!(empty.total_bytes, 0);
+    let roles: Vec<_> = empty
+        .models
+        .iter()
+        .map(|m| {
+            (
+                m.id.as_str(),
+                m.roles
+                    .iter()
+                    .map(|r| (r.kind, r.key.as_str()))
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        roles,
+        [
+            ("o", vec![("ocr", "en")]),
+            ("t", vec![("translate", "en-es")])
+        ]
+    );
+
+    models.download(&lang("en"), &lang("es")).unwrap();
+    let full = models.inventory();
+    assert_eq!(full.total_bytes, 150_019);
+    assert!(full.models.iter().all(|m| m.state == ModelState::Ready));
+    assert_eq!(full.models[0].disk_bytes, 150_000);
+
+    assert_eq!(models.delete("o").unwrap(), 150_000);
+    let after = models.inventory();
+    assert_eq!(after.total_bytes, 19);
+    assert_eq!(after.models[0].state, ModelState::Missing);
+    assert!(matches!(
+        models.delete("../x").unwrap_err(),
+        CoreError::InvalidArgument(_)
+    ));
+    assert!(matches!(
+        models.delete("unknown").unwrap_err(),
+        CoreError::InvalidArgument(_)
+    ));
+}
+
+#[test]
+fn a_cancelled_download_keeps_a_partial_that_shows_in_the_inventory_and_resumes() {
+    let served = serve(true);
+    let (models, sink) = models(&served, "resume");
+    let worker = {
+        let models = models.clone();
+        std::thread::spawn(move || models.download(&lang("en"), &lang("es")))
+    };
+    assert!(sink.wait_until(Duration::from_secs(5), |e| e.iter().any(
+        |ev| matches!(ev, Event::ModelProgress { downloaded, .. } if *downloaded > 20_000)
+    )));
+    models.cancel();
+    assert!(worker.join().unwrap().is_err());
+    let inventory = models.inventory();
+    assert!(inventory.models[0].partial_bytes > 0, "{inventory:?}");
+    assert_eq!(inventory.models[0].state, ModelState::Missing);
+
+    models.download(&lang("en"), &lang("es")).unwrap();
+    let inventory = models.inventory();
+    assert_eq!(inventory.models[0].partial_bytes, 0);
+    assert_eq!(inventory.total_bytes, 150_019);
+    // La reanudación pidió solo el resto (Range), no el archivo entero otra vez.
+    let ranges = served.server.ranges("/a.bin");
+    assert_eq!(ranges.len(), 2, "{ranges:?}");
+    assert!(
+        ranges[0].is_none()
+            && ranges[1]
+                .as_deref()
+                .is_some_and(|r| r.starts_with("bytes=")),
+        "{ranges:?}"
     );
 }

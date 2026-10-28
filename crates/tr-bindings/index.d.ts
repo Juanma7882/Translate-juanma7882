@@ -9,11 +9,20 @@
  */
 export declare const __napiBindingTarget: 'native' | 'wasm32-wasi' | 'wasm32-wasip1'
 
+/** Interrumpe la descarga de modelos en curso; lo descargado se conserva para reanudar. */
+export declare function cancelModelDownload(): void
+
 /**
  * Aplica opciones al motor. Si alguna es inválida falla sin cambiar nada; si todas lo son,
  * detiene lo que esté en marcha.
  */
 export declare function configure(options: EngineOptions): void
+
+/**
+ * Borra un modelo por su identificador y devuelve los bytes liberados. Se rechaza mientras haya
+ * una traducción en marcha (los modelos están en uso) o el modelo se esté descargando.
+ */
+export declare function deleteModel(id: string): Promise<number>
 
 /**
  * Descarga los modelos que falten para el par (`scope`: `text`, `audio` o `all`); el avance llega
@@ -39,12 +48,28 @@ export interface EngineOptions {
   fallbackTextMs?: number
   /** Latencia simulada de los motores de demostración. */
   fakeLatencyMs?: number
+  /** Parámetros de rendimiento (hilos, haz, caché). */
+  performance?: PerformanceOptions
 }
 
 export interface ErrorEvent {
   /** `invalid-argument`, `capture`, `ocr`, `stt`, `translation` o `model`. */
   category: string
   message: string
+}
+
+/** Un modelo del manifiesto con su estado y el espacio que ocupa. */
+export interface InstalledModelInfo {
+  id: string
+  roles: Array<ModelRoleInfo>
+  /** `missing`, `downloading` o `ready`. */
+  state: string
+  /** Tamaño completo según el manifiesto, en bytes. */
+  size: number
+  /** Bytes presentes en disco. */
+  diskBytes: number
+  /** Bytes de una descarga a medias que se puede reanudar. */
+  partialBytes: number
 }
 
 export interface LangPair {
@@ -70,10 +95,35 @@ export interface ModelCatalog {
   pairs: Array<LangPair>
 }
 
+/** Todos los modelos del manifiesto con su estado y el espacio que ocupan en disco. */
+export declare function modelInventory(): Promise<ModelInventory>
+
+export interface ModelInventory {
+  /** Carpeta de modelos en uso. */
+  dir: string
+  models: Array<InstalledModelInfo>
+  /** Espacio total ocupado en disco, en bytes. */
+  totalBytes: number
+}
+
 export interface ModelProgressEvent {
   model: string
   downloaded: number
   total?: number
+}
+
+export interface ModelRoleInfo {
+  /** `ocr`, `stt` o `translate`. */
+  kind: string
+  /** Idioma (`en`) o par (`en-es`). */
+  key: string
+}
+
+/** Resultado de validar una carpeta de modelos candidata. */
+export interface ModelsDirCheck {
+  ok: boolean
+  /** Si no es válida: `not-absolute`, `parent-references`, `root`, `not-a-folder` o `not-writable`. */
+  reason?: string
 }
 
 /** Estado de los modelos necesarios para `from` -> `to` (`scope`: `text`, `audio` o `all`). */
@@ -99,6 +149,16 @@ export declare function onTranslation(callback: (event: TranslationEvent) => voi
 
 /** Pausa la captura (y el audio, si lo hay). No hace nada si no hay una traducción de región en marcha. */
 export declare function pause(): void
+
+/** Parámetros de rendimiento; todos opcionales (sin valor, el motor usa los suyos). */
+export interface PerformanceOptions {
+  /** Hilos de cálculo de cada sesión de ONNX Runtime (1 a 64). */
+  intraThreads?: number
+  /** Anchura del haz de la traducción (1 a 8; 1 = voraz). */
+  beamWidth?: number
+  /** Entradas de la caché de traducciones (1 a 1 000 000). */
+  cacheCapacity?: number
+}
 
 /** Uso interno de `api.js`: cuántos eventos de progreso de modelos se han emitido en total. */
 export declare function progressEventsEmitted(): number
@@ -142,3 +202,6 @@ export interface TranslationEvent {
   /** Milisegundos desde el inicio del motor. */
   timestampMs: number
 }
+
+/** Comprueba si `path` sirve como carpeta de modelos (absoluta, escribible...). */
+export declare function validateModelsDir(path: string): ModelsDirCheck

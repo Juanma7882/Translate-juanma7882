@@ -14,6 +14,7 @@ import { AppShell } from './app-shell.ts'
 import type { TrayLike } from './app-shell.ts'
 import type { EngineHost } from './engine-host.ts'
 import type { DisplaySource } from './region-picker.ts'
+import { scriptedFiles } from './settings-ipc.ts'
 import { SettingsStore } from './settings-store.ts'
 import type { WindowManager } from './windows.ts'
 
@@ -63,7 +64,7 @@ export async function runE2eSmoke(host: EngineHost, windows: WindowManager, disp
   expect(settings.update({ engines: 'real', from: 'en', to: 'es', modelsDir }).ok, 'ajustes')
 
   const notices: Notice[] = []
-  const shell = new AppShell({ host, windows, settings, displays, tray: noTray, shortcuts: { register: () => true, unregister: () => {} }, notify: (n) => notices.push(n), quit: () => {} })
+  const shell = new AppShell({ host, windows, settings, displays, tray: noTray, shortcuts: { register: () => true, unregister: () => {} }, notify: (n) => notices.push(n), quit: () => {}, files: scriptedFiles() })
   shell.start()
   await host.whenReady()
 

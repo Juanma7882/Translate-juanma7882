@@ -1,25 +1,71 @@
 {
   "version": 1,
   "models": {
-    "ocr-ppocrv6-small": {
+    "mt-opus-de-en": {
       "files": [
         {
-          "name": "det.onnx",
-          "url": "https://github.com/GreatV/oar-ocr/releases/download/v0.7.0/pp-ocrv6_small_det.onnx",
-          "sha256": "d73e0058b7a8086bbd57f3d10b8bcd4ff95363f67e06e2762b5e814fe9c9410e",
-          "size": 9880512
+          "name": "encoder.onnx",
+          "url": "https://huggingface.co/Xenova/opus-mt-de-en/resolve/399dfd68706739fffd503f876093e455ae268a06/onnx/encoder_model_quantized.onnx",
+          "sha256": "4cedda8f8c89b72a42b3c6cd1e7a27f2de24457093e3bf80cb3e46829641fcd8",
+          "size": 49366942
         },
         {
-          "name": "rec.onnx",
-          "url": "https://github.com/GreatV/oar-ocr/releases/download/v0.7.0/pp-ocrv6_small_rec.onnx",
-          "sha256": "5435fd747c9e0efe15a96d0b378d5bd157e9492ed8fd80edf08f30d02fa24634",
-          "size": 21159378
+          "name": "decoder.onnx",
+          "url": "https://huggingface.co/Xenova/opus-mt-de-en/resolve/399dfd68706739fffd503f876093e455ae268a06/onnx/decoder_model_quantized.onnx",
+          "sha256": "e44c1c4b50e8f51e49d4d5e54a9af1550dc74763d4023644a38af62611e6efc9",
+          "size": 56281702
         },
         {
-          "name": "dict.txt",
-          "url": "https://github.com/GreatV/oar-ocr/releases/download/v0.7.0/ppocrv6_dict.txt",
-          "sha256": "b5f2bfe2bdd9448429e3e82b51c789775d9b42f2403d082b00662eb77e401c5d",
-          "size": 74947
+          "name": "source.spm",
+          "url": "https://huggingface.co/Xenova/opus-mt-de-en/resolve/399dfd68706739fffd503f876093e455ae268a06/source.spm",
+          "sha256": "bbd1f495eea99c8e21ae086d9146e0fa7b096c3dfdd9ba07ab8b631889df5c9b",
+          "size": 796845
+        },
+        {
+          "name": "vocab.json",
+          "url": "https://huggingface.co/Xenova/opus-mt-de-en/resolve/399dfd68706739fffd503f876093e455ae268a06/vocab.json",
+          "sha256": "d5acea957b265a78554999144459c5e391e0df525864edc8287bc090290baa44",
+          "size": 1389436
+        },
+        {
+          "name": "config.json",
+          "url": "https://huggingface.co/Xenova/opus-mt-de-en/resolve/399dfd68706739fffd503f876093e455ae268a06/config.json",
+          "sha256": "6754743ec4754957d8552dad869d1314f3af6626b67446ec4cebe5e2fbaa0fc4",
+          "size": 1376
+        }
+      ]
+    },
+    "mt-opus-en-de": {
+      "files": [
+        {
+          "name": "encoder.onnx",
+          "url": "https://huggingface.co/Xenova/opus-mt-en-de/resolve/1ca130c44c4c5441ef16d48aae521a424ab644f7/onnx/encoder_model_quantized.onnx",
+          "sha256": "15834b45fabd2dfb8c6c029b3ca3e7289aeefd90ece798ce42bcf548d1bd3b8d",
+          "size": 49366942
+        },
+        {
+          "name": "decoder.onnx",
+          "url": "https://huggingface.co/Xenova/opus-mt-en-de/resolve/1ca130c44c4c5441ef16d48aae521a424ab644f7/onnx/decoder_model_quantized.onnx",
+          "sha256": "75ef79aa9bde9e3dce9ca584c29507be5f464973f6c600c89ff419bc8de29ebc",
+          "size": 56281702
+        },
+        {
+          "name": "source.spm",
+          "url": "https://huggingface.co/Xenova/opus-mt-en-de/resolve/1ca130c44c4c5441ef16d48aae521a424ab644f7/source.spm",
+          "sha256": "678f2a1177d8389f67b66299762dcc4fc567e89b07e212ba91b0c56daecf47ce",
+          "size": 768489
+        },
+        {
+          "name": "vocab.json",
+          "url": "https://huggingface.co/Xenova/opus-mt-en-de/resolve/1ca130c44c4c5441ef16d48aae521a424ab644f7/vocab.json",
+          "sha256": "d5acea957b265a78554999144459c5e391e0df525864edc8287bc090290baa44",
+          "size": 1389436
+        },
+        {
+          "name": "config.json",
+          "url": "https://huggingface.co/Xenova/opus-mt-en-de/resolve/1ca130c44c4c5441ef16d48aae521a424ab644f7/config.json",
+          "sha256": "517955ebf66cd6523f9982851dd41771b74fb2d9c00b4933ba2922ac7a63336f",
+          "size": 1411
         }
       ]
     },
@@ -57,6 +103,74 @@
         }
       ]
     },
+    "mt-opus-en-fr": {
+      "files": [
+        {
+          "name": "encoder.onnx",
+          "url": "https://huggingface.co/Xenova/opus-mt-en-fr/resolve/28726206f80896b90035bd99cccd5cc1e151f916/onnx/encoder_model_quantized.onnx",
+          "sha256": "0a81bdba62f53223740a8c6c6f58e716eba8ea1f92dfa569caf27ed5e3b6a0f7",
+          "size": 50090398
+        },
+        {
+          "name": "decoder.onnx",
+          "url": "https://huggingface.co/Xenova/opus-mt-en-fr/resolve/28726206f80896b90035bd99cccd5cc1e151f916/onnx/decoder_model_quantized.onnx",
+          "sha256": "bdacc5f38e4d2b805a2fc9f38cf43844cdea56666e735137dbacf2a54a785257",
+          "size": 57010810
+        },
+        {
+          "name": "source.spm",
+          "url": "https://huggingface.co/Xenova/opus-mt-en-fr/resolve/28726206f80896b90035bd99cccd5cc1e151f916/source.spm",
+          "sha256": "173e9f493a668fe396d599e28d414a201193094e6ffd7a4678e5aab0f6d3d838",
+          "size": 778395
+        },
+        {
+          "name": "vocab.json",
+          "url": "https://huggingface.co/Xenova/opus-mt-en-fr/resolve/28726206f80896b90035bd99cccd5cc1e151f916/vocab.json",
+          "sha256": "f2ba9c69ae20f96b8bd821239a9152be422394f980350b77907cffc183db5f2d",
+          "size": 1458196
+        },
+        {
+          "name": "config.json",
+          "url": "https://huggingface.co/Xenova/opus-mt-en-fr/resolve/28726206f80896b90035bd99cccd5cc1e151f916/config.json",
+          "sha256": "b522b73fcc86f77981349c1df2a2e041eed0dbcbea4acf2635019cf21d51ffc0",
+          "size": 1411
+        }
+      ]
+    },
+    "mt-opus-en-it": {
+      "files": [
+        {
+          "name": "encoder.onnx",
+          "url": "https://huggingface.co/Xenova/opus-mt-en-it/resolve/075406e3c8c2c30634d4a1bd8f00c21d9e162011/onnx/encoder_model_quantized.onnx",
+          "sha256": "b51c5110c7ba356ef01ee400d427afe162e657de1d7a2e9a40deedd811b49e6f",
+          "size": 60597150
+        },
+        {
+          "name": "decoder.onnx",
+          "url": "https://huggingface.co/Xenova/opus-mt-en-it/resolve/075406e3c8c2c30634d4a1bd8f00c21d9e162011/onnx/decoder_model_quantized.onnx",
+          "sha256": "d5c77fd7f60eebdf81d3f6f6fecd8e6804529cbcbecc2bb742fd60f225e2cf3e",
+          "size": 67599646
+        },
+        {
+          "name": "source.spm",
+          "url": "https://huggingface.co/Xenova/opus-mt-en-it/resolve/075406e3c8c2c30634d4a1bd8f00c21d9e162011/source.spm",
+          "sha256": "2efff2c37e51842c2817a6770280979b5dd803cebbe2928e576d42a888f89537",
+          "size": 789468
+        },
+        {
+          "name": "vocab.json",
+          "url": "https://huggingface.co/Xenova/opus-mt-en-it/resolve/075406e3c8c2c30634d4a1bd8f00c21d9e162011/vocab.json",
+          "sha256": "40c98ffc0013f2f09ed9127418131738ad9c2de4d8f7f52d52532332bb2bf78c",
+          "size": 2511647
+        },
+        {
+          "name": "config.json",
+          "url": "https://huggingface.co/Xenova/opus-mt-en-it/resolve/075406e3c8c2c30634d4a1bd8f00c21d9e162011/config.json",
+          "sha256": "1cf40ab3aa16e8b6ea7c9766981de1da705a161564c0d5ad187c1e62e5c8ee85",
+          "size": 1376
+        }
+      ]
+    },
     "mt-opus-es-en": {
       "files": [
         {
@@ -88,6 +202,164 @@
           "url": "https://huggingface.co/Xenova/opus-mt-es-en/resolve/eadfd7c658a9d8929ac3b8e996b68a68e2c7d480/config.json",
           "sha256": "fab3a7f93185bc5aa7b419f6a1e6e74d98c8f2a506c94493d3019bf46da3478d",
           "size": 1433
+        }
+      ]
+    },
+    "mt-opus-es-fr": {
+      "files": [
+        {
+          "name": "encoder.onnx",
+          "url": "https://huggingface.co/Xenova/opus-mt-es-fr/resolve/3bef5f612825d503f6fb85e0527a1fe30f2578c2/onnx/encoder_model_quantized.onnx",
+          "sha256": "f2c497ebe1c3eadb329b8f36b250e7f87f9a327f46615dc5637492702cd0d2af",
+          "size": 57928094
+        },
+        {
+          "name": "decoder.onnx",
+          "url": "https://huggingface.co/Xenova/opus-mt-es-fr/resolve/3bef5f612825d503f6fb85e0527a1fe30f2578c2/onnx/decoder_model_quantized.onnx",
+          "sha256": "6181188095a4a158ca3d7046127d7b8965984680e52ea9c0d50eb919221a43b5",
+          "size": 64909738
+        },
+        {
+          "name": "source.spm",
+          "url": "https://huggingface.co/Xenova/opus-mt-es-fr/resolve/3bef5f612825d503f6fb85e0527a1fe30f2578c2/source.spm",
+          "sha256": "0807c7b3dabe387a083700920a4b406c7656db09922bf934c25c2fab24706c4d",
+          "size": 818689
+        },
+        {
+          "name": "vocab.json",
+          "url": "https://huggingface.co/Xenova/opus-mt-es-fr/resolve/3bef5f612825d503f6fb85e0527a1fe30f2578c2/vocab.json",
+          "sha256": "00298f6b835a284fc55779eb3af674807e71984169682d5156ed92184b3b0f0a",
+          "size": 2487351
+        },
+        {
+          "name": "config.json",
+          "url": "https://huggingface.co/Xenova/opus-mt-es-fr/resolve/3bef5f612825d503f6fb85e0527a1fe30f2578c2/config.json",
+          "sha256": "5125afd086d77211f5a6fe09a24899b8d94e71acdf6dce6e91026053c43332e0",
+          "size": 1376
+        }
+      ]
+    },
+    "mt-opus-fr-en": {
+      "files": [
+        {
+          "name": "encoder.onnx",
+          "url": "https://huggingface.co/Xenova/opus-mt-fr-en/resolve/6b166a182780e118c997879d0ad5be4b53671644/onnx/encoder_model_quantized.onnx",
+          "sha256": "e727cb26ac6bf816394c49671af69c9ae5798868fed1e40849872415dffc1772",
+          "size": 50090398
+        },
+        {
+          "name": "decoder.onnx",
+          "url": "https://huggingface.co/Xenova/opus-mt-fr-en/resolve/6b166a182780e118c997879d0ad5be4b53671644/onnx/decoder_model_quantized.onnx",
+          "sha256": "8c5a0c5d113a1c4c5ae46e014aacf770f3bff2109fe8b74ead6aae5c5f408ffc",
+          "size": 57010810
+        },
+        {
+          "name": "source.spm",
+          "url": "https://huggingface.co/Xenova/opus-mt-fr-en/resolve/6b166a182780e118c997879d0ad5be4b53671644/source.spm",
+          "sha256": "78d0e717c77053f1c4b856d8661d9cb87c64f083a35418c087b9146300e4f585",
+          "size": 802397
+        },
+        {
+          "name": "vocab.json",
+          "url": "https://huggingface.co/Xenova/opus-mt-fr-en/resolve/6b166a182780e118c997879d0ad5be4b53671644/vocab.json",
+          "sha256": "f2ba9c69ae20f96b8bd821239a9152be422394f980350b77907cffc183db5f2d",
+          "size": 1458196
+        },
+        {
+          "name": "config.json",
+          "url": "https://huggingface.co/Xenova/opus-mt-fr-en/resolve/6b166a182780e118c997879d0ad5be4b53671644/config.json",
+          "sha256": "6c2851f154d7b88c7767e4fdcf8a5694a36a456bfa6cbcde1b13fdbade3b56f6",
+          "size": 1411
+        }
+      ]
+    },
+    "mt-opus-fr-es": {
+      "files": [
+        {
+          "name": "encoder.onnx",
+          "url": "https://huggingface.co/Xenova/opus-mt-fr-es/resolve/962338be51033b548c13dbb6f4da3ddb8c8aba0e/onnx/encoder_model_quantized.onnx",
+          "sha256": "946954149b0179a0fb60145a3ed85da2f58868ef2e6a442a1cb4301563b70ac3",
+          "size": 57928094
+        },
+        {
+          "name": "decoder.onnx",
+          "url": "https://huggingface.co/Xenova/opus-mt-fr-es/resolve/962338be51033b548c13dbb6f4da3ddb8c8aba0e/onnx/decoder_model_quantized.onnx",
+          "sha256": "733e93de273f0bfc483e37d66125aefae7525f91e6e10bd2d480b7f831301348",
+          "size": 64909738
+        },
+        {
+          "name": "source.spm",
+          "url": "https://huggingface.co/Xenova/opus-mt-fr-es/resolve/962338be51033b548c13dbb6f4da3ddb8c8aba0e/source.spm",
+          "sha256": "74ffc930c4af87e3bdec6dde479eb36f05152e1a657ec65dfb923baf4b5d27a9",
+          "size": 811963
+        },
+        {
+          "name": "vocab.json",
+          "url": "https://huggingface.co/Xenova/opus-mt-fr-es/resolve/962338be51033b548c13dbb6f4da3ddb8c8aba0e/vocab.json",
+          "sha256": "00298f6b835a284fc55779eb3af674807e71984169682d5156ed92184b3b0f0a",
+          "size": 2487351
+        },
+        {
+          "name": "config.json",
+          "url": "https://huggingface.co/Xenova/opus-mt-fr-es/resolve/962338be51033b548c13dbb6f4da3ddb8c8aba0e/config.json",
+          "sha256": "20fb838043a5bd522abc2582149dfa2a0e45debe298098ef147b4b525de4a2c0",
+          "size": 1376
+        }
+      ]
+    },
+    "mt-opus-it-en": {
+      "files": [
+        {
+          "name": "encoder.onnx",
+          "url": "https://huggingface.co/Xenova/opus-mt-it-en/resolve/fd0b89b9c052adc1f2f64152f555aa17353728be/onnx/encoder_model_quantized.onnx",
+          "sha256": "a025d2d85c90da23880116b67175e43e71921d8d2bf446b9f1eacdc86015aa4c",
+          "size": 60773278
+        },
+        {
+          "name": "decoder.onnx",
+          "url": "https://huggingface.co/Xenova/opus-mt-it-en/resolve/fd0b89b9c052adc1f2f64152f555aa17353728be/onnx/decoder_model_quantized.onnx",
+          "sha256": "203bac7b98e438e65e1ddfcbec254ffb6811e6a8f4f71e93517ca9550323bf6e",
+          "size": 67777150
+        },
+        {
+          "name": "source.spm",
+          "url": "https://huggingface.co/Xenova/opus-mt-it-en/resolve/fd0b89b9c052adc1f2f64152f555aa17353728be/source.spm",
+          "sha256": "1bd307e2756991d470e4b40172147f7889b46a323b1a9a2150e66274825b1f21",
+          "size": 813709
+        },
+        {
+          "name": "vocab.json",
+          "url": "https://huggingface.co/Xenova/opus-mt-it-en/resolve/fd0b89b9c052adc1f2f64152f555aa17353728be/vocab.json",
+          "sha256": "08e5b03ab20b2b9b85d41aed1b36dce2650afcb6e96274a06b7869b2e06884d5",
+          "size": 2530593
+        },
+        {
+          "name": "config.json",
+          "url": "https://huggingface.co/Xenova/opus-mt-it-en/resolve/fd0b89b9c052adc1f2f64152f555aa17353728be/config.json",
+          "sha256": "4b82a23b7a91b213a934db70d0a33712a739fdd7c5686b02d89642d7dcfc7ac4",
+          "size": 1376
+        }
+      ]
+    },
+    "ocr-ppocrv6-small": {
+      "files": [
+        {
+          "name": "det.onnx",
+          "url": "https://github.com/GreatV/oar-ocr/releases/download/v0.7.0/pp-ocrv6_small_det.onnx",
+          "sha256": "d73e0058b7a8086bbd57f3d10b8bcd4ff95363f67e06e2762b5e814fe9c9410e",
+          "size": 9880512
+        },
+        {
+          "name": "rec.onnx",
+          "url": "https://github.com/GreatV/oar-ocr/releases/download/v0.7.0/pp-ocrv6_small_rec.onnx",
+          "sha256": "5435fd747c9e0efe15a96d0b378d5bd157e9492ed8fd80edf08f30d02fa24634",
+          "size": 21159378
+        },
+        {
+          "name": "dict.txt",
+          "url": "https://github.com/GreatV/oar-ocr/releases/download/v0.7.0/ppocrv6_dict.txt",
+          "sha256": "b5f2bfe2bdd9448429e3e82b51c789775d9b42f2403d082b00662eb77e401c5d",
+          "size": 74947
         }
       ]
     },
@@ -169,7 +441,15 @@
     "zh": "stt-whisper-base"
   },
   "translate": {
+    "de-en": "mt-opus-de-en",
+    "en-de": "mt-opus-en-de",
     "en-es": "mt-opus-en-es",
-    "es-en": "mt-opus-es-en"
+    "en-fr": "mt-opus-en-fr",
+    "en-it": "mt-opus-en-it",
+    "es-en": "mt-opus-es-en",
+    "es-fr": "mt-opus-es-fr",
+    "fr-en": "mt-opus-fr-en",
+    "fr-es": "mt-opus-fr-es",
+    "it-en": "mt-opus-it-en"
   }
 }

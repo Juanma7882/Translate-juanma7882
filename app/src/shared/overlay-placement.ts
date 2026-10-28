@@ -48,3 +48,23 @@ export function placeOutside(
   y = clamp(y, workArea.y, bottom - size.height)
   return { x, y, overlaps: intersects({ x, y, ...size }, region) }
 }
+
+/** Visible mínimo (en DIP) de un overlay arrastrado: siempre queda un trozo al alcance del ratón. */
+export const MIN_VISIBLE = 48
+
+/**
+ * Mantiene un overlay arrastrado dentro del escritorio (la caja que envuelve a todas las áreas de
+ * trabajo): el borde superior nunca sale de la pantalla y siempre quedan `MIN_VISIBLE` píxeles
+ * visibles a cada lado.
+ */
+export function clampToAreas(rect: DipRect, areas: readonly DipRect[], minVisible = MIN_VISIBLE): { x: number; y: number } {
+  if (areas.length === 0) return { x: rect.x, y: rect.y }
+  const left = Math.min(...areas.map((a) => a.x))
+  const top = Math.min(...areas.map((a) => a.y))
+  const right = Math.max(...areas.map((a) => a.x + a.width))
+  const bottom = Math.max(...areas.map((a) => a.y + a.height))
+  return {
+    x: clamp(rect.x, left - rect.width + minVisible, right - minVisible),
+    y: clamp(rect.y, top, bottom - minVisible),
+  }
+}

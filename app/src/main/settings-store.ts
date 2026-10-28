@@ -62,6 +62,22 @@ export class SettingsStore {
     return { ok: true, settings: this.get() }
   }
 
+  /**
+   * Restablece las preferencias a sus valores por defecto. Conserva la región elegida y la carpeta
+   * de modelos: no son preferencias de aspecto y cambiarlas haría "desaparecer" lo ya instalado.
+   */
+  reset(): UpdateResult {
+    const { lastRegion, modelsDir } = this.current
+    const { version: _version, ...defaults } = defaultSettings()
+    return this.update({ ...defaults, lastRegion, modelsDir })
+  }
+
+  /** Sustituye las preferencias por unas ya validadas (importación). */
+  replace(next: Settings): UpdateResult {
+    const { version: _version, ...rest } = next
+    return this.update(rest)
+  }
+
   onChange(listener: Listener): () => void {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)

@@ -75,7 +75,7 @@ fn real_engines_refuse_to_start_without_models_and_list_the_missing_ones() {
 #[test]
 fn unsupported_languages_are_reported_before_looking_at_models() {
     let (mut engine, _sink) = real_engine("unsupported");
-    for (from, to) in [("ko", "es"), ("en", "fr")] {
+    for (from, to) in [("ko", "es"), ("en", "ru")] {
         let error = engine
             .start_region(region(), lang(from), lang(to))
             .unwrap_err();
@@ -108,7 +108,7 @@ fn real_audio_lists_the_missing_speech_models_and_starts_nothing() {
 #[test]
 fn real_audio_rejects_unsupported_languages_before_looking_at_models() {
     let (mut engine, _sink) = real_engine("audio-lang");
-    for (from, to) in [("ko", "es"), ("en", "fr")] {
+    for (from, to) in [("ko", "es"), ("en", "ru")] {
         let error = engine.start_audio(lang(from), lang(to)).unwrap_err();
         assert!(
             matches!(&error, CoreError::InvalidArgument(m) if m.contains("unsupported")),

@@ -1,7 +1,8 @@
 //! Capa napi-rs: expone a JS solo comandos de control y eventos de texto.
 //!
 //! API: `startRegionTranslation`, `startAudioSubtitles`, `stop`, `pause`, `resume`, `configure`,
-//! `modelStatus`, `downloadModels` y los registros `onTranslation`, `onSubtitle`, `onError`,
+//! `modelStatus`, `downloadModels`, `modelInventory`, `deleteModel`, `cancelModelDownload`,
+//! `validateModelsDir` y los registros `onTranslation`, `onSubtitle`, `onError`,
 //! `onModelProgress`, `onModeChanged`. Capturas y audio nunca cruzan hacia JS.
 //!
 //! Modos: `startRegionTranslation` con `autoFallback: true` es el modo automático (texto con paso
@@ -21,13 +22,15 @@ use napi_derive::{module_init, napi};
 use tr_engine::tr_core::fallback::FallbackConfig;
 use tr_engine::tr_core::runner::LoopTiming;
 use tr_engine::tr_core::{CoreError, ErrorCategory, Lang, Region, panic_hook};
-use tr_engine::{Engine, EngineConfig, EngineKind, Manifest, ModelScope, Models};
+use tr_engine::{
+    Engine, EngineConfig, EngineKind, Manifest, ModelScope, Models, PerformanceConfig,
+};
 
 use events::{
     BindingSink, Callback, Callbacks, ErrorEvent, ModeEvent, ModelProgressEvent, SubtitleEvent,
     TranslationEvent,
 };
-use models::{DownloadTask, ModelCatalog, StatusTask};
+use models::{DeleteTask, DownloadTask, InventoryTask, ModelCatalog, ModelsDirCheck, StatusTask};
 
 static CALLBACKS: LazyLock<Arc<Callbacks>> = LazyLock::new(Arc::default);
 
@@ -72,6 +75,17 @@ pub struct Rect {
     pub monitor: Option<u32>,
 }
 
+/// Parámetros de rendimiento; todos opcionales (sin valor, el motor usa los suyos).
+#[napi(object)]
+pub struct PerformanceOptions {
+    /// Hilos de cálculo de cada sesión de ONNX Runtime (1 a 64).
+    pub intra_threads: Option<u32>,
+    /// Anchura del haz de la traducción (1 a 8; 1 = voraz).
+    pub beam_width: Option<u32>,
+    /// Entradas de la caché de traducciones (1 a 1 000 000).
+    pub cache_capacity: Option<u32>,
+}
+
 /// Opciones del motor; todas opcionales. Se aplican en el próximo arranque.
 #[napi(object)]
 pub struct EngineOptions {
@@ -91,6 +105,8 @@ pub struct EngineOptions {
     pub fallback_text_ms: Option<u32>,
     /// Latencia simulada de los motores de demostración.
     pub fake_latency_ms: Option<u32>,
+    /// Parámetros de rendimiento (hilos, haz, caché).
+    pub performance: Option<PerformanceOptions>,
 }
 
 /// Convierte un error del núcleo: los argumentos inválidos se distinguen del resto de fallos.
@@ -129,6 +145,41 @@ fn load_manifest(path: &str) -> napi::Result<Arc<Manifest>> {
         .map_err(|e| invalid_arg(e.to_string()))
 }
 
+/// Valida un campo numérico opcional contra su rango.
+fn ranged(value: Option<u32>, label: &str, min: u32, max: u32) -> napi::Result<Option<usize>> {
+    match value {
+        None => Ok(None),
+        Some(v) if (min..=max).contains(&v) => Ok(Some(v as usize)),
+        Some(_) => Err(invalid_arg(format!(
+            "{label} must be between {min} and {max}"
+        ))),
+    }
+}
+
+/// Aplica los parámetros de rendimiento a la configuración. `cacheCapacity` ya lo usa el motor;
+/// `intraThreads` y `beamWidth` quedan en `EngineConfig.performance` para los adaptadores (5A).
+fn apply_performance(
+    config: &mut EngineConfig,
+    performance: &PerformanceOptions,
+) -> napi::Result<()> {
+    let intra_threads = ranged(performance.intra_threads, "performance.intraThreads", 1, 64)?;
+    let beam_width = ranged(performance.beam_width, "performance.beamWidth", 1, 8)?;
+    let cache = ranged(
+        performance.cache_capacity,
+        "performance.cacheCapacity",
+        1,
+        1_000_000,
+    )?;
+    config.performance = PerformanceConfig {
+        intra_threads,
+        beam_width,
+    };
+    if let Some(capacity) = cache {
+        config.cache_capacity = capacity;
+    }
+    Ok(())
+}
+
 /// Construye la configuración validando **todo** antes de tocar el estado del motor.
 fn build_config(options: &EngineOptions) -> napi::Result<EngineConfig> {
     let ms = |v: u32| Duration::from_millis(u64::from(v));
@@ -162,6 +213,9 @@ fn build_config(options: &EngineOptions) -> napi::Result<EngineConfig> {
     }
     if let Some(latency) = options.fake_latency_ms {
         config.fake_latency = ms(latency);
+    }
+    if let Some(performance) = &options.performance {
+        apply_performance(&mut config, performance)?;
     }
     Ok(config)
 }
@@ -266,6 +320,50 @@ pub fn download_models(
         to,
         scope: scope(scope_name.as_deref())?,
     }))
+}
+
+/// Todos los modelos del manifiesto con su estado y el espacio que ocupan en disco.
+#[napi(ts_return_type = "Promise<ModelInventory>")]
+pub fn model_inventory() -> napi::Result<AsyncTask<InventoryTask>> {
+    Ok(AsyncTask::new(InventoryTask { models: models()? }))
+}
+
+/// Borra un modelo por su identificador y devuelve los bytes liberados. Se rechaza mientras haya
+/// una traducción en marcha (los modelos están en uso) o el modelo se esté descargando.
+#[napi(ts_return_type = "Promise<number>")]
+pub fn delete_model(id: String) -> napi::Result<AsyncTask<DeleteTask>> {
+    if engine().is_running() {
+        return Err(Error::new(
+            Status::GenericFailure,
+            "a translation is running; stop it before deleting models",
+        ));
+    }
+    Ok(AsyncTask::new(DeleteTask {
+        models: models()?,
+        id,
+    }))
+}
+
+/// Interrumpe la descarga de modelos en curso; lo descargado se conserva para reanudar.
+#[napi]
+pub fn cancel_model_download() -> napi::Result<()> {
+    models()?.cancel();
+    Ok(())
+}
+
+/// Comprueba si `path` sirve como carpeta de modelos (absoluta, escribible...).
+#[napi]
+pub fn validate_models_dir(path: String) -> ModelsDirCheck {
+    match Models::validate_dir(Path::new(&path)) {
+        Ok(()) => ModelsDirCheck {
+            ok: true,
+            reason: None,
+        },
+        Err(problem) => ModelsDirCheck {
+            ok: false,
+            reason: Some(problem.code().to_owned()),
+        },
+    }
 }
 
 /// Uso interno de `api.js`: cuántos eventos de progreso de modelos se han emitido en total.

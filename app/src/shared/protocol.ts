@@ -6,9 +6,11 @@ import type {
   ErrorEvent,
   ModeEvent,
   ModelCatalog,
+  ModelInventory,
   ModelProgressEvent,
   ModelScope,
   ModelStatusInfo,
+  ModelsDirCheck,
   Rect,
   SubtitleEvent,
   TranslationEvent,
@@ -39,13 +41,23 @@ export type Command =
   | { type: 'modelCatalog' }
   | { type: 'modelStatus'; from: string; to: string; scope?: ModelScope }
   | { type: 'downloadModels'; from: string; to: string; scope?: ModelScope }
+  | { type: 'modelInventory' }
+  | { type: 'deleteModel'; modelId: string }
+  | { type: 'cancelDownload' }
+  | { type: 'validateModelsDir'; path: string }
 
 /** Qué devuelve cada orden al completarse. */
 export type CommandResult<C extends Command> = C extends { type: 'modelStatus' }
   ? ModelStatusInfo[]
   : C extends { type: 'modelCatalog' }
     ? ModelCatalog
-    : void
+    : C extends { type: 'modelInventory' }
+      ? ModelInventory
+      : C extends { type: 'deleteModel' }
+        ? number
+        : C extends { type: 'validateModelsDir' }
+          ? ModelsDirCheck
+          : void
 
 export type Request = Command & { id: number }
 

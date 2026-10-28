@@ -25,32 +25,77 @@ pub enum Route {
         chunk: usize,
         delay: Duration,
     },
+    /// Admite `Range: bytes=N-` (responde `206` con `Content-Range`). Si `cut_first_at` es
+    /// `Some`, la primera petición se corta tras esa cantidad de bytes (la red se cae). Envía en
+    /// trozos de `chunk` con una pausa de `delay` para poder cancelar a mitad.
+    Resumable {
+        body: Vec<u8>,
+        chunk: usize,
+        delay: Duration,
+        cut_first_at: Option<usize>,
+    },
+    /// Responde `416` a cualquier petición con `Range` y el cuerpo completo si no la tiene.
+    RejectsRange(Vec<u8>),
 }
+
+type Hits = Mutex<HashMap<String, usize>>;
+type Ranges = Mutex<HashMap<String, Vec<Option<String>>>>;
 
 pub struct TestServer {
     addr: SocketAddr,
     stop: Arc<AtomicBool>,
-    hits: Arc<Mutex<HashMap<String, usize>>>,
+    hits: Arc<Hits>,
+    ranges: Arc<Ranges>,
     handle: Option<JoinHandle<()>>,
 }
 
-fn respond(
-    mut stream: TcpStream,
-    routes: &HashMap<String, Route>,
-    hits: &Mutex<HashMap<String, usize>>,
-) {
+/// Inicio de un `Range: bytes=N-`; `None` si no es de ese formato.
+fn range_start(range: &str) -> Option<usize> {
+    range
+        .strip_prefix("bytes=")?
+        .strip_suffix('-')?
+        .parse()
+        .ok()
+}
+
+/// Escribe `pieces` en trozos con pausa entre ellos; se detiene al primer error.
+fn write_paced(
+    stream: &mut TcpStream,
+    mut result: std::io::Result<()>,
+    data: &[u8],
+    chunk: usize,
+    delay: Duration,
+) -> std::io::Result<()> {
+    for piece in data.chunks(chunk) {
+        if result.is_err() {
+            break;
+        }
+        result = stream.write_all(piece).and_then(|()| stream.flush());
+        thread::sleep(delay);
+    }
+    result
+}
+
+fn respond(mut stream: TcpStream, routes: &HashMap<String, Route>, hits: &Hits, ranges: &Ranges) {
     let mut reader = BufReader::new(stream.try_clone().expect("clonar el socket"));
     let mut request_line = String::new();
     if reader.read_line(&mut request_line).is_err() {
         return;
     }
-    // Consumir las cabeceras.
+    // Leer las cabeceras (solo interesa `Range`).
+    let mut range: Option<String> = None;
     loop {
         let mut line = String::new();
         match reader.read_line(&mut line) {
             Ok(0) | Err(_) => break,
             Ok(_) if line == "\r\n" || line == "\n" => break,
-            Ok(_) => {}
+            Ok(_) => {
+                if let Some((name, value)) = line.split_once(':')
+                    && name.eq_ignore_ascii_case("range")
+                {
+                    range = Some(value.trim().to_owned());
+                }
+            }
         }
     }
     let path = request_line
@@ -58,7 +103,18 @@ fn respond(
         .nth(1)
         .unwrap_or("/")
         .to_owned();
-    *hits.lock().unwrap().entry(path.clone()).or_default() += 1;
+    let hit = {
+        let mut hits = hits.lock().unwrap();
+        let count = hits.entry(path.clone()).or_default();
+        *count += 1;
+        *count
+    };
+    ranges
+        .lock()
+        .unwrap()
+        .entry(path.clone())
+        .or_default()
+        .push(range.clone());
 
     let head = |status: &str, length: usize, extra: &str| {
         format!("HTTP/1.1 {status}\r\nContent-Length: {length}\r\nConnection: close\r\n{extra}\r\n")
@@ -78,15 +134,47 @@ fn respond(
             .write_all(head("200 OK", *declared, "").as_bytes())
             .and_then(|()| stream.write_all(sent)),
         Some(Route::Slow { body, chunk, delay }) => {
-            let mut result = stream.write_all(head("200 OK", body.len(), "").as_bytes());
-            for piece in body.chunks(*chunk) {
-                if result.is_err() {
-                    break;
-                }
-                result = stream.write_all(piece).and_then(|()| stream.flush());
-                thread::sleep(*delay);
+            let result = stream.write_all(head("200 OK", body.len(), "").as_bytes());
+            write_paced(&mut stream, result, body, *chunk, *delay)
+        }
+        Some(Route::Resumable {
+            body,
+            chunk,
+            delay,
+            cut_first_at,
+        }) => {
+            let start = range
+                .as_deref()
+                .and_then(range_start)
+                .filter(|s| *s < body.len());
+            let (status, extra, from) = match start {
+                Some(s) => (
+                    "206 Partial Content",
+                    format!(
+                        "Content-Range: bytes {s}-{}/{}\r\n",
+                        body.len() - 1,
+                        body.len()
+                    ),
+                    s,
+                ),
+                None => ("200 OK", String::new(), 0),
+            };
+            let rest = &body[from..];
+            let result = stream.write_all(head(status, rest.len(), &extra).as_bytes());
+            let limit = match (hit, cut_first_at) {
+                (1, Some(cut)) => (*cut).min(rest.len()),
+                _ => rest.len(),
+            };
+            write_paced(&mut stream, result, &rest[..limit], *chunk, *delay)
+        }
+        Some(Route::RejectsRange(body)) => {
+            if range.is_some() {
+                stream.write_all(head("416 Range Not Satisfiable", 0, "").as_bytes())
+            } else {
+                stream
+                    .write_all(head("200 OK", body.len(), "").as_bytes())
+                    .and_then(|()| stream.write_all(body))
             }
-            result
         }
     };
     let _ = stream.flush();
@@ -104,17 +192,18 @@ impl TestServer {
                 .collect(),
         );
         let stop = Arc::new(AtomicBool::new(false));
-        let hits = Arc::new(Mutex::new(HashMap::new()));
+        let hits: Arc<Hits> = Arc::default();
+        let ranges: Arc<Ranges> = Arc::default();
         let handle = {
-            let (stop, hits) = (stop.clone(), hits.clone());
+            let (stop, hits, ranges) = (stop.clone(), hits.clone(), ranges.clone());
             thread::spawn(move || {
                 for stream in listener.incoming() {
                     if stop.load(Ordering::Acquire) {
                         break;
                     }
                     if let Ok(stream) = stream {
-                        let (routes, hits) = (routes.clone(), hits.clone());
-                        thread::spawn(move || respond(stream, &routes, &hits));
+                        let (routes, hits, ranges) = (routes.clone(), hits.clone(), ranges.clone());
+                        thread::spawn(move || respond(stream, &routes, &hits, &ranges));
                     }
                 }
             })
@@ -123,6 +212,7 @@ impl TestServer {
             addr,
             stop,
             hits,
+            ranges,
             handle: Some(handle),
         }
     }
@@ -134,6 +224,16 @@ impl TestServer {
     /// Veces que se pidió `path`.
     pub fn hits(&self, path: &str) -> usize {
         self.hits.lock().unwrap().get(path).copied().unwrap_or(0)
+    }
+
+    /// Cabeceras `Range` recibidas en `path`, una por petición (`None` si no traía).
+    pub fn ranges(&self, path: &str) -> Vec<Option<String>> {
+        self.ranges
+            .lock()
+            .unwrap()
+            .get(path)
+            .cloned()
+            .unwrap_or_default()
     }
 
     pub fn total_hits(&self) -> usize {

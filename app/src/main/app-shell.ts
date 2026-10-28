@@ -13,7 +13,9 @@ import { ModelsService } from './models-service.ts'
 import { OverlayController } from './overlay-controller.ts'
 import { RegionPicker } from './region-picker.ts'
 import type { DisplaySource } from './region-picker.ts'
+import { registerOverlayIpc } from './overlay-ipc.ts'
 import { registerSettingsIpc } from './settings-ipc.ts'
+import type { FilePrompts } from './settings-ipc.ts'
 import type { SettingsStore } from './settings-store.ts'
 import { ShortcutManager } from './shortcuts.ts'
 import type { GlobalShortcutLike } from './shortcuts.ts'
@@ -37,6 +39,8 @@ export interface ShellDeps {
   /** Muestra un aviso fuera de las ventanas (notificación del sistema). */
   notify: (notice: Notice) => void
   quit: () => void
+  /** Diálogos para elegir carpetas y archivos (importar, exportar, carpeta de modelos). */
+  files: FilePrompts
   /** Opciones extra del motor (manifiesto alternativo, carpeta de modelos…). */
   engineOverrides?: () => EngineOptions
   /** Cuánto se espera para repetir el mismo aviso. */
@@ -53,6 +57,7 @@ export class AppShell {
   private readonly recentNotices = new Map<string, number>()
   private readonly shortcutManager: ShortcutManager
   private disposeIpc: (() => void) | null = null
+  private disposeOverlayIpc: (() => void) | null = null
   private readonly deps: ShellDeps
 
   constructor(deps: ShellDeps) {
@@ -120,7 +125,15 @@ export class AppShell {
   }
 
   start(): void {
-    this.disposeIpc = registerSettingsIpc({ windows: this.deps.windows, settings: this.deps.settings, models: this.models, host: this.deps.host, controller: this.controller })
+    this.disposeIpc = registerSettingsIpc({
+      windows: this.deps.windows,
+      settings: this.deps.settings,
+      models: this.models,
+      host: this.deps.host,
+      controller: this.controller,
+      files: this.deps.files,
+    })
+    this.disposeOverlayIpc = registerOverlayIpc({ windows: this.deps.windows, overlay: this.overlay, isRunning: () => this.controller.state.running })
     this.deps.host.start()
     this.applyShortcuts()
     this.refreshTray()
@@ -129,6 +142,7 @@ export class AppShell {
   dispose(): void {
     this.shortcutManager.dispose()
     this.disposeIpc?.()
+    this.disposeOverlayIpc?.()
     this.deps.tray.destroy()
     this.overlay.close()
   }

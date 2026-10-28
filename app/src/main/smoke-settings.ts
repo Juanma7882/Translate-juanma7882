@@ -1,25 +1,31 @@
 // Prueba de humo de la ventana de Ajustes (TR_SMOKE=settings): la interfaz real (Preact) sobre el
 // motor real, con descargas contra un servidor HTTP local y un manifiesto propio (sin internet).
-// Cubre idiomas según el catálogo, accesibilidad básica, cambios que se guardan y se aplican en vivo,
-// validación, y la gestión de modelos: avance, error con reintento y estado final "listo".
+// Cubre idiomas según el catálogo, pestañas y accesibilidad, cambios que se guardan y se aplican
+// en vivo, validación en línea, la gestión de modelos (avance, error con reintento, cancelar,
+// reanudar con Range, borrar, espacio y carpeta), colores, rendimiento, importar/exportar,
+// restablecer y el tema claro/oscuro.
 
+import { EventEmitter } from 'node:events'
 import { createHash } from 'node:crypto'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { nativeTheme } from 'electron'
 import type { BrowserWindow } from 'electron'
 
-import { AppController } from './app-controller.ts'
+import type { AppController } from './app-controller.ts'
 import type { EngineHost } from './engine-host.ts'
 import { ModelsService } from './models-service.ts'
-import { RegionPicker } from './region-picker.ts'
+import { OverlayController } from './overlay-controller.ts'
+import { registerOverlayIpc } from './overlay-ipc.ts'
 import type { DisplaySource } from './region-picker.ts'
-import { registerSettingsIpc } from './settings-ipc.ts'
+import { registerSettingsIpc, scriptedFiles } from './settings-ipc.ts'
 import { SettingsStore } from './settings-store.ts'
 import type { WindowManager } from './windows.ts'
+import { defaultSettings } from '../shared/settings.ts'
 
 function ok(step: string): void {
   console.log(`[smoke] ok: ${step}`)
@@ -54,11 +60,17 @@ export interface Fixture {
   manifestPath: string
   /** Mientras sea `true`, el servidor responde 500 a todo. */
   failing: { value: boolean }
+  /** Si no es `null`, la próxima descarga completa de `a.bin` se corta tras esos bytes (red caída). */
+  cutAfter: { value: number | null }
+  /** Cabecera `Range` de cada petición a `a.bin` (`null` si no traía). */
+  ranges: (string | null)[]
 }
 
 /** Servidor local con un manifiesto de modelos de juguete, para ejercitar descargas sin internet. */
 export async function startFixture(): Promise<Fixture> {
   const failing = { value: false }
+  const cutAfter: { value: number | null } = { value: null }
+  const ranges: (string | null)[] = []
   const server = createServer((req, res) => {
     const name = (req.url ?? '').slice(1)
     const body = FILES[name]
@@ -66,14 +78,22 @@ export async function startFixture(): Promise<Fixture> {
       res.writeHead(body ? 500 : 404).end()
       return
     }
-    res.writeHead(200, { 'content-length': body.length })
+    const range = typeof req.headers.range === 'string' ? req.headers.range : null
+    if (name === 'a.bin') ranges.push(range)
+    const start = range ? Number(/^bytes=(\d+)-$/.exec(range)?.[1] ?? 0) : 0
+    const rest = body.subarray(start)
+    if (start > 0) res.writeHead(206, { 'content-length': rest.length, 'content-range': `bytes ${start}-${body.length - 1}/${body.length}` })
+    else res.writeHead(200, { 'content-length': rest.length })
+    const limit = name === 'a.bin' && start === 0 && cutAfter.value !== null ? cutAfter.value : rest.length
+    if (name === 'a.bin' && start === 0) cutAfter.value = null
     let offset = 0
     const pump = (): void => {
-      if (offset >= body.length) {
-        res.end()
+      if (offset >= limit) {
+        if (limit < rest.length) res.destroy()
+        else res.end()
         return
       }
-      res.write(body.subarray(offset, offset + 10_000))
+      res.write(rest.subarray(offset, Math.min(offset + 10_000, limit)))
       offset += 10_000
       setTimeout(pump, 30)
     }
@@ -85,7 +105,7 @@ export async function startFixture(): Promise<Fixture> {
   const json = `{"version":1,"models":{"o":{"files":[${entry('a.bin')}]},"t":{"files":[${entry('b.bin')},${entry('c.bin')}]},"s":{"files":[${entry('d.bin')}]}},"ocr":{"en":"o"},"stt":{"en":"s"},"translate":{"en-es":"t"}}`
   const manifestPath = join(mkdtempSync(join(tmpdir(), 'tr-settings-manifest-')), 'models.json')
   writeFileSync(manifestPath, json)
-  return { server, manifestPath, failing }
+  return { server, manifestPath, failing, cutAfter, ranges }
 }
 
 const evaluate = <T>(window: BrowserWindow, code: string): Promise<T> => window.webContents.executeJavaScript(code) as Promise<T>
@@ -99,24 +119,36 @@ function setControl(window: BrowserWindow, selector: string, value: string | boo
   )
 }
 
+const click = (window: BrowserWindow, selector: string) => evaluate(window, `document.querySelector(${JSON.stringify(selector)}).click()`)
 const text = (window: BrowserWindow, selector: string) => evaluate<string>(window, `document.querySelector(${JSON.stringify(selector)})?.textContent ?? ''`)
 const exists = (window: BrowserWindow, selector: string) => evaluate<boolean>(window, `document.querySelector(${JSON.stringify(selector)}) !== null`)
+const attr = (window: BrowserWindow, selector: string, name: string) => evaluate<string | null>(window, `document.querySelector(${JSON.stringify(selector)})?.getAttribute(${JSON.stringify(name)}) ?? null`)
 
-export async function runSettingsSmoke(host: EngineHost, windows: WindowManager, displays: DisplaySource): Promise<void> {
+export async function runSettingsSmoke(host: EngineHost, windows: WindowManager, _displays: DisplaySource): Promise<void> {
   const fixture = await startFixture()
   try {
-    const file = join(mkdtempSync(join(tmpdir(), 'tr-settings-')), 'settings.json')
+    const dir = mkdtempSync(join(tmpdir(), 'tr-settings-'))
+    const file = join(dir, 'settings.json')
     const settings = new SettingsStore(file)
     settings.load()
     expect(settings.update({ engines: 'real', from: 'en', to: 'es' }).ok, 'ajustes iniciales')
 
     const modelsDir = mkdtempSync(join(tmpdir(), 'tr-settings-models-'))
-    let controller: AppController
-    const models = new ModelsService(host, settings, () => controller.state.running, () => ({ modelsDir, manifestPath: fixture.manifestPath }))
-    controller = new AppController({ host, windows, settings, picker: new RegionPicker(windows, displays, () => settings.get().lastRegion), configure: () => models.configure() })
+    // Una sesión simulada: el controlador real no hace falta para probar los bloqueos de la interfaz.
+    const session = Object.assign(new EventEmitter(), { state: { running: false, paused: false, mode: null as null } })
+    const controller = session as unknown as AppController
+    // Si el usuario elige una carpeta en Ajustes, manda; si no, la de la prueba.
+    const models = new ModelsService(host, settings, () => session.state.running, () => ({ manifestPath: fixture.manifestPath, ...(settings.get().modelsDir ? {} : { modelsDir }) }))
     host.start()
     await host.whenReady()
-    const dispose = registerSettingsIpc({ windows, settings, models, host, controller })
+    const files = scriptedFiles()
+    const overlay = new OverlayController(windows, settings, _displays)
+    const disposeSettings = registerSettingsIpc({ windows, settings, models, host, controller, files })
+    const disposeOverlay = registerOverlayIpc({ windows, overlay, isRunning: () => session.state.running })
+    const dispose = () => {
+      disposeSettings()
+      disposeOverlay()
+    }
 
     const window = await windows.openSettings({ show: false })
     await waitFor(() => exists(window, '#models li'), 'the model list')
@@ -137,17 +169,45 @@ export async function runSettingsSmoke(host: EngineHost, windows: WindowManager,
     expect(bare === 0, 'todos los grupos tienen leyenda')
     const order = await evaluate<boolean>(window, `[...document.querySelectorAll('[tabindex]')].every(el => Number(el.getAttribute('tabindex')) <= 0)`)
     expect(order, 'sin tabindex positivo: el orden de tabulación sigue el del documento')
-    ok('controles con etiqueta, grupos con leyenda y orden de tabulación natural')
+    const live = await evaluate<boolean>(
+      window,
+      `document.getElementById('notice').getAttribute('aria-live') === 'polite' && document.getElementById('status').getAttribute('aria-live') === 'polite' && document.getElementById('errors').getAttribute('role') === 'alert'`,
+    )
+    expect(live, 'avisos con aria-live y errores con role=alert')
+    ok('controles con etiqueta, grupos con leyenda, orden de tabulación natural y regiones aria-live')
+
+    // Pestañas: roles WAI-ARIA, una sola en el orden de tabulación y navegación con el teclado.
+    const tabs = await evaluate<string[]>(window, `[...document.querySelectorAll('[role=tab]')].map(t => t.id)`)
+    expect(tabs.join() === 'tab-general,tab-models,tab-appearance,tab-shortcuts,tab-advanced', `pestañas: ${tabs}`)
+    const stops = await evaluate<number>(window, `[...document.querySelectorAll('[role=tab]')].filter(t => t.tabIndex === 0).length`)
+    expect(stops === 1, 'solo la pestaña activa está en el orden de tabulación')
+    const key = (k: string) => evaluate(window, `document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(k)}, bubbles: true }))`)
+    await evaluate(window, `document.getElementById('tab-general').focus()`)
+    await key('ArrowRight')
+    await waitFor(async () => (await attr(window, '#tab-models', 'aria-selected')) === 'true', 'the models tab to be selected')
+    expect(await evaluate<boolean>(window, `document.activeElement.id === 'tab-models'`), 'el foco acompaña a la pestaña')
+    expect(await evaluate<boolean>(window, `document.getElementById('panel-models').hidden === false && document.getElementById('panel-general').hidden === true`), 'solo se ve el panel activo')
+    expect((await attr(window, '#tab-models', 'aria-controls')) === 'panel-models' && (await attr(window, '#panel-models', 'aria-labelledby')) === 'tab-models', 'pestaña y panel asociados')
+    await key('End')
+    await waitFor(async () => (await attr(window, '#tab-advanced', 'aria-selected')) === 'true', 'End to go to the last tab')
+    await key('ArrowRight')
+    await waitFor(async () => (await attr(window, '#tab-general', 'aria-selected')) === 'true', 'the tabs to wrap around')
+    await key('Home')
+    await key('ArrowLeft')
+    await waitFor(async () => (await attr(window, '#tab-advanced', 'aria-selected')) === 'true', 'ArrowLeft to wrap backwards')
+    await click(window, '#tab-models')
+    ok('las pestañas se navegan con flechas, Inicio y Fin, y el foco las acompaña')
 
     // Modelos faltantes: se ofrece descargar, con el tamaño total.
     expect(await exists(window, '#download'), 'hay botón de descarga')
     expect(!(await exists(window, '#models-ready')), 'aún no están listos')
     expect((await text(window, '#models')).includes('falta'), 'los modelos figuran como faltantes')
+    expect(await exists(window, '#installed-empty'), 'sin modelos instalados todavía')
 
     // Descarga con error: se muestra, y se puede reintentar.
     fixture.failing.value = true
-    await evaluate(window, `document.getElementById('download').click()`)
-    await waitFor(async () => (await exists(window, '#models [role=alert]')), 'the download error')
+    await click(window, '#download')
+    await waitFor(async () => await exists(window, '#models [role=alert]'), 'the download error')
     expect(await evaluate<boolean>(window, `document.getElementById('download').textContent.includes('Reintentar')`), 'el botón pasa a "Reintentar"')
     expect(!(await exists(window, '#models-ready')), 'con error no figura como listo')
     ok('un fallo de descarga se muestra y ofrece reintentar')
@@ -155,7 +215,7 @@ export async function runSettingsSmoke(host: EngineHost, windows: WindowManager,
     // Reintento: el avance sube sin retroceder hasta que todo queda listo.
     fixture.failing.value = false
     const samples: number[] = []
-    await evaluate(window, `document.getElementById('download').click()`)
+    await click(window, '#download')
     await waitFor(async () => {
       const value = await evaluate<number | null>(window, `document.getElementById('download-progress')?.value ?? null`)
       if (value !== null) samples.push(value)
@@ -166,7 +226,117 @@ export async function runSettingsSmoke(host: EngineHost, windows: WindowManager,
     expect(!(await exists(window, '#download')), 'ya no se ofrece descargar')
     ok('la descarga avanza sin retroceder y termina en "listo"')
 
+    // Modelos instalados: espacio por modelo y total.
+    await waitFor(async () => (await evaluate<number>(window, `document.querySelectorAll('#installed li[data-model]').length`)) === 3, 'three installed models')
+    const total = 150_000 + 7 + 12 + 16
+    const shown = await text(window, '#installed-total')
+    expect(shown.includes('Espacio ocupado') && shown.includes('150'), `espacio total mostrado: ${shown}`)
+    expect((await text(window, '#installed li[data-model=o]')).includes('150 KB'), 'espacio del modelo de OCR')
+    const onDisk = readdirSync(join(modelsDir, 'o'))
+    expect(onDisk.join() === 'a.bin', `archivos del modelo en disco: ${onDisk}`)
+    expect(statSync(join(modelsDir, 'o', 'a.bin')).size + 7 + 12 + 16 === total, 'el total coincide con el disco')
+    ok('la lista de instalados muestra el espacio de cada modelo y el total')
+
+    // Borrar con confirmación (y cancelar la confirmación no borra).
+    await click(window, '#installed li[data-model=o] [data-action=delete]')
+    await waitFor(() => exists(window, '#installed li[data-model=o] [data-action=confirm-delete]'), 'the delete confirmation')
+    await click(window, '#installed li[data-model=o] [data-action=cancel-delete]')
+    await waitFor(async () => !(await exists(window, '#installed li[data-model=o] [data-action=confirm-delete]')), 'the confirmation to close')
+    expect(existsSync(join(modelsDir, 'o', 'a.bin')), 'cancelar la confirmación no borra')
+    await click(window, '#installed li[data-model=o] [data-action=delete]')
+    await waitFor(() => exists(window, '#installed li[data-model=o] [data-action=confirm-delete]'), 'the delete confirmation again')
+    await click(window, '#installed li[data-model=o] [data-action=confirm-delete]')
+    await waitFor(async () => !(await exists(window, '#installed li[data-model=o]')), 'the model to disappear from the list')
+    expect(!existsSync(join(modelsDir, 'o')), 'la carpeta del modelo se eliminó del disco')
+    expect(existsSync(join(modelsDir, 't', 'b.bin')) && existsSync(join(modelsDir, 's', 'd.bin')), 'los demás modelos siguen intactos')
+    await waitFor(async () => (await text(window, '#status')).includes('liberaron'), 'the freed-space announcement')
+    await waitFor(async () => await exists(window, '#download'), 'the download button to come back')
+    expect(!(await exists(window, '#models-ready')), 'sin el modelo, el par ya no está listo')
+    ok('un modelo se borra con confirmación, libera el espacio y no toca a los demás')
+
+    // Cancelar una descarga a medias conserva lo descargado.
+    fixture.ranges.length = 0
+    await click(window, '#download')
+    await waitFor(async () => (await evaluate<number>(window, `document.getElementById('download-progress')?.value ?? 0`)) > 5, 'progress beyond 5%')
+    await click(window, '#cancel-download')
+    await waitFor(() => exists(window, '#download-cancelled'), 'the cancellation message')
+    const part = join(modelsDir, 'o', 'a.bin.part')
+    expect(existsSync(part) && statSync(part).size > 0 && statSync(part).size < 150_000, 'queda un parcial a medias en disco')
+    expect(!existsSync(join(modelsDir, 'o', 'a.bin')), 'no hay archivo final')
+    await waitFor(async () => (await text(window, '#installed li[data-model=o]')).includes('a medias'), 'the partial in the installed list')
+    expect(await evaluate<boolean>(window, `document.getElementById('download').textContent.includes('Reanudar')`), 'el botón pasa a "Reanudar"')
+    ok('cancelar conserva el parcial y la interfaz ofrece reanudar')
+
+    // Reanudar: el servidor recibe Range y la huella final se verifica.
+    const partial = statSync(part).size
+    await click(window, '#download')
+    await waitFor(() => exists(window, '#models-ready'), 'the resumed download to finish', 20_000)
+    expect(fixture.ranges.length === 2 && fixture.ranges[0] === null && fixture.ranges[1] === `bytes=${partial}-`, `peticiones de a.bin: ${JSON.stringify(fixture.ranges)}`)
+    expect(sha256(readFileSync(join(modelsDir, 'o', 'a.bin'))) === sha256(FILES['a.bin']!), 'el archivo reanudado coincide con la huella')
+    expect(!existsSync(part), 'el parcial desaparece al completar')
+    ok('reanudar pide solo lo que falta (Range) y verifica el archivo completo')
+
+    // Red caída a mitad: se informa, queda el parcial y se reanuda.
+    await click(window, '#installed li[data-model=o] [data-action=delete]')
+    await waitFor(() => exists(window, '#installed li[data-model=o] [data-action=confirm-delete]'), 'the delete confirmation for the cut test')
+    await click(window, '#installed li[data-model=o] [data-action=confirm-delete]')
+    await waitFor(async () => await exists(window, '#download'), 'the download button after deleting')
+    fixture.ranges.length = 0
+    fixture.cutAfter.value = 60_000
+    await click(window, '#download')
+    await waitFor(async () => await exists(window, '#models [role=alert]'), 'the network error')
+    expect(statSync(part).size === 60_000, 'tras el corte quedan 60 000 bytes')
+    await click(window, '#download')
+    await waitFor(() => exists(window, '#models-ready'), 'the download to finish after the cut', 20_000)
+    expect(fixture.ranges[1] === 'bytes=60000-', `reanudó donde cortó: ${JSON.stringify(fixture.ranges)}`)
+    ok('un corte de red deja el parcial y se reanuda desde ahí')
+
+    // Con una traducción en marcha no se borra ni se cambia la carpeta.
+    session.state = { running: true, paused: false, mode: null }
+    session.emit('state', session.state)
+    await waitFor(async () => (await attr(window, '#installed li[data-model=t] [data-action=delete]', 'disabled')) !== null, 'delete buttons disabled while running')
+    expect(await exists(window, '#delete-blocked'), 'se explica por qué no se puede borrar')
+    const blocked = await evaluate<{ ok: boolean; reason?: string }>(window, `window.trSettings.deleteModel('t')`)
+    expect(!blocked.ok && blocked.reason === 'running', `el borrado se rechaza con una sesión: ${JSON.stringify(blocked)}`)
+    expect(existsSync(join(modelsDir, 't', 'b.bin')), 'los archivos siguen ahí')
+    const dirBlocked = await evaluate<{ ok: boolean; errors?: string[] }>(window, `window.trSettings.updateSettings({ modelsDir: ${JSON.stringify(join(dir, 'otra'))} })`)
+    expect(!dirBlocked.ok && settings.get().modelsDir === null, 'la carpeta no cambia durante una sesión')
+    expect(await evaluate<boolean>(window, `document.getElementById('models-dir').disabled`), 'el campo de carpeta se desactiva')
+    session.state = { running: false, paused: false, mode: null }
+    session.emit('state', session.state)
+    await waitFor(async () => (await attr(window, '#installed li[data-model=t] [data-action=delete]', 'disabled')) === null, 'delete buttons enabled again')
+    ok('con una traducción en marcha no se borran modelos ni se cambia la carpeta')
+
+    // Carpeta de modelos: validación en línea y cambio efectivo.
+    const folder = mkdtempSync(join(tmpdir(), 'tr-settings-newdir-'))
+    await setControl(window, '#models-dir', 'relativa/carpeta')
+    await waitFor(async () => (await text(window, '#models-dir-error')).includes('ruta completa'), 'the relative path message')
+    expect((await attr(window, '#models-dir', 'aria-invalid')) === 'true', 'el campo se marca como inválido')
+    expect((await attr(window, '#models-dir', 'aria-describedby'))?.includes('models-dir-error') === true, 'el error está asociado al campo')
+    expect(settings.get().modelsDir === null, 'una carpeta relativa no se guarda')
+    await setControl(window, '#models-dir', file)
+    await waitFor(async () => (await text(window, '#models-dir-error')).includes('archivo'), 'the not-a-folder message')
+    await setControl(window, '#models-dir', '/')
+    await waitFor(async () => (await text(window, '#models-dir-error')).includes('raíz'), 'the root message')
+    await setControl(window, '#models-dir', join(folder, 'nuevos', 'modelos'))
+    await waitFor(() => settings.get().modelsDir === join(folder, 'nuevos', 'modelos'), 'the folder to be saved')
+    await waitFor(async () => (await text(window, '#effective-dir')) === join(folder, 'nuevos', 'modelos'), 'the effective folder to follow')
+    await waitFor(() => exists(window, '#installed-empty'), 'the new folder to be empty')
+    expect(readdirSync(folder).length === 0, 'validar y guardar no crea la carpeta hasta que hace falta')
+    expect(existsSync(join(modelsDir, 'o', 'a.bin')), 'los modelos de la carpeta anterior no se tocan')
+    // Elegir con el diálogo del sistema y volver a la predeterminada.
+    const picked = mkdtempSync(join(tmpdir(), 'tr-settings-picked-'))
+    files.folder = picked
+    await click(window, '#pick-dir')
+    await waitFor(() => settings.get().modelsDir === picked, 'the picked folder to be saved')
+    await click(window, '#reset-dir')
+    await waitFor(() => settings.get().modelsDir === null, 'the default folder to come back')
+    await waitFor(async () => (await text(window, '#effective-dir')) === modelsDir, 'the default folder to be in use')
+    await waitFor(async () => (await evaluate<number>(window, `document.querySelectorAll('#installed li[data-model]').length`)) === 3, 'the original models back in the list')
+    ok('la carpeta de modelos se valida en línea, se cambia, se elige con el diálogo y vuelve a la predeterminada')
+
     // Cambios que se guardan y se aplican (la fuente de verdad es el almacén del proceso principal).
+    await click(window, '#tab-appearance')
     await setControl(window, '#opacity', '0.5')
     await waitFor(() => settings.get().overlay.opacity === 0.5, 'opacity to be saved')
     await setControl(window, '#fontSize', '36')
@@ -177,14 +347,75 @@ export async function runSettingsSmoke(host: EngineHost, windows: WindowManager,
     expect((await evaluate<string>(window, `document.getElementById('preview').style.fontSize`)) === '36px', 'la vista previa refleja el tamaño')
     ok('los cambios se guardan y la vista previa los refleja')
 
+    // Colores y contraste.
+    expect((await text(window, '#contrast')).includes('legible'), 'el contraste por defecto es legible')
+    await setControl(window, '#textColor', '#ffee00')
+    await waitFor(() => settings.get().overlay.textColor === '#ffee00', 'the text colour to be saved')
+    await waitFor(async () => (await evaluate<string>(window, `document.getElementById('preview').style.color`)) === 'rgb(255, 238, 0)', 'the preview to use the colour')
+    await setControl(window, '#backgroundColor', '#ffffff')
+    await waitFor(async () => (await text(window, '#textColor-error')).includes('contraste'), 'the contrast message')
+    expect(settings.get().overlay.backgroundColor === '#0c0c10', 'un fondo sin contraste no se guarda')
+    expect((await text(window, '#contrast')).includes('demasiado bajo'), 'el indicador de contraste avisa')
+    expect((await attr(window, '#textColor', 'aria-invalid')) === 'true', 'el color de texto se marca como inválido')
+    await setControl(window, '#textColor', '#000000')
+    await waitFor(() => settings.get().overlay.backgroundColor === '#ffffff' && settings.get().overlay.textColor === '#000000', 'the valid pair to be saved')
+    expect(!(await text(window, '#textColor-error')).includes('contraste'), 'el error desaparece al corregirlo')
+    await setControl(window, '#maxLines', '1')
+    await waitFor(() => settings.get().overlay.maxLines === 1, 'max lines to be saved')
+    await setControl(window, '#maxLines', '9')
+    await waitFor(async () => (await text(window, '#maxLines-error')).includes('entre 1 y 6'), 'the max lines message')
+    expect(settings.get().overlay.maxLines === 1, 'un límite fuera de rango no se guarda')
+    ok('colores con contraste mínimo validado y límite de líneas')
+
+    // Posición manual.
+    await setControl(window, '#placement-manual', true)
+    await waitFor(() => settings.get().overlay.placement === 'manual', 'manual placement to be saved')
+    await setControl(window, '#overlay-x', '120')
+    await waitFor(() => settings.get().overlay.x === 120, 'x to be saved')
+    await setControl(window, '#placement-auto', true)
+    await waitFor(() => settings.get().overlay.placement === 'auto', 'auto placement to be saved')
+    ok('la posición automática o manual se guarda')
+
+    // Mover el overlay desde Ajustes: se abre solo para eso, se arrastra y se cierra al terminar.
+    expect(windows.get('overlay') === undefined, 'sin sesión no hay overlay abierto')
+    await click(window, '#move-overlay')
+    await waitFor(() => overlay.moving && windows.get('overlay') !== undefined, 'the overlay to enter move mode')
+    await waitFor(async () => (await attr(window, '#move-overlay', 'aria-pressed')) === 'true', 'the button to show the pressed state')
+    expect((await text(window, '#move-overlay')).includes('Terminar'), 'el botón ofrece terminar')
+    await click(window, '#move-overlay')
+    await waitFor(() => !overlay.moving && windows.get('overlay') === undefined, 'the overlay to close after moving')
+    await waitFor(async () => (await attr(window, '#move-overlay', 'aria-pressed')) === 'false', 'the button to be released')
+    ok('el botón "Mover el overlay" abre el overlay en modo mover y lo cierra al terminar')
+
+    // Rendimiento.
+    await click(window, '#tab-advanced')
+    await setControl(window, '#perf-threads', '4')
+    await waitFor(() => settings.get().performance.intraThreads === 4, 'threads to be saved')
+    await setControl(window, '#perf-beam', '3')
+    await waitFor(() => settings.get().performance.beamWidth === 3, 'beam to be saved')
+    await setControl(window, '#perf-cache', '512')
+    await waitFor(() => settings.get().performance.cacheCapacity === 512, 'cache to be saved')
+    await setControl(window, '#perf-threads', '99')
+    await waitFor(async () => (await text(window, '#perf-threads-error')).includes('64'), 'the threads message')
+    expect(settings.get().performance.intraThreads === 4, 'un valor fuera de rango no se guarda')
+    expect(models.options().performance?.intraThreads === 4 && models.options().performance?.cacheCapacity === 512, 'las opciones del motor llevan el rendimiento')
+    await setControl(window, '#perf-threads', '0')
+    await waitFor(() => settings.get().performance.intraThreads === 0, 'automatic threads to be saved')
+    expect(models.options().performance?.intraThreads === undefined, 'automático no se envía al motor')
+    ok('el rendimiento se valida, se guarda y llega a las opciones del motor')
+
     // Modo: automático por defecto (descargó también los de audio), espera del fallback y atajo.
+    await click(window, '#tab-general')
     expect(settings.get().mode === 'auto', 'el modo por defecto es automático')
+    await click(window, '#tab-models')
     expect(await exists(window, '#audio-models-ready'), 'en automático la descarga incluyó los modelos de audio')
     expect(!(await exists(window, '#audio-required')), 'con los modelos de audio listos no hay aviso')
+    await click(window, '#tab-general')
     await setControl(window, '#fallbackSeconds', '10')
     await waitFor(() => settings.get().fallbackSeconds === 10, 'fallback seconds to be saved')
     await setControl(window, '#fallbackSeconds', '0')
     await waitFor(async () => (await text(window, '#errors')).includes('segundos'), 'the fallback range message')
+    expect((await text(window, '#fallbackSeconds-error')).includes('segundos'), 'el mensaje también sale junto al campo')
     expect(settings.get().fallbackSeconds === 10, 'una espera fuera de rango no se guarda')
     await setControl(window, '#mode-audio', true)
     await waitFor(() => settings.get().mode === 'audio', 'audio mode to be saved')
@@ -192,21 +423,82 @@ export async function runSettingsSmoke(host: EngineHost, windows: WindowManager,
     await setControl(window, '#mode-text', true)
     await waitFor(() => settings.get().mode === 'text', 'text mode to be saved')
     await setControl(window, '#mode-auto', true)
-    await waitFor(async () => (await exists(window, '#fallbackSeconds')), 'the fallback field to come back in auto mode')
+    await waitFor(async () => await exists(window, '#fallbackSeconds'), 'the fallback field to come back in auto mode')
+    await click(window, '#tab-shortcuts')
     await setControl(window, '#shortcut-mode', 'Alt+M')
     await waitFor(() => settings.get().shortcuts.toggleMode === 'Alt+M', 'the mode shortcut to be saved')
     ok('modo, espera del fallback y atajo de modo se guardan, validan y se reflejan en la ventana')
 
     // Valores inválidos: se explican y no se guardan.
+    await click(window, '#tab-appearance')
     await setControl(window, '#fontSize', '5')
     await waitFor(async () => (await text(window, '#errors')).length > 0, 'the validation message')
     expect(settings.get().overlay.fontSize === 36, 'un valor inválido no se guarda')
-    ok('un valor inválido se explica y no se guarda')
+    expect((await text(window, '#fontSize-error')).includes('10 y 96'), 'el error sale junto al campo')
+    await setControl(window, '#fontSize', '40')
+    await waitFor(async () => (await text(window, '#errors')) === '', 'the error to clear after fixing it')
+    ok('un valor inválido se explica junto al campo y no se guarda')
 
     // Los cambios hechos fuera de la ventana también se ven en ella.
     settings.update({ overlay: { fontSize: 50 } })
     await waitFor(async () => (await evaluate<string>(window, `document.getElementById('fontSize').value`)) === '50', 'the window to follow external changes')
     ok('la ventana sigue los cambios hechos desde fuera')
+
+    // Exportar: solo preferencias, nunca región ni carpeta.
+    settings.update({ lastRegion: { x: 1, y: 2, width: 300, height: 100, monitor: 0 }, modelsDir: join(dir, 'secreto') })
+    const exported = join(dir, 'export.json')
+    files.exportTo = exported
+    await click(window, '#tab-advanced')
+    await click(window, '#export-settings')
+    await waitFor(() => existsSync(exported), 'the export file')
+    const exportedText = readFileSync(exported, 'utf8')
+    expect(!exportedText.includes('lastRegion') && !exportedText.includes('modelsDir') && !exportedText.includes('secreto'), 'lo exportado no incluye región ni carpeta')
+    expect(JSON.parse(exportedText).settings.overlay.fontSize === 50, 'lo exportado lleva las preferencias')
+    await waitFor(async () => (await text(window, '#status')).includes('exportadas'), 'the export announcement')
+    // Importar: valores válidos se aplican conservando región y carpeta; inválidos se rechazan enteros.
+    const incoming = JSON.parse(exportedText)
+    incoming.settings.overlay.fontSize = 44
+    const importPath = join(dir, 'import.json')
+    writeFileSync(importPath, JSON.stringify(incoming))
+    files.importFrom = importPath
+    await click(window, '#import-settings')
+    await waitFor(() => settings.get().overlay.fontSize === 44, 'the import to apply')
+    expect(settings.get().lastRegion?.width === 300 && settings.get().modelsDir === join(dir, 'secreto'), 'la importación conserva región y carpeta del equipo')
+    incoming.settings.overlay.opacity = 7
+    incoming.settings.overlay.fontSize = 60
+    writeFileSync(importPath, JSON.stringify(incoming))
+    await click(window, '#import-settings')
+    await waitFor(async () => (await text(window, '#errors')).includes('opacidad'), 'the import error')
+    expect(settings.get().overlay.fontSize === 44, 'una importación inválida no cambia nada')
+    writeFileSync(importPath, JSON.stringify({ format: 'translate-settings', version: 1, settings: { modelsDir: '/x' } }))
+    await click(window, '#import-settings')
+    await waitFor(async () => (await text(window, '#errors')).includes('no se importan'), 'the local data import error')
+    expect(settings.get().modelsDir === join(dir, 'secreto'), 'no se importan carpetas')
+    ok('exportar no incluye datos del equipo; importar es todo o nada')
+
+    // Restablecer: con confirmación y conservando región y carpeta.
+    await click(window, '#reset-settings')
+    await waitFor(() => exists(window, '#confirm-reset'), 'the reset confirmation')
+    await click(window, '#cancel-reset')
+    expect(settings.get().overlay.fontSize === 44, 'cancelar no restablece')
+    await waitFor(() => exists(window, '#reset-settings'), 'the reset button to come back')
+    await click(window, '#reset-settings')
+    await waitFor(() => exists(window, '#confirm-reset'), 'the reset confirmation again')
+    await click(window, '#confirm-reset')
+    await waitFor(() => settings.get().overlay.fontSize === defaultSettings().overlay.fontSize, 'the reset to apply')
+    const after = settings.get()
+    expect(after.mode === 'auto' && after.performance.beamWidth === 0 && after.shortcuts.toggleMode === defaultSettings().shortcuts.toggleMode, 'las preferencias vuelven a su valor por defecto')
+    expect(after.lastRegion?.width === 300 && after.modelsDir === join(dir, 'secreto'), 'restablecer conserva región y carpeta')
+    ok('restablecer pide confirmación y conserva región y carpeta')
+
+    // Tema claro y oscuro del sistema.
+    const background = () => evaluate<string>(window, `getComputedStyle(document.body).backgroundColor`)
+    nativeTheme.themeSource = 'light'
+    await waitFor(async () => (await background()) === 'rgb(255, 255, 255)', 'the light theme')
+    nativeTheme.themeSource = 'dark'
+    await waitFor(async () => (await background()) === 'rgb(23, 24, 28)', 'the dark theme')
+    nativeTheme.themeSource = 'system'
+    ok('la ventana sigue el tema claro u oscuro del sistema')
 
     dispose()
     windows.close('settings')

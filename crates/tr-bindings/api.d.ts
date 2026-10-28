@@ -1,11 +1,16 @@
 import type {
   EngineOptions,
   ErrorEvent,
+  InstalledModelInfo,
   LangPair,
   ModeEvent,
   ModelCatalog,
+  ModelInventory,
   ModelProgressEvent,
+  ModelRoleInfo,
   ModelStatusInfo,
+  ModelsDirCheck,
+  PerformanceOptions,
   Rect,
   SubtitleEvent,
   TranslationEvent,
@@ -14,11 +19,16 @@ import type {
 export type {
   EngineOptions,
   ErrorEvent,
+  InstalledModelInfo,
   LangPair,
   ModeEvent,
   ModelCatalog,
+  ModelInventory,
   ModelProgressEvent,
+  ModelRoleInfo,
   ModelStatusInfo,
+  ModelsDirCheck,
+  PerformanceOptions,
   Rect,
   SubtitleEvent,
   TranslationEvent,
@@ -74,6 +84,21 @@ export function modelStatus(from: string, to: string, scope?: ModelScope): Promi
  * sin traducción en marcha. Rechaza con un error descriptivo si falla o el par no está soportado.
  */
 export function downloadModels(from: string, to: string, scope?: ModelScope): Promise<void>
+
+/** Todos los modelos del manifiesto con su estado, el espacio que ocupan en disco y el total. */
+export function modelInventory(): Promise<ModelInventory>
+
+/**
+ * Borra un modelo (por su identificador del manifiesto) y devuelve los bytes liberados. Rechaza si
+ * hay una traducción en marcha, si el modelo se está descargando o si el id no existe.
+ */
+export function deleteModel(id: string): Promise<number>
+
+/** Interrumpe la descarga de modelos en curso (lo descargado se conserva para reanudar). */
+export function cancelModelDownload(): Promise<void>
+
+/** Comprueba si una ruta sirve como carpeta de modelos; `reason` explica por qué no. */
+export function validateModelsDir(path: string): ModelsDirCheck
 
 export function onTranslation(listener: (event: TranslationEvent) => void): Unsubscribe
 export function onSubtitle(listener: (event: SubtitleEvent) => void): Unsubscribe

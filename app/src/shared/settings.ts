@@ -3,6 +3,7 @@
 // Solo contienen preferencias y la última región elegida: nunca contenido capturado ni traducido.
 // Los mensajes de aviso nombran el campo, no su valor.
 
+import { hasEnoughContrast } from './contrast.ts'
 import { MODES } from './mode.ts'
 import type { Mode } from './mode.ts'
 
@@ -32,6 +33,22 @@ export interface OverlaySettings {
   /** Milisegundos sin traducciones nuevas antes de ocultar el texto (0 = no ocultar). */
   hideAfterMs: number
   showOriginal: boolean
+  /** Color del texto, `#rrggbb`. */
+  textColor: string
+  /** Color de fondo, `#rrggbb` (la opacidad se aplica aparte). Con el texto, contraste mínimo 4,5:1. */
+  backgroundColor: string
+  /** Líneas de traducción visibles, 1 a 6. */
+  maxLines: number
+}
+
+/** Parámetros de rendimiento; `0` = automático (el motor usa su valor por defecto). */
+export interface PerformanceSettings {
+  /** Hilos de cada sesión de ONNX Runtime, 0 (auto) o 1 a 64. */
+  intraThreads: number
+  /** Anchura del haz de traducción, 0 (por defecto) o 1 a 8. */
+  beamWidth: number
+  /** Entradas de la caché de traducciones, 0 (por defecto) o 16 a 1 000 000. */
+  cacheCapacity: number
 }
 
 export interface Shortcuts {
@@ -54,6 +71,7 @@ export interface Settings {
   lastRegion: SavedRegion | null
   overlay: OverlaySettings
   shortcuts: Shortcuts
+  performance: PerformanceSettings
 }
 
 export function defaultSettings(): Settings {
@@ -76,7 +94,11 @@ export function defaultSettings(): Settings {
       y: 0,
       hideAfterMs: 4000,
       showOriginal: true,
+      textColor: '#ffffff',
+      backgroundColor: '#0c0c10',
+      maxLines: 2,
     },
+    performance: { intraThreads: 0, beamWidth: 0, cacheCapacity: 0 },
     shortcuts: { selectRegion: 'CommandOrControl+Shift+T', togglePause: 'CommandOrControl+Shift+P', toggleMode: 'CommandOrControl+Shift+M' },
   }
 }
@@ -92,6 +114,7 @@ const isDict = (value: unknown): value is Dict => typeof value === 'object' && v
 
 const LANG_PATTERN = /^[a-z]{2,3}(-[A-Za-z0-9]{1,8})*$/
 const FONT_PATTERN = /^[\w ,'"-]{1,120}$/u
+const COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/
 const ACCELERATOR_PATTERN = /^[A-Za-z0-9]+(\+[A-Za-z0-9]+)*$/
 
 /** Lee un campo validado; si no es válido usa el valor por defecto y lo anota. */
@@ -132,6 +155,13 @@ class Reader {
   }
 }
 
+/** La caché es 0 (por defecto) o un entero entre 16 y 1 000 000. */
+function readCache(reader: Reader, source: Dict): number {
+  const value = source['cacheCapacity']
+  if (value === 0) return 0
+  return reader.number(source, 'cacheCapacity', 'performance.cacheCapacity', 0, 16, 1_000_000, true)
+}
+
 function readRegion(reader: Reader, value: unknown): SavedRegion | null {
   if (value === null || value === undefined) return null
   if (!isDict(value)) {
@@ -164,6 +194,7 @@ export function parseSettings(raw: unknown): ParseResult {
   const reader = new Reader()
   const overlaySource = reader.section(raw, 'overlay', 'overlay')
   const shortcutSource = reader.section(raw, 'shortcuts', 'shortcuts')
+  const performanceSource = reader.section(raw, 'performance', 'performance')
   const d = defaults.overlay
   const modelsDirValue = raw.modelsDir
   const modelsDirOk = modelsDirValue === null || (typeof modelsDirValue === 'string' && modelsDirValue.length > 0 && modelsDirValue.length <= 1024)
@@ -188,12 +219,25 @@ export function parseSettings(raw: unknown): ParseResult {
       y: reader.number(overlaySource, 'y', 'overlay.y', d.y, -100_000, 100_000, true),
       hideAfterMs: reader.number(overlaySource, 'hideAfterMs', 'overlay.hideAfterMs', d.hideAfterMs, 0, 600_000, true),
       showOriginal: reader.boolean(overlaySource, 'showOriginal', 'overlay.showOriginal', d.showOriginal),
+      textColor: reader.pattern(overlaySource, 'textColor', 'overlay.textColor', d.textColor, COLOR_PATTERN).toLowerCase(),
+      backgroundColor: reader.pattern(overlaySource, 'backgroundColor', 'overlay.backgroundColor', d.backgroundColor, COLOR_PATTERN).toLowerCase(),
+      maxLines: reader.number(overlaySource, 'maxLines', 'overlay.maxLines', d.maxLines, 1, 6, true),
+    },
+    performance: {
+      intraThreads: reader.number(performanceSource, 'intraThreads', 'performance.intraThreads', 0, 0, 64, true),
+      beamWidth: reader.number(performanceSource, 'beamWidth', 'performance.beamWidth', 0, 0, 8, true),
+      cacheCapacity: readCache(reader, performanceSource),
     },
     shortcuts: {
       selectRegion: reader.pattern(shortcutSource, 'selectRegion', 'shortcuts.selectRegion', defaults.shortcuts.selectRegion, ACCELERATOR_PATTERN),
       togglePause: reader.pattern(shortcutSource, 'togglePause', 'shortcuts.togglePause', defaults.shortcuts.togglePause, ACCELERATOR_PATTERN),
       toggleMode: reader.pattern(shortcutSource, 'toggleMode', 'shortcuts.toggleMode', defaults.shortcuts.toggleMode, ACCELERATOR_PATTERN),
     },
+  }
+  if (!hasEnoughContrast(settings.overlay.textColor, settings.overlay.backgroundColor)) {
+    reader.warnings.push('invalid overlay.contrast')
+    settings.overlay.textColor = d.textColor
+    settings.overlay.backgroundColor = d.backgroundColor
   }
   // Los idiomas no pueden coincidir: es una combinación sin sentido.
   if (settings.from === settings.to) {

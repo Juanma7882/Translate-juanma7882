@@ -2,14 +2,14 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant, SystemTime};
 
 use tr_core::{CoreError, Result};
 
-use crate::download::{fetch, sha256_file};
+use crate::download::{fetch, part_path, sha256_file};
 use crate::manifest::{FileSpec, ModelSpec};
 
 /// No se emite progreso más seguido que esto (salvo el final).
@@ -30,6 +30,57 @@ pub struct ModelProgress {
     pub model: String,
     pub downloaded: u64,
     pub total: u64,
+}
+
+/// Espacio en disco de un modelo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ModelUsage {
+    /// Bytes de los archivos del manifiesto presentes (completos o no).
+    pub bytes: u64,
+    /// Bytes de descargas a medias (`.part`) que se pueden reanudar.
+    pub partial_bytes: u64,
+}
+
+impl ModelUsage {
+    pub fn total(self) -> u64 {
+        self.bytes + self.partial_bytes
+    }
+}
+
+/// Por qué una carpeta no sirve como carpeta de modelos.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DirProblem {
+    NotAbsolute,
+    ParentReferences,
+    Root,
+    NotAFolder,
+    NotWritable,
+}
+
+impl DirProblem {
+    /// Código estable para que la interfaz elija el mensaje.
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::NotAbsolute => "not-absolute",
+            Self::ParentReferences => "parent-references",
+            Self::Root => "root",
+            Self::NotAFolder => "not-a-folder",
+            Self::NotWritable => "not-writable",
+        }
+    }
+}
+
+/// Un identificador o nombre de archivo debe ser un único componente de ruta normal.
+fn check_component(name: &str) -> Result<()> {
+    let mut components = Path::new(name).components();
+    match (components.next(), components.next()) {
+        (Some(Component::Normal(part)), None) if part == name && !name.contains(['/', '\\']) => {
+            Ok(())
+        }
+        _ => Err(CoreError::InvalidArgument(format!(
+            "`{name}` is not a valid model name"
+        ))),
+    }
 }
 
 /// Última verificación correcta de un archivo: tamaño y fecha de modificación.
@@ -111,6 +162,138 @@ impl ModelManager {
             .collect()
     }
 
+    /// Espacio que ocupa el modelo en disco: archivos del manifiesto y parciales. Solo mira
+    /// metadatos (no lee ni verifica el contenido).
+    pub fn usage(&self, spec: &ModelSpec) -> ModelUsage {
+        let dir = self.model_dir(spec);
+        let len = |path: PathBuf| match fs::symlink_metadata(path) {
+            Ok(meta) if meta.is_file() => meta.len(),
+            _ => 0,
+        };
+        let mut usage = ModelUsage::default();
+        for file in &spec.files {
+            usage.bytes += len(dir.join(&file.name));
+            usage.partial_bytes += len(part_path(&dir, &file.name));
+        }
+        usage
+    }
+
+    /// Borra un modelo y devuelve los bytes liberados.
+    ///
+    /// Solo elimina los archivos que el manifiesto asigna al modelo (y sus parciales) dentro de
+    /// `<carpeta>/<id>`; la carpeta del modelo se quita únicamente si queda vacía. Rechaza ids que
+    /// no sean un único componente de ruta, enlaces simbólicos y modelos que se están descargando.
+    pub fn delete(&self, spec: &ModelSpec) -> Result<u64> {
+        check_component(&spec.id)?;
+        for file in &spec.files {
+            check_component(&file.name)?;
+        }
+        if !lock(&self.downloading).insert(spec.id.clone()) {
+            return Err(CoreError::Model(format!(
+                "model `{}` is being downloaded; cancel the download first",
+                spec.id
+            )));
+        }
+        let _guard = DownloadGuard {
+            set: &self.downloading,
+            id: spec.id.clone(),
+        };
+
+        let dir = self.model_dir(spec);
+        match fs::symlink_metadata(&dir) {
+            Ok(meta) if meta.is_dir() => {}
+            Ok(_) => {
+                return Err(CoreError::Model(format!(
+                    "refusing to delete `{}`: it is not a plain folder",
+                    spec.id
+                )));
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+            Err(e) => {
+                return Err(CoreError::Model(format!(
+                    "could not inspect the model: {e}"
+                )));
+            }
+        }
+        let inside = fs::canonicalize(&self.dir)
+            .and_then(|root| fs::canonicalize(&dir).map(|d| (root, d)))
+            .map(|(root, d)| d != root && d.starts_with(&root))
+            .unwrap_or(false);
+        if !inside {
+            return Err(CoreError::Model(format!(
+                "refusing to delete `{}`: it is outside the models folder",
+                spec.id
+            )));
+        }
+
+        let mut freed = 0;
+        for file in &spec.files {
+            for name in [file.name.clone(), format!("{}.part", file.name)] {
+                let path = dir.join(&name);
+                match fs::symlink_metadata(&path) {
+                    Ok(meta) if meta.is_file() => {
+                        fs::remove_file(&path).map_err(|e| {
+                            CoreError::Model(format!("could not delete `{name}`: {e}"))
+                        })?;
+                        freed += meta.len();
+                    }
+                    Ok(_) => {
+                        return Err(CoreError::Model(format!(
+                            "refusing to delete `{name}`: it is not a plain file"
+                        )));
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(e) => {
+                        return Err(CoreError::Model(format!("could not inspect `{name}`: {e}")));
+                    }
+                }
+            }
+        }
+        lock(&self.verified).retain(|path, _| !path.starts_with(&dir));
+        // Solo si quedó vacía: archivos ajenos del usuario nunca se tocan.
+        let _ = fs::remove_dir(&dir);
+        Ok(freed)
+    }
+
+    /// Comprueba que `path` sirve como carpeta de modelos: ruta absoluta sin `..`, no la raíz,
+    /// carpeta existente (o creable bajo un ancestro que sea carpeta) y con permiso de escritura.
+    /// No crea la carpeta; la prueba de escritura (un archivo vacío que se borra al instante) se
+    /// hace en la propia carpeta o en su ancestro existente más cercano.
+    pub fn validate_dir(path: &Path) -> std::result::Result<(), DirProblem> {
+        if !path.is_absolute() {
+            return Err(DirProblem::NotAbsolute);
+        }
+        if path
+            .components()
+            .any(|c| matches!(c, Component::ParentDir | Component::CurDir))
+        {
+            return Err(DirProblem::ParentReferences);
+        }
+        if path.parent().is_none() {
+            return Err(DirProblem::Root);
+        }
+        let mut existing = path;
+        while !existing.exists() {
+            existing = existing.parent().ok_or(DirProblem::NotWritable)?;
+        }
+        if !existing.is_dir() {
+            return Err(DirProblem::NotAFolder);
+        }
+        let probe = existing.join(format!(".tr-write-test-{}", std::process::id()));
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&probe)
+        {
+            Ok(file) => {
+                drop(file);
+                let _ = fs::remove_file(&probe);
+                Ok(())
+            }
+            Err(_) => Err(DirProblem::NotWritable),
+        }
+    }
+
     /// Un archivo es válido si existe con el tamaño del manifiesto y su SHA-256 coincide. El
     /// resultado se recuerda (en memoria) mientras no cambien tamaño ni fecha, para no volver a
     /// leer cientos de MB en cada consulta.
@@ -179,9 +362,12 @@ impl ModelManager {
         let mut last = Instant::now();
 
         for file in pending {
+            // El primer aviso de cada archivo se emite siempre: al reanudar trae lo ya descargado.
+            let mut first = true;
             fetch(file, &dir, cancel, &mut |n| {
                 downloaded += n;
-                if last.elapsed() >= PROGRESS_EVERY {
+                if first || last.elapsed() >= PROGRESS_EVERY {
+                    first = false;
                     last = Instant::now();
                     report(downloaded, progress);
                 }
@@ -426,6 +612,241 @@ mod tests {
             ModelState::Missing,
             "tras cancelar no queda descargando"
         );
+    }
+
+    fn ready(tag: &str) -> (Fixture, ModelManager) {
+        let fx = fixture(tag);
+        let manager = ModelManager::new(&fx.dir);
+        manager.ensure(&fx.spec, &never(), &mut |_| {}).unwrap();
+        (fx, manager)
+    }
+
+    #[test]
+    fn usage_counts_final_files_and_partials_without_reading_them() {
+        let (fx, manager) = ready("usage");
+        let usage = manager.usage(&fx.spec);
+        assert_eq!(usage.bytes, fx.spec.total_size());
+        assert_eq!(usage.partial_bytes, 0);
+
+        let dir = manager.model_dir(&fx.spec);
+        fs::write(dir.join("c.bin.part"), vec![1u8; 77]).unwrap();
+        let mut spec = fx.spec.clone();
+        spec.files.push(FileSpec {
+            name: "c.bin".into(),
+            url: "https://x.test/c".into(),
+            sha256: "0".repeat(64),
+            size: 1000,
+        });
+        let usage = manager.usage(&spec);
+        assert_eq!(usage.partial_bytes, 77);
+        assert_eq!(usage.total(), fx.spec.total_size() + 77);
+        let absent = ModelSpec {
+            id: "nothing".into(),
+            ..fx.spec.clone()
+        };
+        assert_eq!(manager.usage(&absent), ModelUsage::default());
+    }
+
+    #[test]
+    fn deleting_a_model_removes_only_its_files_and_the_folder_if_empty() {
+        let (fx, manager) = ready("delete");
+        let other = fx.dir.join("other");
+        fs::create_dir_all(&other).unwrap();
+        fs::write(other.join("keep.txt"), b"mine").unwrap();
+        let dir = manager.model_dir(&fx.spec);
+        fs::write(dir.join("a.bin.part"), b"half").unwrap();
+
+        let freed = manager.delete(&fx.spec).unwrap();
+        assert_eq!(freed, fx.spec.total_size() + 4);
+        assert!(!dir.exists(), "la carpeta vacía se quita");
+        assert_eq!(manager.state(&fx.spec), ModelState::Missing);
+        assert_eq!(fs::read(other.join("keep.txt")).unwrap(), b"mine");
+        assert_eq!(manager.delete(&fx.spec).unwrap(), 0, "idempotente");
+    }
+
+    #[test]
+    fn deleting_never_touches_foreign_files_in_the_model_folder() {
+        let (fx, manager) = ready("foreign");
+        let dir = manager.model_dir(&fx.spec);
+        fs::write(dir.join("notes.txt"), b"user file").unwrap();
+        manager.delete(&fx.spec).unwrap();
+        assert_eq!(fs::read(dir.join("notes.txt")).unwrap(), b"user file");
+        assert!(!dir.join("a.bin").exists());
+    }
+
+    #[test]
+    fn deleting_rejects_ids_that_are_not_a_single_path_component() {
+        let (fx, manager) = ready("badid");
+        for id in ["../demo", "a/b", "..", ".", "", "a\\b", "/etc"] {
+            let spec = ModelSpec {
+                id: id.into(),
+                ..fx.spec.clone()
+            };
+            let error = manager.delete(&spec).unwrap_err();
+            assert!(
+                matches!(error, CoreError::InvalidArgument(_)),
+                "{id}: {error}"
+            );
+        }
+        let mut spec = fx.spec.clone();
+        spec.files[0].name = "../escape".into();
+        assert!(manager.delete(&spec).is_err());
+        assert_eq!(manager.state(&fx.spec), ModelState::Ready);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn deleting_refuses_symbolic_links() {
+        let (fx, manager) = ready("symlink");
+        let outside = scratch("symlink-outside");
+        fs::write(outside.join("a.bin"), b"precious").unwrap();
+        let linked = ModelSpec {
+            id: "linked".into(),
+            ..fx.spec.clone()
+        };
+        std::os::unix::fs::symlink(&outside, manager.model_dir(&linked)).unwrap();
+        let error = manager.delete(&linked).unwrap_err();
+        assert!(error.to_string().contains("refusing"), "{error}");
+        assert_eq!(fs::read(outside.join("a.bin")).unwrap(), b"precious");
+
+        // Un archivo que es enlace tampoco se sigue.
+        let dir = manager.model_dir(&fx.spec);
+        fs::remove_file(dir.join("b.txt")).unwrap();
+        std::os::unix::fs::symlink(outside.join("a.bin"), dir.join("b.txt")).unwrap();
+        assert!(manager.delete(&fx.spec).is_err());
+        assert_eq!(fs::read(outside.join("a.bin")).unwrap(), b"precious");
+    }
+
+    #[test]
+    fn deleting_is_refused_while_the_model_downloads() {
+        let body: Vec<u8> = vec![7; 100_000];
+        let server = TestServer::start(vec![(
+            "/slow",
+            Route::Slow {
+                body: body.clone(),
+                chunk: 10_000,
+                delay: Duration::from_millis(40),
+            },
+        )]);
+        let spec = ModelSpec {
+            id: "slow".into(),
+            files: vec![file(&server, "slow", &body)],
+        };
+        let manager = std::sync::Arc::new(ModelManager::new(scratch("delete-busy")));
+        let cancel = std::sync::Arc::new(AtomicBool::new(false));
+        let worker = {
+            let (manager, spec, cancel) = (manager.clone(), spec.clone(), cancel.clone());
+            std::thread::spawn(move || manager.ensure(&spec, &cancel, &mut |_| {}))
+        };
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while manager.state(&spec) != ModelState::Downloading {
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let error = manager.delete(&spec).unwrap_err();
+        assert!(error.to_string().contains("being downloaded"), "{error}");
+        while manager.usage(&spec).partial_bytes == 0 {
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        cancel.store(true, Ordering::Release);
+        assert!(worker.join().unwrap().is_err());
+        // Cancelada: queda un parcial que el borrado sí limpia.
+        assert!(manager.usage(&spec).partial_bytes > 0);
+        manager.delete(&spec).unwrap();
+        assert_eq!(manager.usage(&spec), ModelUsage::default());
+    }
+
+    #[test]
+    fn a_cancelled_model_download_resumes_and_progress_includes_the_partial() {
+        let body: Vec<u8> = (0..150_000u32).map(|i| (i % 249) as u8).collect();
+        let server = TestServer::start(vec![(
+            "/r",
+            Route::Resumable {
+                body: body.clone(),
+                chunk: 10_000,
+                delay: Duration::ZERO,
+                cut_first_at: Some(70_000),
+            },
+        )]);
+        let spec = ModelSpec {
+            id: "resume".into(),
+            files: vec![FileSpec {
+                url: server.url("/r"),
+                ..file(&server, "r.bin", &body)
+            }],
+        };
+        let manager = ModelManager::new(scratch("model-resume"));
+        manager.ensure(&spec, &never(), &mut |_| {}).unwrap_err();
+        assert_eq!(manager.state(&spec), ModelState::Missing);
+        assert_eq!(manager.usage(&spec).partial_bytes, 70_000);
+
+        let mut events = Vec::new();
+        manager
+            .ensure(&spec, &never(), &mut |p| events.push(p.downloaded))
+            .unwrap();
+        assert_eq!(manager.state(&spec), ModelState::Ready);
+        assert_eq!(manager.usage(&spec).partial_bytes, 0);
+        assert!(events.windows(2).all(|w| w[0] <= w[1]), "{events:?}");
+        assert_eq!(*events.last().unwrap(), body.len() as u64);
+        assert!(events[0] <= 70_000 + 1);
+    }
+
+    #[test]
+    fn folder_validation_accepts_writable_and_creatable_folders() {
+        let root = scratch("validate");
+        assert_eq!(ModelManager::validate_dir(&root), Ok(()));
+        assert_eq!(
+            ModelManager::validate_dir(&root.join("not/yet/created")),
+            Ok(())
+        );
+        assert!(!root.join("not").exists(), "validar no crea carpetas");
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 0, "ni deja pruebas");
+    }
+
+    #[test]
+    fn folder_validation_explains_why_a_path_is_not_valid() {
+        let root = scratch("invalid");
+        let file = root.join("a-file");
+        fs::write(&file, b"x").unwrap();
+        let cases = [
+            (PathBuf::from("relative/dir"), DirProblem::NotAbsolute),
+            (root.join("..").join("x"), DirProblem::ParentReferences),
+            (file.clone(), DirProblem::NotAFolder),
+            (file.join("below"), DirProblem::NotAFolder),
+        ];
+        for (path, problem) in cases {
+            assert_eq!(
+                ModelManager::validate_dir(&path),
+                Err(problem),
+                "{}",
+                path.display()
+            );
+        }
+        let top = if cfg!(windows) { "C:\\" } else { "/" };
+        assert_eq!(
+            ModelManager::validate_dir(Path::new(top)),
+            Err(DirProblem::Root)
+        );
+        assert_eq!(DirProblem::NotWritable.code(), "not-writable");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn folder_validation_rejects_read_only_folders() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = scratch("readonly");
+        fs::set_permissions(&root, fs::Permissions::from_mode(0o555)).unwrap();
+        let result = ModelManager::validate_dir(&root.join("sub"));
+        fs::set_permissions(&root, fs::Permissions::from_mode(0o755)).unwrap();
+        // Como root el sistema permite escribir igualmente: solo se exige cuando no lo es.
+        let is_root = std::fs::metadata("/proc/self").is_ok_and(|m| {
+            use std::os::unix::fs::MetadataExt;
+            m.uid() == 0
+        });
+        if !is_root {
+            assert_eq!(result, Err(DirProblem::NotWritable));
+        }
     }
 
     /// Contra internet de verdad: valida TLS (rustls), la redirección de GitHub y la huella del

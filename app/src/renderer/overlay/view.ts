@@ -1,5 +1,6 @@
 // Qué muestra el overlay para un texto dado (lógica pura, sin DOM, para poder probarla).
 
+import { luminance, parseHex } from '../../shared/contrast.ts'
 import type { OverlayStyle, OverlayText } from '../../shared/ipc.ts'
 
 export interface OverlayView {
@@ -22,3 +23,21 @@ export function viewFor(text: OverlayText, style: Pick<OverlayStyle, 'showOrigin
 
 /** Cuánto se muestra la etiqueta de modo por sí sola tras un cambio de modo. */
 export const MODE_FLASH_MS = 2500
+
+/** Variables CSS que reflejan el estilo (la ventana solo usa estas; ningún valor llega como HTML). */
+export function cssVariables(style: OverlayStyle): Record<string, string> {
+  const [r, g, b] = parseHex(style.backgroundColor)
+  return {
+    '--opacity': String(style.opacity),
+    '--font-size': `${style.fontSize}px`,
+    '--font-family': style.fontFamily,
+    '--text-color': style.textColor,
+    '--bg-rgb': `${r}, ${g}, ${b}`,
+    // Sombra del color opuesto al texto: se lee tanto con texto claro como oscuro.
+    '--shadow-color': luminance(style.textColor) > 0.5 ? 'rgba(0, 0, 0, 0.8)' : 'rgba(255, 255, 255, 0.7)',
+    '--max-lines': String(style.maxLines),
+  }
+}
+
+/** Texto de ejemplo del modo "mover", cuando todavía no hay ninguna traducción. */
+export const MOVE_PLACEHOLDER = 'Aquí aparecerá la traducción'
