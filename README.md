@@ -10,6 +10,21 @@ Selecciona una región de la pantalla y `translate` la lee (OCR), la traduce y m
 ![Plataformas](https://img.shields.io/badge/plataformas-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
 ![Licencia](https://img.shields.io/badge/licencia-MIT-green)
 
+## Índice
+
+- [Características](#características)
+- [Motores](#motores)
+- [Arquitectura](#arquitectura)
+- [Instalación](#instalación)
+- [Requisitos para desarrollar](#requisitos-para-desarrollar)
+- [Puesta en marcha](#puesta-en-marcha)
+- [Pruebas y calidad](#pruebas-y-calidad)
+- [Empaquetado y releases](#empaquetado-y-releases)
+- [Estructura del repositorio](#estructura-del-repositorio)
+- [Hoja de ruta](#hoja-de-ruta)
+- [Contribuir](#contribuir)
+- [Licencia](#licencia)
+
 ## Características
 
 - **Texto en pantalla**: selector de región → captura → OCR → traducción → overlay sobre el original.
@@ -66,6 +81,21 @@ Las decisiones y las alternativas descartadas están en los [ADR](docs/adr/).
 - **UI ligera**: electron-vite multipágina; selector y overlay en TS plano + CSS, Ajustes con Preact.
 
 Detalle en [docs/adr/0002-architecture.md](docs/adr/0002-architecture.md).
+
+## Instalación
+
+Descarga el instalador de tu sistema desde la página de [Releases](../../releases):
+
+| Sistema | Archivo | Cómo instalar |
+|---|---|---|
+| Windows (x64) | `Translate-<versión>-win-x64.exe` | Ejecutar el instalador |
+| macOS (Apple Silicon) | `Translate-<versión>-mac-arm64.dmg` | Abrir el `.dmg` y arrastrar a Aplicaciones |
+| macOS (Intel) | `Translate-<versión>-mac-x64.dmg` | Igual que arriba |
+| Linux (x64) | `.AppImage` o `.deb` | `chmod +x Translate-*.AppImage && ./Translate-*.AppImage`, o `sudo apt install ./Translate-*.deb` |
+
+Los modelos no vienen incluidos: se descargan la primera vez que los necesitas, desde Ajustes.
+
+> **Aviso:** mientras las versiones no estén firmadas, Windows mostrará SmartScreen («Más información» → «Ejecutar de todas formas») y macOS bloqueará la primera apertura (clic derecho → «Abrir»). Ver [docs/release.md](docs/release.md).
 
 ## Requisitos para desarrollar
 
