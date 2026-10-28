@@ -1,40 +1,93 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 
+import type { OverlayText } from '../../shared/ipc.ts'
 import { viewFor } from './view.ts'
 
+const text = (over: Partial<OverlayText> = {}): OverlayText => ({
+  original: 'Hello',
+  lang: 'en',
+  translations: [{ lang: 'es', text: 'Hola' }],
+  final: true,
+  ...over,
+})
+
 describe('viewFor', () => {
-  test('una traducción final muestra original (pequeño) y traducción', () => {
-    assert.deepEqual(viewFor({ original: 'Hello', translated: 'Hola', final: true }, { showOriginal: true }), {
-      original: 'Hello',
-      main: 'Hola',
+  test('original (pequeño) y traducción, en ese orden y con su idioma', () => {
+    assert.deepEqual(viewFor(text(), { showOriginal: true }), {
+      lines: [
+        { lang: 'en', text: 'Hello', kind: 'original', secondary: true },
+        { lang: 'es', text: 'Hola', kind: 'translation', secondary: false },
+      ],
       provisional: false,
+      labeled: true,
     })
   })
 
-  test('sin mostrar el original, esa línea queda vacía', () => {
-    assert.equal(viewFor({ original: 'Hello', translated: 'Hola', final: true }, { showOriginal: false }).original, '')
+  test('sin mostrar el original, solo queda la traducción y no se rotula', () => {
+    const view = viewFor(text(), { showOriginal: false })
+    assert.deepEqual(
+      view.lines.map((l) => l.lang),
+      ['es'],
+    )
+    assert.equal(view.labeled, false)
   })
 
-  test('un parcial sin traducir muestra su texto como línea principal y como provisional', () => {
-    assert.deepEqual(viewFor({ original: 'good morn', translated: null, final: false }, { showOriginal: true }), {
-      original: '',
-      main: 'good morn',
-      provisional: true,
-    })
+  test('dos traducciones sin original: dos líneas principales en el orden de los destinos', () => {
+    const view = viewFor(
+      text({
+        translations: [
+          { lang: 'fr', text: 'Bonjour' },
+          { lang: 'es', text: 'Hola' },
+        ],
+      }),
+      { showOriginal: false },
+    )
+    assert.deepEqual(
+      view.lines.map((l) => [l.lang, l.secondary]),
+      [
+        ['fr', false],
+        ['es', false],
+      ],
+    )
+    assert.equal(view.labeled, true)
   })
 
-  test('un final cuya traducción falló (null o vacía) muestra el original, no una línea en blanco', () => {
-    for (const translated of [null, '', '   ']) {
-      const view = viewFor({ original: 'hello', translated, final: true }, { showOriginal: true })
-      assert.equal(view.main, 'hello')
-      assert.equal(view.original, '', 'no se repite el mismo texto en dos líneas')
-      assert.equal(view.provisional, false)
+  test('sin traducciones, el original es la única línea y es principal aunque se pida ocultarlo', () => {
+    for (const showOriginal of [true, false]) {
+      const view = viewFor(text({ translations: [] }), { showOriginal })
+      assert.deepEqual(view.lines, [{ lang: 'en', text: 'Hello', kind: 'original', secondary: false }])
+      assert.equal(view.labeled, false)
     }
   })
 
+  test('un parcial sin traducir se muestra como provisional', () => {
+    const view = viewFor(text({ original: 'good morn', translations: [], final: false }), { showOriginal: false })
+    assert.deepEqual(
+      view.lines.map((l) => l.text),
+      ['good morn'],
+    )
+    assert.equal(view.provisional, true)
+  })
+
+  test('una traducción en blanco se ignora y no deja una línea vacía', () => {
+    const view = viewFor(
+      text({
+        translations: [
+          { lang: 'es', text: '   ' },
+          { lang: 'fr', text: 'Bonjour' },
+        ],
+      }),
+      { showOriginal: true },
+    )
+    assert.deepEqual(
+      view.lines.map((l) => l.lang),
+      ['en', 'fr'],
+    )
+  })
+
   test('el final siguiente reemplaza al provisional: el estilo depende solo de `final`', () => {
-    assert.equal(viewFor({ original: 'a', translated: 'b', final: false }, { showOriginal: true }).provisional, true)
-    assert.equal(viewFor({ original: 'a', translated: 'b', final: true }, { showOriginal: true }).provisional, false)
+    assert.equal(viewFor(text({ final: false }), { showOriginal: true }).provisional, true)
+    assert.equal(viewFor(text({ final: true }), { showOriginal: true }).provisional, false)
   })
 })

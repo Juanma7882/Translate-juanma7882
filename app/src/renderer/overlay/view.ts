@@ -3,22 +3,36 @@
 import { luminance, parseHex } from '../../shared/contrast.ts'
 import type { OverlayStyle, OverlayText } from '../../shared/ipc.ts'
 
-export interface OverlayView {
-  /** Línea pequeña con el texto original; vacía si no debe mostrarse. */
-  original: string
-  /** Línea principal: la traducción o, si todavía no hay (parciales), el original. */
-  main: string
-  /** `true` mientras el subtítulo es provisional y no el definitivo. */
-  provisional: boolean
+/** Una línea del overlay: un subtítulo en un idioma. */
+export interface OverlayLine {
+  /** Código del idioma de la línea (atributo `lang` y etiqueta). */
+  lang: string
+  text: string
+  kind: 'original' | 'translation'
+  /** Original pequeño que acompaña a una o más traducciones. */
+  secondary: boolean
 }
 
+export interface OverlayView {
+  /** De arriba abajo: el original (si se muestra) y después las traducciones en el orden de los destinos. */
+  lines: OverlayLine[]
+  /** `true` mientras el subtítulo es provisional y no el definitivo. */
+  provisional: boolean
+  /** Con más de una línea se rotula el idioma de cada una. */
+  labeled: boolean
+}
+
+/**
+ * Las líneas para un texto. El original se muestra si su subtítulo está activo o si todavía no hay
+ * ninguna traducción (parciales, destinos que fallaron): nunca queda el overlay en blanco.
+ */
 export function viewFor(text: OverlayText, style: Pick<OverlayStyle, 'showOriginal'>): OverlayView {
-  const hasTranslation = text.translated !== null && text.translated.trim() !== ''
-  return {
-    original: style.showOriginal && hasTranslation ? text.original : '',
-    main: hasTranslation ? (text.translated as string) : text.original,
-    provisional: !text.final,
-  }
+  const translations = text.translations.filter((t) => t.text.trim() !== '')
+  const showOriginal = style.showOriginal || translations.length === 0
+  const lines: OverlayLine[] = []
+  if (showOriginal) lines.push({ lang: text.lang, text: text.original, kind: 'original', secondary: translations.length > 0 })
+  for (const t of translations) lines.push({ lang: t.lang, text: t.text, kind: 'translation', secondary: false })
+  return { lines, provisional: !text.final, labeled: lines.length > 1 }
 }
 
 /** Cuánto se muestra la etiqueta de modo por sí sola tras un cambio de modo. */
