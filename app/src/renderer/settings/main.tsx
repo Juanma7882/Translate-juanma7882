@@ -1,5 +1,5 @@
 import { render } from 'preact'
-import { useCallback, useEffect, useRef, useState } from 'preact/hooks'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import type { ModelCatalog } from 'tr-bindings'
 
 import { parseHex } from '../../shared/contrast.ts'
@@ -12,19 +12,20 @@ import {
   contrastInfo,
   FONT_CHOICES,
   languageError,
-  languageName,
-  pickPair,
-  sourceLanguages,
-  targetLanguages,
   toIssues,
 } from './form.ts'
 import type { DownloadProgress, Issue, TabSpec } from './form.ts'
+import { HomePanel } from './home-panel.tsx'
+import { createLevelStore } from './home.ts'
+import { LanguagesPanel } from './languages-panel.tsx'
 import { ModelsPanel } from './models-panel.tsx'
 import { FieldError, fieldProps, TabPanel, Tabs } from './ui.tsx'
 
 const api = window.trSettings
 
 const TABS: readonly TabSpec[] = [
+  { id: 'home', label: 'Inicio' },
+  { id: 'languages', label: 'Idiomas' },
   { id: 'general', label: 'General' },
   { id: 'models', label: 'Modelos' },
   { id: 'appearance', label: 'Apariencia' },
@@ -47,26 +48,29 @@ function App({ api }: { api: SettingsApi }) {
   const [issues, setIssues] = useState<Issue[]>([])
   const [notice, setNotice] = useState<Notice | null>(null)
   const [status, setStatus] = useState('')
-  const [appState, setAppState] = useState<AppState>({ running: false, paused: false, mode: null })
-  const [tab, setTab] = useState('general')
+  const [appState, setAppState] = useState<AppState>({ running: false, paused: false, mode: null, phase: 'idle' })
+  const [tab, setTab] = useState('home')
   const [moving, setMoving] = useState(false)
   const [confirmReset, setConfirmReset] = useState(false)
   const [draftColors, setDraftColors] = useState<{ text: string; bg: string } | null>(null)
   const settingsRef = useRef<Settings | null>(null)
   settingsRef.current = settings
+  const levels = useMemo(() => createLevelStore(), [])
 
   useEffect(() => {
     api.onSettingsChanged(setSettings)
     api.onModelProgress((event) => setProgress((current) => applyProgress(current, event)))
     api.onAppState(setAppState)
+    void api.getAppState().then(setAppState, () => undefined)
     api.onNotice(setNotice)
     api.onMoveState(setMoving)
+    api.onAudioLevel((level) => levels.push(level))
     void (async () => {
       const [current, cat] = await Promise.all([api.getSettings(), api.modelCatalog().catch(() => null)])
       setSettings(current)
       setCatalog(cat)
     })()
-  }, [api])
+  }, [api, levels])
 
   /** Valida en la ventana (mismas reglas que main) y guarda; los errores salen junto al campo. */
   const save = useCallback(
@@ -99,8 +103,6 @@ function App({ api }: { api: SettingsApi }) {
 
   if (!settings) return <p role="status">Cargando…</p>
 
-  const sources = catalog ? sourceLanguages(catalog) : [settings.from]
-  const targets = catalog ? targetLanguages(catalog, settings.from) : [settings.to]
   const overlay = settings.overlay
   const perf = settings.performance
   const colors = draftColors ?? { text: overlay.textColor, bg: overlay.backgroundColor }
@@ -108,10 +110,6 @@ function App({ api }: { api: SettingsApi }) {
   const fieldIssues = issues.filter((i) => i.field !== null)
 
   const num = (e: Event): number => Number((e.currentTarget as HTMLInputElement).value)
-  const changeFrom = (value: string) => {
-    const pair = catalog ? pickPair(catalog, value, settings.to) : { from: value, to: settings.to }
-    if (pair) void save({ from: pair.from, to: pair.to })
-  }
   // Siempre se valida el par completo (texto y fondo); si no cumple, se muestra el motivo y el borrador.
   const changeColor = async (patch: { text?: string; bg?: string }) => {
     const next = { text: patch.text ?? colors.text, bg: patch.bg ?? colors.bg }
@@ -171,6 +169,34 @@ function App({ api }: { api: SettingsApi }) {
       </p>
 
       <Tabs tabs={TABS} active={tab} onChange={setTab}>
+        <TabPanel id="home" active={tab}>
+          <HomePanel
+            api={api}
+            settings={settings}
+            appState={appState}
+            notice={notice}
+            levels={levels}
+            catalog={catalog}
+            progress={progress}
+            active={tab === 'home'}
+            save={save}
+            goToLanguages={() => setTab('languages')}
+          />
+        </TabPanel>
+
+        <TabPanel id="languages" active={tab}>
+          <LanguagesPanel
+            api={api}
+            settings={settings}
+            catalog={catalog}
+            appState={appState}
+            progress={progress}
+            clearProgress={() => setProgress({})}
+            save={save}
+            announce={announce}
+          />
+        </TabPanel>
+
         <TabPanel id="general" active={tab}>
           <fieldset id="mode-group">
             <legend>Modo</legend>
@@ -201,41 +227,6 @@ function App({ api }: { api: SettingsApi }) {
             )}
           </fieldset>
 
-          <fieldset>
-            <legend>Idiomas</legend>
-            <label>
-              Traducir desde
-              <select id="from" value={settings.from} onChange={(e) => changeFrom(e.currentTarget.value)}>
-                {sources.map((code) => (
-                  <option key={code} value={code}>
-                    {languageName(code)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Traducir a
-              <select id="to" value={settings.to} onChange={(e) => void save({ to: e.currentTarget.value })}>
-                {targets.map((code) => (
-                  <option key={code} value={code}>
-                    {languageName(code)}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </fieldset>
-
-          <fieldset>
-            <legend>Motor</legend>
-            <label class="inline">
-              <input type="radio" name="engines" value="real" checked={settings.engines === 'real'} onChange={() => void save({ engines: 'real' })} />
-              Local (OCR y traducción en este equipo)
-            </label>
-            <label class="inline">
-              <input type="radio" name="engines" value="fake" checked={settings.engines === 'fake'} onChange={() => void save({ engines: 'fake' })} />
-              Demostración (sin modelos)
-            </label>
-          </fieldset>
         </TabPanel>
 
         <TabPanel id="models" active={tab}>
@@ -252,6 +243,20 @@ function App({ api }: { api: SettingsApi }) {
         </TabPanel>
 
         <TabPanel id="appearance" active={tab}>
+          <div class="preview-sticky">
+            <div
+              id="preview"
+              role="img"
+              aria-label="Vista previa del overlay"
+              style={{ fontSize: `${overlay.fontSize}px`, fontFamily: overlay.fontFamily, color: overlay.textColor, background: rgba(overlay.backgroundColor, overlay.opacity) }}
+            >
+              {overlay.showOriginal && <div class="original">{SAMPLE_ORIGINAL}</div>}
+              <div class="translated" style={{ WebkitLineClamp: String(overlay.maxLines) }}>
+                {SAMPLE_TRANSLATED}
+              </div>
+            </div>
+          </div>
+
           <fieldset>
             <legend>Texto del overlay</legend>
             <label for="opacity">
@@ -333,6 +338,14 @@ function App({ api }: { api: SettingsApi }) {
 
           <fieldset id="position">
             <legend>Posición</legend>
+            <button type="button" id="move-overlay" aria-pressed={moving} onClick={() => void toggleMove()}>
+              {moving ? 'Terminar de mover' : 'Mover el overlay…'}
+            </button>
+            <p class="hint">
+              {moving
+                ? 'Arrastra el cuadro de texto en pantalla y pulsa «Listo» (o «Terminar de mover»). La posición queda como manual.'
+                : 'Muestra el overlay para arrastrarlo con el ratón a donde prefieras.'}
+            </p>
             <label class="inline">
               <input type="radio" name="placement" id="placement-auto" checked={overlay.placement === 'auto'} onChange={() => void save({ overlay: { placement: 'auto' } })} />
               Automática (fuera de la región traducida)
@@ -342,38 +355,21 @@ function App({ api }: { api: SettingsApi }) {
               Manual
             </label>
             {overlay.placement === 'manual' && (
-              <div class="row">
-                <label for="overlay-x">
-                  X (px)
-                  <input {...fieldProps('overlay-x', fieldIssues)} type="number" value={overlay.x} onChange={(e) => void save({ overlay: { x: num(e) } })} />
-                </label>
-                <label for="overlay-y">
-                  Y (px)
-                  <input {...fieldProps('overlay-y', fieldIssues)} type="number" value={overlay.y} onChange={(e) => void save({ overlay: { y: num(e) } })} />
-                </label>
-              </div>
+              <details id="position-coords">
+                <summary>Coordenadas exactas (X, Y)</summary>
+                <div class="row">
+                  <label for="overlay-x">
+                    X (px)
+                    <input {...fieldProps('overlay-x', fieldIssues)} type="number" value={overlay.x} onChange={(e) => void save({ overlay: { x: num(e) } })} />
+                  </label>
+                  <label for="overlay-y">
+                    Y (px)
+                    <input {...fieldProps('overlay-y', fieldIssues)} type="number" value={overlay.y} onChange={(e) => void save({ overlay: { y: num(e) } })} />
+                  </label>
+                </div>
+              </details>
             )}
-            <button type="button" id="move-overlay" aria-pressed={moving} onClick={() => void toggleMove()}>
-              {moving ? 'Terminar de mover' : 'Mover el overlay…'}
-            </button>
-            <p class="hint">
-              {moving
-                ? 'Arrastra el cuadro de texto en pantalla y pulsa «Listo» (o «Terminar de mover»). La posición queda como manual.'
-                : 'Muestra el overlay para arrastrarlo con el ratón a donde prefieras.'}
-            </p>
           </fieldset>
-
-          <div
-            id="preview"
-            role="img"
-            aria-label="Vista previa del overlay"
-            style={{ fontSize: `${overlay.fontSize}px`, fontFamily: overlay.fontFamily, color: overlay.textColor, background: rgba(overlay.backgroundColor, overlay.opacity) }}
-          >
-            {overlay.showOriginal && <div class="original">{SAMPLE_ORIGINAL}</div>}
-            <div class="translated" style={{ WebkitLineClamp: String(overlay.maxLines) }}>
-              {SAMPLE_TRANSLATED}
-            </div>
-          </div>
         </TabPanel>
 
         <TabPanel id="shortcuts" active={tab}>
@@ -399,6 +395,19 @@ function App({ api }: { api: SettingsApi }) {
         </TabPanel>
 
         <TabPanel id="advanced" active={tab}>
+          <fieldset>
+            <legend>Motores (solo para pruebas)</legend>
+            <p class="hint">Los motores de demostración no necesitan modelos y no traducen de verdad: sirven para probar la aplicación. Se aplica al empezar la siguiente traducción.</p>
+            <label class="inline">
+              <input type="radio" name="engines" value="real" checked={settings.engines === 'real'} onChange={() => void save({ engines: 'real' })} />
+              Local (OCR y traducción en este equipo)
+            </label>
+            <label class="inline">
+              <input type="radio" name="engines" value="fake" checked={settings.engines === 'fake'} onChange={() => void save({ engines: 'fake' })} />
+              Demostración (sin modelos)
+            </label>
+          </fieldset>
+
           <fieldset id="performance">
             <legend>Rendimiento</legend>
             <p class="hint">«0» deja que el programa decida. Los cambios se aplican al empezar la siguiente traducción.</p>

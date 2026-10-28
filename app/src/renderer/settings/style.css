@@ -280,3 +280,259 @@ progress {
     transition: border-color 0.12s;
   }
 }
+
+/* Pestaña Inicio */
+.session-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-weight: 600;
+}
+
+.phase-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.phase-running .phase-dot,
+.phase-starting .phase-dot {
+  background: var(--accent);
+}
+
+.phase-waiting .phase-dot {
+  background: var(--warning);
+}
+
+.phase-error {
+  color: var(--error);
+}
+
+.phase-error .phase-dot {
+  background: var(--error);
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.controls button {
+  margin-top: 0;
+  min-width: 6.5rem;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+.level {
+  margin-top: 12px;
+}
+
+.level-label {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.meter {
+  position: relative;
+  height: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.meter-fill {
+  height: 100%;
+  width: 0;
+  background: var(--muted);
+}
+
+.meter-fill.voice {
+  background: var(--accent);
+}
+
+.meter-mark {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--text);
+}
+
+.meter-hint {
+  margin: 4px 0 0;
+  font-size: 0.9em;
+}
+
+/* Inicio: estado grande y acción principal destacada */
+.session-status {
+  font-size: 1.3rem;
+}
+
+.controls button.primary {
+  padding: 8px 22px;
+  font-weight: 600;
+}
+
+/* Guía de primer uso */
+.guide {
+  margin: 0 0 16px;
+  padding: 12px 16px;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+}
+
+.guide h2 {
+  margin: 0 0 8px;
+}
+
+.guide-steps {
+  margin: 0;
+  padding-left: 22px;
+}
+
+.guide-step {
+  padding: 4px 0;
+}
+
+.guide-step.done {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.guide-step.current {
+  font-weight: 600;
+}
+
+.guide-state {
+  font-weight: 600;
+}
+
+.guide-step.done .guide-state {
+  text-decoration: none;
+  display: inline-block;
+}
+
+.guide-action {
+  margin: 0 0 0 12px;
+  padding: 3px 12px;
+}
+
+/* Qué se traduce: región, idiomas y modo */
+.setup-row {
+  display: flex;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 6px 0;
+}
+
+.setup-wrap {
+  flex-wrap: wrap;
+}
+
+.setup-label {
+  flex: none;
+  min-width: 5rem;
+  font-weight: 600;
+}
+
+.setup-value {
+  flex: 1 1 240px;
+}
+
+.setup-row button {
+  margin-top: 0;
+}
+
+.setup-note {
+  flex: 1 1 100%;
+  margin: 0;
+}
+
+.setup-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+
+.setup-modes label {
+  margin: 0;
+}
+
+/* Solo para lectores de pantalla */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Apariencia: la vista previa queda a la vista mientras se desplazan los controles */
+.preview-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 4px 0 8px;
+  background: var(--bg);
+  max-height: 35vh;
+  overflow: auto;
+}
+
+.preview-sticky #preview {
+  margin-top: 0;
+}
+
+details#position-coords {
+  margin: 8px 0 0;
+}
+
+details#position-coords summary {
+  cursor: pointer;
+}
+
+/* Nota bajo la barra de nivel (escucha previa) */
+.meter-note {
+  margin: 6px 0 0;
+}
+
+.meter-note.error {
+  color: var(--error);
+}
+
+.meter-note.listening::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .meter-note.listening::before {
+    animation: listening-pulse 1.6s ease-in-out infinite;
+  }
+}
+
+@keyframes listening-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
