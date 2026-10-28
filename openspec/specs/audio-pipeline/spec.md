@@ -7,18 +7,30 @@ Generar subtítulos traducidos a partir del audio del sistema, con segmentos par
 ## Requirements
 
 ### Requirement: Subtítulos desde audio
-Dados un idioma de origen y uno de destino, el pipeline SHALL recibir audio, transcribirlo y emitir subtítulos con el texto transcrito y su traducción.
+Dados un idioma de origen y una lista de cero a dos idiomas de destino, el pipeline SHALL recibir audio, transcribirlo y emitir subtítulos con el texto transcrito y la lista de sus traducciones, cada una con su idioma.
 
 #### Scenario: Habla detectada
 - **WHEN** el audio contiene habla
 - **THEN** se emiten segmentos parciales mientras se habla y un segmento final al cerrar la frase
 
+#### Scenario: Sin destinos
+- **WHEN** no hay destinos y se cierra una frase
+- **THEN** el subtítulo final lleva el texto transcrito y ninguna traducción, sin invocar ningún traductor
+
 ### Requirement: Traducción de segmentos finales
-El pipeline SHALL traducir los segmentos finales. Los segmentos parciales MAY mostrarse sin traducir o con la traducción limitada en frecuencia. El pipeline SHALL informar al reconocimiento de voz si cada ventana cierra la intervención (silencio posterior) para que pueda emitir el segmento final.
+El pipeline SHALL traducir los segmentos finales a cada destino, a la vez cuando hay dos. Los segmentos parciales MAY mostrarse sin traducir o con la traducción limitada en frecuencia. El pipeline SHALL informar al reconocimiento de voz si cada ventana cierra la intervención (silencio posterior) para que pueda emitir el segmento final.
 
 #### Scenario: Segmento final
-- **WHEN** se cierra un segmento
-- **THEN** se emite un subtítulo con la traducción del texto final
+- **WHEN** se cierra un segmento con dos destinos
+- **THEN** se emite un subtítulo con la traducción del texto final a cada destino
+
+#### Scenario: Destinos en paralelo
+- **WHEN** se cierra un segmento con dos destinos y cada traducción tarda lo mismo
+- **THEN** el subtítulo final se emite tras el tiempo de una traducción y no tras la suma de las dos
+
+#### Scenario: Un destino falla
+- **WHEN** la traducción del segmento final falla para un destino y se completa para el otro
+- **THEN** el subtítulo lleva solo la traducción lograda y se informa el error del destino que falló
 
 #### Scenario: Ventana de cierre
 - **WHEN** el silencio cierra una intervención

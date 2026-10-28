@@ -37,4 +37,4 @@
 
 - [x] 6.1 `cd app && npm run typecheck && npm test` y los smokes `TR_SMOKE=settings|shell|flow` verdes; `cargo` no se toca, pero comprobar con `git status` que ningún archivo de `crates/` cambió
 - [x] 6.2 Lista de validación manual en Windows (`docs/validation/windows-inicio.md`): instalación nueva con la guía, «Cambiar región» con el selector sobre la ventana, menú de idiomas en reposo y en marcha, vista previa fija al desplazarse, tema claro y oscuro, solo teclado y lector de pantalla
-- [ ] 6.3 Guardar en Engram las decisiones del cambio y archivar con `/opsx:archive`
+- [x] 6.3 Guardar en Engram las decisiones del cambio y archivar con `/opsx:archive`
