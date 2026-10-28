@@ -103,3 +103,28 @@ La API SHALL ofrecer `modelStatus(from, to)` y `downloadModels(from, to)`; la de
 #### Scenario: Par no soportado
 - **WHEN** JS invoca `modelStatus` o `downloadModels` con un par que no está en el manifiesto
 - **THEN** la llamada falla con un error descriptivo de idioma no soportado
+
+### Requirement: Ámbito en estado y descarga de modelos
+`modelStatus` y `downloadModels` SHALL aceptar un tercer parámetro opcional `scope` (`text`, `audio` o `all`; por defecto `text`) y rechazar valores desconocidos como argumento inválido. `modelCatalog` SHALL incluir `sttLanguages`.
+
+#### Scenario: Modelos de audio
+- **WHEN** se llama `modelStatus('en','es','audio')`
+- **THEN** devuelve el modelo de voz y la traducción
+
+#### Scenario: Ámbito inválido
+- **WHEN** `scope` es desconocido
+- **THEN** la promesa se rechaza con `InvalidArg`
+
+### Requirement: Subtítulos con motores reales
+`startAudioSubtitles` con `engines: 'real'` SHALL arrancar la captura del sistema y emitir `onSubtitle` parciales (sin traducir) y finales (traducidos); sin modelos falla listando los ausentes.
+
+#### Scenario: Sin modelos
+- **WHEN** se llama sin los modelos descargados
+- **THEN** lanza un error `missing models: ...` y no emite eventos
+
+### Requirement: Modo forzado sin evento propio
+El evento de cambio de modo SHALL emitirse solo por el pipeline con fallback (`autoFallback: true`); con una región sin fallback o con `startAudioSubtitles` el llamador conoce el modo por la orden que dio.
+
+#### Scenario: Solo texto
+- **WHEN** se inicia una región sin fallback
+- **THEN** no se emite ningún evento de modo

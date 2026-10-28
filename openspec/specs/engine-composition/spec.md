@@ -47,3 +47,32 @@ La composición MUST NOT registrar ni escribir a disco texto, capturas ni traduc
 #### Scenario: Ejecución con motores reales
 - **WHEN** corre un pipeline completo con motores reales
 - **THEN** no se crean archivos con contenido procesado y no se imprime contenido en ningún registro
+
+### Requirement: Motores reales de audio
+Con el conjunto real, `start_audio` y el fallback a audio SHALL usar captura del sistema, reconocimiento de voz y traducción reales, comprobando antes que los modelos estén listos.
+
+#### Scenario: Modelos de audio faltantes
+- **WHEN** se inicia audio real y faltan modelos
+- **THEN** falla con un error que lista solo los modelos de voz y traducción ausentes, sin abrir la captura
+
+#### Scenario: Idioma no soportado
+- **WHEN** el idioma de origen no tiene modelo de voz o el par no tiene traducción
+- **THEN** falla como argumento inválido antes de mirar la carpeta de modelos
+
+#### Scenario: Motor no compilado
+- **WHEN** el build no incluye la captura o el STT
+- **THEN** el error nombra el motor ausente
+
+### Requirement: Fallback real con un solo traductor
+Con motores reales y fallback activo, texto y audio SHALL compartir una única instancia del traductor del par.
+
+#### Scenario: Una carga
+- **WHEN** se arranca una región con fallback real
+- **THEN** el modelo de traducción se carga una sola vez
+
+### Requirement: Modelos faltantes del fallback agregados
+Si faltan modelos al arrancar con fallback real, el error SHALL listar los de texto y los de audio juntos, sin duplicados.
+
+#### Scenario: Faltan ambos ámbitos
+- **WHEN** no hay ningún modelo descargado
+- **THEN** el error nombra OCR, voz y traducción en un único mensaje
