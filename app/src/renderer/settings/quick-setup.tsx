@@ -18,7 +18,7 @@ export function RegionRow({ settings, busy, onChoose, onShow }: { settings: Sett
   return (
     <div id="region-row" class="setup-row">
       <span class="setup-label" id="region-label">
-        Región
+        Región a traducir
       </span>
       <span class="setup-value" id="region-text" aria-labelledby="region-label">
         {summary.text}
@@ -30,7 +30,7 @@ export function RegionRow({ settings, busy, onChoose, onShow }: { settings: Sett
       )}
       {summary.canChange && (
         <button type="button" id="choose-region" disabled={busy} onClick={onChoose}>
-          {summary.buttonLabel}
+          Cambiar región
         </button>
       )}
     </div>
@@ -128,7 +128,7 @@ export function PairMenu({ api, settings, catalog, running, active, progress, sa
 
 // ---------------------------------------------------------------------------- posición overlay
 
-export function OverlayPositionRow({ busy, onChoose }: { busy: boolean; onChoose: () => void }) {
+export function OverlayPositionRow({ busy, onChoose, onShow }: { busy: boolean; onChoose: () => void; onShow: () => void }) {
   return (
     <div id="overlay-position-row" class="setup-row">
       <span class="setup-label" id="overlay-label">
@@ -137,6 +137,9 @@ export function OverlayPositionRow({ busy, onChoose }: { busy: boolean; onChoose
       <span class="setup-value" id="overlay-text" aria-labelledby="overlay-label">
         Manual
       </span>
+      <button type="button" id="show-overlay-position" disabled={busy} onClick={onShow} title="Muestra dónde aparecerá la traducción">
+        Ver posición
+      </button>
       <button type="button" id="choose-overlay-position" disabled={busy} onClick={onChoose}>
         Cambiar posición
       </button>

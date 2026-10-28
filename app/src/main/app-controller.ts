@@ -191,6 +191,17 @@ export class AppController extends EventEmitter<ControllerEvents> {
     return lastRegion ? this.deps.picker.preview(lastRegion) : false
   }
 
+  /** Abre el selector de overlay en modo preview (sin permitir cambios). */
+  async showOverlayPosition(): Promise<boolean> {
+    const { lastRegion } = this.deps.settings.get()
+    if (!lastRegion) {
+      this.emit('notice', { level: 'error', message: 'Primero elige una región a traducir' })
+      return false
+    }
+    const overlayPicker = new OverlayPicker(this.deps.windows, this.deps.displays, lastRegion)
+    return overlayPicker.preview()
+  }
+
   /** Traduce la última región usada; si no hay ninguna, pide elegirla (salvo en modo audio, que no la necesita). */
   async startSaved(): Promise<boolean> {
     const { mode, lastRegion } = this.deps.settings.get()

@@ -34,6 +34,7 @@ const SESSION_CHOOSE_REGION = 'session:choose-region' satisfies typeof Channel.s
 const SESSION_SHOW_REGION = 'session:show-region' satisfies typeof Channel.sessionShowRegion
 const SESSION_PICK_REGION = 'session:pick-region' satisfies typeof Channel.sessionPickRegion
 const SESSION_PICK_OVERLAY_POSITION = 'session:pick-overlay-position' satisfies typeof Channel.sessionPickOverlayPosition
+const SESSION_SHOW_OVERLAY_POSITION = 'session:show-overlay-position' satisfies typeof Channel.sessionShowOverlayPosition
 const SESSION_STATE = 'session:state' satisfies typeof Channel.sessionState
 const AUDIO_SOURCES = 'audio:sources' satisfies typeof Channel.audioSources
 const AUDIO_LEVEL = 'audio:level' satisfies typeof Channel.audioLevel
@@ -80,6 +81,7 @@ const api: SettingsApi = {
   showRegion: () => ipcRenderer.invoke(SESSION_SHOW_REGION),
   pickRegion: () => ipcRenderer.invoke(SESSION_PICK_REGION),
   pickOverlayPosition: () => ipcRenderer.invoke(SESSION_PICK_OVERLAY_POSITION),
+  showOverlayPosition: () => ipcRenderer.invoke(SESSION_SHOW_OVERLAY_POSITION),
   getAppState: () => ipcRenderer.invoke(SESSION_STATE),
   listAudioSources: () => ipcRenderer.invoke(AUDIO_SOURCES),
   onAudioLevel(listener) {

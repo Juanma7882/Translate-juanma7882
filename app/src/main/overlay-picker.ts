@@ -56,6 +56,31 @@ export class OverlayPicker {
     return this.pending
   }
 
+  /**
+   * Muestra el selector en modo preview durante unos segundos sin permitir cambios.
+   * Devuelve `false` si hay un selector abierto o la región no se puede ubicar.
+   */
+  async preview(): Promise<boolean> {
+    if (this.pending) return false
+    const all = this.displays.all()
+    const located = toDipRect(this.region, all)
+    const electronDisplay = located && screen.getAllDisplays().find((d) => d.id === located.display.id)
+    if (!located || !electronDisplay) return false
+
+    const window = await this.windows.openSelector(electronDisplay)
+    if (this.pending) {
+      this.windows.close('selector')
+      return false
+    }
+    window.setIgnoreMouseEvents(true)
+    window.setAlwaysOnTop(true, 'screen-saver')
+    const init: SelectorInit = { lastRegion: located.rect, screen: { index: monitorIndex(all, located.display) + 1, total: all.length }, preview: true }
+    window.webContents.send(Channel.selectorInit, init)
+    const timer = setTimeout(() => this.windows.close('selector'), 2500)
+    window.once('closed', () => clearTimeout(timer))
+    return true
+  }
+
   private displayForRegion(): DisplayInfo {
     const all = this.displays.all()
     const located = toDipRect(this.region, all)

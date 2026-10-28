@@ -58,6 +58,7 @@ export const Channel = {
   sessionShowRegion: 'session:show-region',
   sessionPickRegion: 'session:pick-region',
   sessionPickOverlayPosition: 'session:pick-overlay-position',
+  sessionShowOverlayPosition: 'session:show-overlay-position',
   sessionState: 'session:state',
   audioSources: 'audio:sources',
   audioLevel: 'audio:level',
@@ -233,6 +234,8 @@ export interface SettingsApi {
   pickOverlayPosition(): Promise<boolean>
   /** Marca unos segundos sobre la pantalla la región guardada. Devuelve `false` si no hay región o no se pudo mostrar. */
   showRegion(): Promise<boolean>
+  /** Muestra dónde aparecerá el overlay durante unos segundos. Devuelve `false` si no hay región o no se pudo mostrar. */
+  showOverlayPosition(): Promise<boolean>
   /** Estado actual de la sesión: al abrir la ventana con una sesión en marcha no hay que esperar a un cambio. */
   getAppState(): Promise<AppState>
   /** Aplicaciones con audio activo en este momento. */

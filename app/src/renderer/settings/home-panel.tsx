@@ -53,7 +53,7 @@ interface Props {
   goToLanguages: () => void
 }
 
-type Action = 'start' | 'pause' | 'resume' | 'restart' | 'stop' | 'region' | 'show' | 'pickRegion' | 'pickOverlayPosition'
+type Action = 'start' | 'pause' | 'resume' | 'restart' | 'stop' | 'region' | 'show' | 'pickRegion' | 'pickOverlayPosition' | 'showOverlayPosition'
 
 export function HomePanel({ api, settings, appState, notice, levels, catalog, progress, active, save, goToLanguages }: Props) {
   const phase = phaseOf(appState)
@@ -78,6 +78,7 @@ export function HomePanel({ api, settings, appState, notice, levels, catalog, pr
       else if (action === 'show') await api.showRegion()
       else if (action === 'pickRegion') await api.pickRegion()
       else if (action === 'pickOverlayPosition') await api.pickOverlayPosition()
+      else if (action === 'showOverlayPosition') await api.showOverlayPosition()
       else await api.stopSession()
     } catch (e) {
       setFailure(e instanceof Error ? e.message : String(e))
@@ -132,8 +133,8 @@ export function HomePanel({ api, settings, appState, notice, levels, catalog, pr
 
       <fieldset id="what-to-translate">
         <legend>Qué se traduce</legend>
-        <RegionRow settings={settings} busy={pending !== null} onChoose={() => void run('region')} onShow={() => void run('show')} />
-        <OverlayPositionRow busy={pending !== null} onChoose={() => void run('pickOverlayPosition')} />
+        <RegionRow settings={settings} busy={pending !== null} onChoose={() => void run('pickRegion')} onShow={() => void run('show')} />
+        <OverlayPositionRow busy={pending !== null} onChoose={() => void run('pickOverlayPosition')} onShow={() => void run('showOverlayPosition')} />
         <PairMenu api={api} settings={settings} catalog={catalog} running={running} active={active} progress={progress} save={save} goToLanguages={goToLanguages} />
         <ModeRow settings={settings} save={save} />
       </fieldset>
