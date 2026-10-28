@@ -1,14 +1,18 @@
-//! Traductor Opus-MT (Marian) en ONNX int8: encoder una vez y decoder sin caché, decodificación
-//! voraz acotada. Los modelos se leen de una carpeta; nada se escribe y no hay red.
+//! Traductor Opus-MT (Marian) en ONNX int8: encoder una vez y decoder con caché de claves/valores
+//! (export "merged") o, si el modelo no la trae, sin caché; búsqueda por haces acotada o voraz.
+//! Los modelos se leen de una carpeta; nada se escribe y no hay red.
 
+use std::borrow::Cow;
 use std::path::Path;
 use std::sync::Mutex;
 
-use ort::session::Session;
-use ort::value::Tensor;
+use ort::session::{OutputSelector, RunOptions, Session, SessionInputValue};
+use ort::value::{DynValue, Tensor};
 use tr_core::{CoreError, Lang, Result, Translator};
 
+use super::beam::{self, Decode, Search};
 use super::marian::MarianTokenizer;
+use crate::perf::PerfConfig;
 
 /// Archivos que debe tener la carpeta del modelo de un par.
 pub const MODEL_FILES: [&str; 5] = [
@@ -19,8 +23,15 @@ pub const MODEL_FILES: [&str; 5] = [
     "config.json",
 ];
 
+/// Decoder opcional con caché de claves/valores (export "merged"). Si está, se prefiere a
+/// `decoder.onnx`. Transitorio: cuando el manifiesto entregue el "merged" como `decoder.onnx`
+/// este archivo deja de hacer falta (el tipo de decoder se detecta por sus entradas).
+pub const CACHED_DECODER_FILE: &str = "decoder_merged.onnx";
+
 /// Piezas de entrada como máximo (la terminación incluida): acota el coste de textos largos.
 const MAX_INPUT_TOKENS: usize = 128;
+/// Hilos automáticos de la traducción: con más no se gana latencia (medido en el ADR 0006).
+const MAX_AUTO_THREADS: usize = 2;
 /// Piezas generadas como máximo, pase lo que pase.
 const MAX_OUTPUT_TOKENS: usize = 160;
 
@@ -37,21 +48,51 @@ fn output_limit(input_tokens: usize) -> usize {
     (input_tokens * 2 + 10).min(MAX_OUTPUT_TOKENS)
 }
 
-/// Id de mayor puntuación, ignorando `blocked` (el id de arranque del decoder, que nunca se
-/// genera) y tratando NaN como la peor puntuación. En empate gana el menor id.
-fn pick_next(logits: &[f32], blocked: i64) -> Option<usize> {
-    logits
-        .iter()
-        .enumerate()
-        .filter(|&(id, score)| id as i64 != blocked && !score.is_nan())
-        .fold(
-            None,
-            |best: Option<(usize, f32)>, (id, &score)| match best {
-                Some((_, top)) if top >= score => best,
-                _ => Some((id, score)),
-            },
-        )
-        .map(|(id, _)| id)
+/// Cómo se alimenta el decoder.
+enum Kind {
+    /// Sin caché: cada paso recibe la secuencia completa.
+    Plain,
+    /// Con caché de claves/valores: cada paso recibe solo el último token.
+    Cached {
+        /// Entradas `past_key_values.*`, en orden.
+        past: Vec<String>,
+        /// Salidas `present.*` correspondientes.
+        present: Vec<String>,
+        heads: usize,
+        head_dim: usize,
+    },
+}
+
+impl Kind {
+    fn detect(decoder: &Session) -> Self {
+        let inputs = decoder.inputs();
+        let past: Vec<String> = inputs
+            .iter()
+            .map(|i| i.name().to_owned())
+            .filter(|n| n.starts_with("past_key_values."))
+            .collect();
+        if past.is_empty() || !inputs.iter().any(|i| i.name() == "use_cache_branch") {
+            return Self::Plain;
+        }
+        let dim = |axis: usize| {
+            inputs
+                .iter()
+                .find(|i| i.name() == past[0])
+                .and_then(|i| i.dtype().tensor_shape())
+                .and_then(|s| s.get(axis).copied())
+                .filter(|&d| d > 0)
+                .unwrap_or(1) as usize
+        };
+        Self::Cached {
+            present: past
+                .iter()
+                .map(|n| n.replacen("past_key_values.", "present.", 1))
+                .collect(),
+            heads: dim(1),
+            head_dim: dim(3),
+            past,
+        }
+    }
 }
 
 struct Sessions {
@@ -62,22 +103,22 @@ struct Sessions {
 pub struct OpusMt {
     tokenizer: MarianTokenizer,
     sessions: Mutex<Sessions>,
+    kind: Kind,
+    beams: usize,
     from: String,
     to: String,
 }
 
-fn ort_session(path: &Path) -> Result<Session> {
-    let threads = std::thread::available_parallelism().map_or(2, |n| n.get().min(4));
-    let build = || -> ort::Result<Session> {
-        let mut builder = Session::builder()?.with_intra_threads(threads)?;
-        builder.commit_from_file(path)
-    };
-    build().map_err(|e| CoreError::Model(format!("could not load `{}`: {e}", path.display())))
-}
-
 impl OpusMt {
-    /// Carga los modelos de `model_dir`, que traducen `from` -> `to`.
+    /// Carga los modelos de `model_dir`, que traducen `from` -> `to`, con el rendimiento por
+    /// defecto ([`PerfConfig::default`]).
     pub fn load(model_dir: &Path, from: &Lang, to: &Lang) -> Result<Self> {
+        Self::load_with(model_dir, from, to, &PerfConfig::default())
+    }
+
+    /// Como [`Self::load`] con hilos y haces de `perf`. El tokenizador y las dos sesiones se
+    /// cargan en paralelo.
+    pub fn load_with(model_dir: &Path, from: &Lang, to: &Lang, perf: &PerfConfig) -> Result<Self> {
         let missing: Vec<&str> = MODEL_FILES
             .iter()
             .copied()
@@ -89,21 +130,47 @@ impl OpusMt {
                 missing.join(", ")
             )));
         }
+        let decoder_path = if model_dir.join(CACHED_DECODER_FILE).is_file() {
+            model_dir.join(CACHED_DECODER_FILE)
+        } else {
+            model_dir.join("decoder.onnx")
+        };
+        let (threads, arena) = (perf.threads_capped(MAX_AUTO_THREADS), !perf.low_memory);
+        let (tokenizer, encoder, decoder) = std::thread::scope(|scope| {
+            let encoder = scope
+                .spawn(|| crate::perf::session(&model_dir.join("encoder.onnx"), threads, arena));
+            let decoder = scope.spawn(|| crate::perf::session(&decoder_path, threads, arena));
+            let tokenizer = MarianTokenizer::load(model_dir);
+            let joined = |handle: std::thread::ScopedJoinHandle<'_, Result<Session>>| {
+                handle
+                    .join()
+                    .unwrap_or_else(|_| Err(CoreError::Model("model loading panicked".into())))
+            };
+            (tokenizer, joined(encoder), joined(decoder))
+        });
+        let decoder = decoder?;
         Ok(Self {
-            tokenizer: MarianTokenizer::load(model_dir)?,
+            kind: Kind::detect(&decoder),
+            tokenizer: tokenizer?,
             sessions: Mutex::new(Sessions {
-                encoder: ort_session(&model_dir.join("encoder.onnx"))?,
-                decoder: ort_session(&model_dir.join("decoder.onnx"))?,
+                encoder: encoder?,
+                decoder,
             }),
+            beams: perf.beams(),
             from: primary(from).to_owned(),
             to: primary(to).to_owned(),
         })
     }
 
+    /// `true` si el decoder usa caché de claves/valores.
+    pub fn uses_kv_cache(&self) -> bool {
+        matches!(self.kind, Kind::Cached { .. })
+    }
+
     fn run(&self, text: &str) -> Result<String> {
         let ids = self.tokenizer.encode(text, MAX_INPUT_TOKENS);
         let n = ids.len();
-        let mask = vec![1i64; n];
+        let k = self.beams;
 
         let mut sessions = self
             .sessions
@@ -115,47 +182,224 @@ impl OpusMt {
             .encoder
             .run(ort::inputs![
                 "input_ids" => Tensor::from_array(([1usize, n], ids)).map_err(|e| fail("encoding", e))?,
-                "attention_mask" => Tensor::from_array(([1usize, n], mask.clone())).map_err(|e| fail("encoding", e))?,
+                "attention_mask" => Tensor::from_array(([1usize, n], vec![1i64; n])).map_err(|e| fail("encoding", e))?,
             ])
             .map_err(|e| fail("encoding", e))?;
         let (shape, data) = encoded["last_hidden_state"]
             .try_extract_tensor::<f32>()
             .map_err(|e| fail("encoding", e))?;
-        let shape: Vec<usize> = shape.iter().map(|&d| d as usize).collect();
-        let hidden = data.to_vec();
-        drop(encoded);
-
-        let start = self.tokenizer.decoder_start_id;
-        let mut generated = vec![start];
-        for _ in 0..output_limit(n) {
-            let steps = generated.len();
-            let outputs = sessions
-                .decoder
-                .run(ort::inputs![
-                    "input_ids" => Tensor::from_array(([1usize, steps], generated.clone())).map_err(|e| fail("decoding", e))?,
-                    "encoder_attention_mask" => Tensor::from_array(([1usize, n], mask.clone())).map_err(|e| fail("decoding", e))?,
-                    "encoder_hidden_states" => Tensor::from_array((shape.clone(), hidden.clone())).map_err(|e| fail("decoding", e))?,
-                ])
-                .map_err(|e| fail("decoding", e))?;
-            let (logits_shape, logits) = outputs["logits"]
-                .try_extract_tensor::<f32>()
-                .map_err(|e| fail("decoding", e))?;
-            let vocab = *logits_shape
-                .get(2)
-                .ok_or_else(|| translation_error("unexpected logits shape"))?
-                as usize;
-            let last = logits
-                .get((steps - 1) * vocab..steps * vocab)
-                .ok_or_else(|| translation_error("unexpected logits size"))?;
-            let next = pick_next(last, start)
-                .ok_or_else(|| translation_error("the model produced no valid token"))?
-                as i64;
-            if next == self.tokenizer.eos_id() {
-                break;
-            }
-            generated.push(next);
+        let width = shape.get(2).copied().unwrap_or(0) as usize;
+        if width == 0 || data.len() != n * width {
+            return Err(translation_error("unexpected encoder output shape"));
         }
-        Ok(self.tokenizer.decode(&generated[1..]))
+        // Un lote de `k` filas idénticas: una por haz.
+        let hidden = Tensor::from_array(([k, n, width], data.repeat(k)))
+            .map_err(|e| fail("decoding", e))?
+            .into_dyn();
+        drop(encoded);
+        let mask = Tensor::from_array(([k, n], vec![1i64; k * n]))
+            .map_err(|e| fail("decoding", e))?
+            .into_dyn();
+
+        let mut decode = DecoderRun {
+            decoder: &mut sessions.decoder,
+            kind: &self.kind,
+            hidden,
+            mask,
+            beams: k,
+            past: Vec::new(),
+        };
+        let generated = beam::search(
+            &Search {
+                beams: k,
+                max_len: output_limit(n),
+                start: self.tokenizer.decoder_start_id,
+                eos: self.tokenizer.eos_id(),
+            },
+            &mut decode,
+        )?;
+        Ok(self.tokenizer.decode(&generated))
+    }
+}
+
+/// Estado del decoder durante una traducción.
+struct DecoderRun<'a> {
+    decoder: &'a mut Session,
+    kind: &'a Kind,
+    /// Salida del encoder repetida por haz: `[haces, n, d]`.
+    hidden: DynValue,
+    /// Máscara de atención del encoder: `[haces, n]`.
+    mask: DynValue,
+    beams: usize,
+    /// Caché de claves/valores (vacía hasta el primer paso).
+    past: Vec<DynValue>,
+}
+
+fn decode_error(e: ort::Error) -> CoreError {
+    translation_error(format!("decoding failed: {e}"))
+}
+
+fn tensor_i64(shape: [usize; 2], data: Vec<i64>) -> Result<DynValue> {
+    Ok(Tensor::from_array((shape, data))
+        .map_err(decode_error)?
+        .into_dyn())
+}
+
+/// Última fila de logits de cada haz, concatenadas: de `[haces, filas, vocab]` a `[haces, vocab]`.
+fn last_rows(
+    shape: &[i64],
+    logits: &[f32],
+    beams: usize,
+    expected_rows: Option<usize>,
+) -> Result<(Vec<f32>, usize)> {
+    let vocab = shape.get(2).copied().unwrap_or(0) as usize;
+    let rows = shape.get(1).copied().unwrap_or(0) as usize;
+    if vocab == 0
+        || rows == 0
+        || expected_rows.is_some_and(|r| r != rows)
+        || logits.len() != beams * rows * vocab
+    {
+        return Err(translation_error("unexpected logits shape"));
+    }
+    let mut last = Vec::with_capacity(beams * vocab);
+    for beam in 0..beams {
+        let end = (beam + 1) * rows * vocab;
+        last.extend_from_slice(&logits[end - vocab..end]);
+    }
+    Ok((last, vocab))
+}
+
+impl DecoderRun<'_> {
+    fn step_plain(&mut self, hyps: &[Vec<i64>]) -> Result<(Vec<f32>, usize)> {
+        let len = hyps[0].len();
+        let ids = tensor_i64([self.beams, len], hyps.iter().flatten().copied().collect())?;
+        let options = RunOptions::new()
+            .map_err(decode_error)?
+            .with_outputs(OutputSelector::no_default().with("logits"));
+        let inputs: Vec<(Cow<'_, str>, SessionInputValue<'_>)> = vec![
+            ("input_ids".into(), ids.into()),
+            ("encoder_attention_mask".into(), (&self.mask).into()),
+            ("encoder_hidden_states".into(), (&self.hidden).into()),
+        ];
+        let outputs = self
+            .decoder
+            .run_with_options(inputs, &options)
+            .map_err(decode_error)?;
+        let (shape, logits) = outputs["logits"]
+            .try_extract_tensor::<f32>()
+            .map_err(decode_error)?;
+        last_rows(shape, logits, self.beams, Some(len))
+    }
+
+    fn step_cached(
+        &mut self,
+        hyps: &[Vec<i64>],
+        past_names: &[String],
+        present_names: &[String],
+        (heads, head_dim): (usize, usize),
+    ) -> Result<(Vec<f32>, usize)> {
+        let first = self.past.is_empty();
+        if first {
+            // Caché inicial vacía: el modelo la ignora con `use_cache_branch = false`.
+            for _ in past_names {
+                let empty =
+                    Tensor::<f32>::from_array(([self.beams, heads, 0usize, head_dim], Vec::new()))
+                        .map_err(decode_error)?;
+                self.past.push(empty.into_dyn());
+            }
+        }
+        let ids = if first {
+            tensor_i64(
+                [self.beams, hyps[0].len()],
+                hyps.iter().flatten().copied().collect(),
+            )?
+        } else {
+            tensor_i64(
+                [self.beams, 1],
+                hyps.iter().map(|h| h[h.len() - 1]).collect(),
+            )?
+        };
+        let flag = Tensor::from_array(([1usize], vec![!first]))
+            .map_err(decode_error)?
+            .into_dyn();
+        let mut wanted = OutputSelector::no_default().with("logits");
+        for name in present_names {
+            // Las claves/valores del encoder solo se leen en el primer paso.
+            if first || name.contains(".decoder.") {
+                wanted = wanted.with(name.as_str());
+            }
+        }
+        let options = RunOptions::new()
+            .map_err(decode_error)?
+            .with_outputs(wanted);
+
+        let mut inputs: Vec<(Cow<'_, str>, SessionInputValue<'_>)> = vec![
+            ("input_ids".into(), ids.into()),
+            ("encoder_attention_mask".into(), (&self.mask).into()),
+            ("encoder_hidden_states".into(), (&self.hidden).into()),
+            ("use_cache_branch".into(), flag.into()),
+        ];
+        for (name, value) in past_names.iter().zip(&self.past) {
+            inputs.push((name.as_str().into(), value.into()));
+        }
+        let mut outputs = self
+            .decoder
+            .run_with_options(inputs, &options)
+            .map_err(decode_error)?;
+
+        let (shape, logits) = outputs["logits"]
+            .try_extract_tensor::<f32>()
+            .map_err(decode_error)?;
+        let result = last_rows(shape, logits, self.beams, None)?;
+        for (i, name) in present_names.iter().enumerate() {
+            if first || name.contains(".decoder.") {
+                self.past[i] = outputs.remove(name.as_str()).ok_or_else(|| {
+                    translation_error(format!("the decoder produced no `{name}`"))
+                })?;
+            }
+        }
+        Ok(result)
+    }
+}
+
+impl Decode for DecoderRun<'_> {
+    fn step(&mut self, hyps: &[Vec<i64>]) -> Result<(Vec<f32>, usize)> {
+        match self.kind {
+            Kind::Plain => self.step_plain(hyps),
+            Kind::Cached {
+                past,
+                present,
+                heads,
+                head_dim,
+            } => self.step_cached(hyps, past, present, (*heads, *head_dim)),
+        }
+    }
+
+    fn reorder(&mut self, parents: &[usize]) -> Result<()> {
+        let Kind::Cached { present, .. } = self.kind else {
+            return Ok(()); // sin caché cada paso reenvía las secuencias ya ordenadas
+        };
+        if parents.iter().copied().eq(0..parents.len()) {
+            return Ok(());
+        }
+        for (i, name) in present.iter().enumerate() {
+            if !name.contains(".decoder.") {
+                continue; // las del encoder son idénticas en todos los haces
+            }
+            let (shape, data) = self.past[i]
+                .try_extract_tensor::<f32>()
+                .map_err(decode_error)?;
+            let dims: Vec<usize> = shape.iter().map(|&d| d as usize).collect();
+            let block = data.len() / dims[0].max(1);
+            let mut gathered = Vec::with_capacity(data.len());
+            for &parent in parents {
+                gathered.extend_from_slice(&data[parent * block..(parent + 1) * block]);
+            }
+            self.past[i] = Tensor::from_array((dims, gathered))
+                .map_err(decode_error)?
+                .into_dyn();
+        }
+        Ok(())
     }
 }
 
@@ -204,39 +448,21 @@ mod tests {
     }
 
     #[test]
-    fn the_best_scoring_token_is_chosen() {
-        assert_eq!(pick_next(&[0.1, 0.9, 0.5], -1), Some(1));
-        assert_eq!(
-            pick_next(&[-5.0, -2.0, -9.0], -1),
-            Some(1),
-            "también con todo negativo"
-        );
-    }
-
-    #[test]
-    fn the_blocked_token_is_never_chosen_even_if_it_scores_highest() {
-        assert_eq!(pick_next(&[0.1, 9.0, 0.5], 1), Some(2));
-        assert_eq!(pick_next(&[9.0], 0), None, "nada que elegir");
-    }
-
-    #[test]
-    fn ties_pick_the_smallest_id_and_nan_is_ignored() {
-        assert_eq!(pick_next(&[1.0, 1.0, 1.0], -1), Some(0));
-        assert_eq!(pick_next(&[f32::NAN, 0.5, f32::NAN, 0.4], -1), Some(1));
-        assert_eq!(pick_next(&[f32::NAN, f32::NAN], -1), None);
-        assert_eq!(pick_next(&[], -1), None);
-    }
-
-    #[test]
-    fn infinities_do_not_break_the_choice() {
-        assert_eq!(
-            pick_next(&[f32::NEG_INFINITY, 0.0, f32::INFINITY], -1),
-            Some(2)
-        );
-        assert_eq!(
-            pick_next(&[f32::NEG_INFINITY, f32::NEG_INFINITY], -1),
-            Some(0)
-        );
+    fn the_last_row_of_each_beam_is_picked() {
+        // 2 haces, 3 filas, vocab 2: fila i del haz b = [b*10+i, b*10+i+0.5].
+        let mut logits = Vec::new();
+        for b in 0..2 {
+            for i in 0..3 {
+                let v = (b * 10 + i) as f32;
+                logits.extend([v, v + 0.5]);
+            }
+        }
+        let (last, vocab) = last_rows(&[2, 3, 2], &logits, 2, Some(3)).unwrap();
+        assert_eq!(vocab, 2);
+        assert_eq!(last, [2.0, 2.5, 12.0, 12.5]);
+        assert!(last_rows(&[2, 3, 2], &logits, 2, Some(1)).is_err());
+        assert!(last_rows(&[2, 3, 2], &logits[1..], 2, None).is_err());
+        assert!(last_rows(&[2, 0, 2], &[], 2, None).is_err());
     }
 
     fn lang(code: &str) -> Lang {

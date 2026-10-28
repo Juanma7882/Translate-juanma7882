@@ -146,3 +146,15 @@ fn unsupported_languages_are_rejected_when_loading() {
         "{error}"
     );
 }
+
+#[test]
+#[ignore = "necesita modelos reales (TR_MODELS_DIR)"]
+fn two_threads_transcribe_the_same_text() {
+    let perf = tr_adapters::perf::PerfConfig {
+        intra_threads: 2,
+        ..Default::default()
+    };
+    let mut stt = WhisperStt::load_with(&models_dir(), &Lang::new("en").unwrap(), &perf).unwrap();
+    let text = words(&stt.transcribe(&wav("speech_en.wav")).unwrap().unwrap().text);
+    assert!(text.contains("where is the train station"), "{text}");
+}

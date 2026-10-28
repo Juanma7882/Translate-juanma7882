@@ -7,6 +7,7 @@
 pub mod audio;
 #[cfg(feature = "ocr-paddle")]
 pub mod ocr;
+pub mod perf;
 pub mod screen;
 #[cfg(feature = "stt-whisper")]
 pub mod stt;

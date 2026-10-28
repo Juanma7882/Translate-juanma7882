@@ -11,6 +11,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use tr_adapters::perf::PerfConfig;
 use tr_adapters::translate::OpusMt;
 use tr_core::{CoreError, Lang, Translator};
 
@@ -198,4 +199,130 @@ fn a_subtitle_translates_fast_enough_for_live_use() {
         "mediana {:?}",
         times[2]
     );
+}
+
+fn load_with(pair: &str, perf: &PerfConfig) -> OpusMt {
+    let root = std::env::var_os("TR_MODELS_DIR").expect("define TR_MODELS_DIR");
+    let (from, to) = pair.split_once('-').unwrap();
+    OpusMt::load_with(
+        &PathBuf::from(root).join(format!("mt-opus-{pair}")),
+        &lang(from),
+        &lang(to),
+        perf,
+    )
+    .expect("cargar los modelos de traducción")
+}
+
+fn words(text: &str) -> std::collections::HashSet<String> {
+    text.to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+#[test]
+#[ignore = "necesita modelos reales (TR_MODELS_DIR)"]
+fn beam_search_keeps_the_quality_of_the_reference_sentences() {
+    // La calidad no baja: con 2 y 4 haces cada frase comparte al menos la mitad de sus palabras
+    // con la salida voraz de referencia, y en conjunto al menos el 70 %.
+    let greedy = load_with("en-es", &PerfConfig::default());
+    let (en, es) = (lang("en"), lang("es"));
+    for beam_size in [2, 4] {
+        let beam = load_with(
+            "en-es",
+            &PerfConfig {
+                beam_size,
+                ..PerfConfig::default()
+            },
+        );
+        let (mut shared, mut total) = (0usize, 0usize);
+        for source in [
+            "Hello, how are you?",
+            "Where is the train station?",
+            "I will not let you down.",
+            "Thank you very much for your help.",
+            "The meeting has been moved to tomorrow morning.",
+        ] {
+            let (reference, candidate) = (
+                words(&greedy.translate(source, &en, &es).unwrap()),
+                words(&beam.translate(source, &en, &es).unwrap()),
+            );
+            assert!(!candidate.is_empty(), "{source}");
+            let common = reference.intersection(&candidate).count();
+            assert!(
+                common * 2 >= reference.len(),
+                "{beam_size} haces: {source}: {common}/{}",
+                reference.len()
+            );
+            shared += common;
+            total += reference.len();
+        }
+        assert!(
+            shared * 10 >= total * 7,
+            "{beam_size} haces: {shared}/{total}"
+        );
+    }
+}
+
+#[test]
+#[ignore = "necesita modelos reales (TR_MODELS_DIR)"]
+fn the_decoder_without_cache_still_translates_the_same_sentences() {
+    // Carpeta temporal con enlaces a los modelos y `decoder.onnx` sin caché (si hay "merged",
+    // `decoder_merged.onnx` se omite). Solo enlaces: no se escribe contenido.
+    #[cfg(unix)]
+    {
+        let root = PathBuf::from(std::env::var_os("TR_MODELS_DIR").expect("define TR_MODELS_DIR"))
+            .join("mt-opus-en-es");
+        let dir = std::env::temp_dir().join(format!("tr-mt-plain-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        for name in tr_adapters::translate::MODEL_FILES {
+            std::os::unix::fs::symlink(root.join(name), dir.join(name)).unwrap();
+        }
+        let mt = OpusMt::load(&dir, &lang("en"), &lang("es")).unwrap();
+        assert!(!mt.uses_kv_cache());
+        assert_eq!(
+            mt.translate("Where is the train station?", &lang("en"), &lang("es"))
+                .unwrap(),
+            "¿Dónde está la estación de tren?"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+}
+
+#[test]
+#[ignore = "necesita modelos reales (TR_MODELS_DIR)"]
+fn the_kv_cache_is_used_when_the_merged_decoder_is_available() {
+    let root = PathBuf::from(std::env::var_os("TR_MODELS_DIR").expect("define TR_MODELS_DIR"))
+        .join("mt-opus-en-es");
+    if !root
+        .join(tr_adapters::translate::CACHED_DECODER_FILE)
+        .is_file()
+    {
+        return; // sin el decoder con caché no hay nada que comprobar
+    }
+    assert!(load("en-es").uses_kv_cache());
+}
+
+#[test]
+#[ignore = "necesita modelos reales (TR_MODELS_DIR)"]
+fn explicit_thread_counts_and_low_memory_give_the_same_greedy_result() {
+    for perf in [
+        PerfConfig {
+            intra_threads: 1,
+            ..PerfConfig::default()
+        },
+        PerfConfig {
+            low_memory: true,
+            ..PerfConfig::default()
+        },
+    ] {
+        let mt = load_with("en-es", &perf);
+        assert_eq!(
+            mt.translate("I will not let you down.", &lang("en"), &lang("es"))
+                .unwrap(),
+            "No te decepcionaré."
+        );
+    }
 }

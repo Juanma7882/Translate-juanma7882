@@ -13,6 +13,8 @@ use ort::session::{OutputSelector, RunOptions, Session, SessionInputValue};
 use ort::value::{DynValue, Tensor};
 use tr_core::{AudioChunk, CoreError, Lang, Result, Segment, SpeechToText};
 
+use crate::perf::PerfConfig;
+
 use super::mel::{self, LogMel};
 use super::tokenizer::WhisperTokenizer;
 use super::utterance::Utterance;
@@ -36,15 +38,6 @@ const LOGPROB_THRESHOLD: f32 = -1.0;
 
 fn stt_error(message: impl Into<String>) -> CoreError {
     CoreError::Stt(message.into())
-}
-
-fn ort_session(path: &Path) -> Result<Session> {
-    let threads = std::thread::available_parallelism().map_or(2, |n| n.get().min(4));
-    let build = || -> ort::Result<Session> {
-        let mut builder = Session::builder()?.with_intra_threads(threads)?;
-        builder.commit_from_file(path)
-    };
-    build().map_err(|e| CoreError::Model(format!("could not load `{}`: {e}", path.display())))
 }
 
 /// Resultado de transcribir una ventana.
@@ -125,6 +118,12 @@ pub struct WhisperStt {
 impl WhisperStt {
     /// Carga los modelos de `model_dir` para reconocer voz en `from`.
     pub fn load(model_dir: &Path, from: &Lang) -> Result<Self> {
+        Self::load_with(model_dir, from, &PerfConfig::default())
+    }
+
+    /// Como [`Self::load`] con los hilos de `perf`. El encoder, el decoder y el tokenizador se
+    /// cargan en paralelo.
+    pub fn load_with(model_dir: &Path, from: &Lang, perf: &PerfConfig) -> Result<Self> {
         let missing: Vec<&str> = MODEL_FILES
             .iter()
             .copied()
@@ -136,9 +135,23 @@ impl WhisperStt {
                 missing.join(", ")
             )));
         }
-        let tokenizer = WhisperTokenizer::load(model_dir)?;
+        let threads = perf.threads();
+        let (tokenizer, encoder, decoder) = std::thread::scope(|scope| {
+            let encoder = scope
+                .spawn(|| crate::perf::session(&model_dir.join("encoder.onnx"), threads, false));
+            let decoder = scope
+                .spawn(|| crate::perf::session(&model_dir.join("decoder.onnx"), threads, false));
+            let tokenizer = WhisperTokenizer::load(model_dir);
+            let joined = |handle: std::thread::ScopedJoinHandle<'_, Result<Session>>| {
+                handle
+                    .join()
+                    .unwrap_or_else(|_| Err(CoreError::Model("model loading panicked".into())))
+            };
+            (tokenizer, joined(encoder), joined(decoder))
+        });
+        let tokenizer = tokenizer?;
         let language = tokenizer.language(from)?;
-        let decoder = ort_session(&model_dir.join("decoder.onnx"))?;
+        let decoder = decoder?;
         let past_names: Vec<String> = decoder
             .inputs()
             .iter()
@@ -160,7 +173,7 @@ impl WhisperStt {
             .map(|n| n.replacen("past_key_values.", "present.", 1))
             .collect();
         Ok(Self {
-            encoder: ort_session(&model_dir.join("encoder.onnx"))?,
+            encoder: encoder?,
             decoder,
             tokenizer,
             mel: LogMel::new(),

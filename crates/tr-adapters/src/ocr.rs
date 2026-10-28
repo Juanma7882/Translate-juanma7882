@@ -6,8 +6,13 @@
 use std::path::Path;
 
 use image::RgbImage;
+use oar_ocr::core::config::OrtSessionConfig;
+use oar_ocr::domain::tasks::TextDetectionConfig;
 use oar_ocr::prelude::*;
+use oar_ocr::processors::LimitType;
 use tr_core::{BBox, CoreError, Frame, Lang, OcrEngine, Result, TextBlock};
+
+use crate::perf::PerfConfig;
 
 /// Archivos que debe tener la carpeta del modelo.
 pub const MODEL_FILES: [&str; 3] = ["det.onnx", "rec.onnx", "dict.txt"];
@@ -79,16 +84,52 @@ fn reading_order(blocks: &mut [TextBlock]) {
     }
 }
 
-/// RGBA -> RGB descartando la transparencia (las capturas de pantalla son opacas).
-fn frame_to_rgb(frame: &Frame) -> Result<RgbImage> {
-    let rgb: Vec<u8> = frame
-        .rgba
-        .as_chunks::<4>()
-        .0
-        .iter()
-        .flat_map(|p| [p[0], p[1], p[2]])
-        .collect();
-    RgbImage::from_raw(frame.width, frame.height, rgb)
+/// Lado mayor, en píxeles, a partir del cual el frame se reduce antes de reconocer: acota la
+/// memoria y el tiempo de entradas enormes (un 8K son 130 MB de RGBA).
+const MAX_INPUT_SIDE: u32 = 3840;
+
+/// Factor entero de reducción para que el lado mayor no pase de `limit`.
+fn shrink_factor(width: u32, height: u32, limit: u32) -> u32 {
+    width.max(height).div_ceil(limit.max(1)).max(1)
+}
+
+/// RGBA -> RGB descartando la transparencia (las capturas de pantalla son opacas). Si el frame
+/// supera `limit` de lado se reduce en el mismo pase promediando bloques de `f x f` píxeles.
+/// Devuelve la imagen y `f` (1 = sin reducir).
+fn frame_to_rgb(frame: &Frame, limit: u32) -> Result<(RgbImage, u32)> {
+    let factor = shrink_factor(frame.width, frame.height, limit) as usize;
+    let (w, h) = (frame.width as usize, frame.height as usize);
+    if frame.rgba.len() != w * h * 4 {
+        return Err(ocr_error("the frame does not match its dimensions"));
+    }
+    if factor == 1 {
+        let mut rgb = Vec::with_capacity(w * h * 3);
+        for px in frame.rgba.as_chunks::<4>().0 {
+            rgb.extend_from_slice(&[px[0], px[1], px[2]]);
+        }
+        return RgbImage::from_raw(frame.width, frame.height, rgb)
+            .map(|image| (image, 1))
+            .ok_or_else(|| ocr_error("the frame does not match its dimensions"));
+    }
+    let (nw, nh) = (w / factor, h / factor);
+    let mut rgb = Vec::with_capacity(nw * nh * 3);
+    for y in 0..nh {
+        for x in 0..nw {
+            let mut sum = [0u32; 3];
+            for dy in 0..factor {
+                let row = ((y * factor + dy) * w + x * factor) * 4;
+                for px in frame.rgba[row..row + factor * 4].as_chunks::<4>().0 {
+                    sum[0] += u32::from(px[0]);
+                    sum[1] += u32::from(px[1]);
+                    sum[2] += u32::from(px[2]);
+                }
+            }
+            let n = (factor * factor) as u32;
+            rgb.extend(sum.map(|s| (s / n) as u8));
+        }
+    }
+    RgbImage::from_raw(nw as u32, nh as u32, rgb)
+        .map(|image| (image, factor as u32))
         .ok_or_else(|| ocr_error("the frame does not match its dimensions"))
 }
 
@@ -118,8 +159,13 @@ pub struct PaddleOcr {
 
 impl PaddleOcr {
     /// Carga los modelos de `model_dir`. `languages` son los idiomas (subetiqueta principal)
-    /// que ese modelo sabe reconocer.
+    /// que ese modelo sabe reconocer. Usa el rendimiento por defecto ([`PerfConfig::default`]).
     pub fn load(model_dir: &Path, languages: &[&str]) -> Result<Self> {
+        Self::load_with(model_dir, languages, &PerfConfig::default())
+    }
+
+    /// Como [`Self::load`] con los hilos y el lado máximo de detección de `perf`.
+    pub fn load_with(model_dir: &Path, languages: &[&str], perf: &PerfConfig) -> Result<Self> {
         let missing = missing_files(model_dir);
         if !missing.is_empty() {
             return Err(CoreError::Model(format!(
@@ -133,8 +179,33 @@ impl PaddleOcr {
         };
         let dictionary = String::from_utf8(read("dict.txt")?)
             .map_err(|_| CoreError::Model("`dict.txt` is not valid UTF-8".into()))?;
+        let mut session = OrtSessionConfig::new()
+            .with_intra_threads(perf.threads())
+            .with_inter_threads(1);
+        // Los hilos ociosos duermen en vez de girar (CPU en reposo).
+        session.session_config_entries = Some(std::collections::HashMap::from([(
+            "session.intra_op.allow_spinning".to_owned(),
+            "0".to_owned(),
+        )]));
+        // Los mismos umbrales que aplica `oar-ocr` por defecto al texto general; solo cambia el
+        // lado máximo con que detecta (por defecto 960).
+        let mut detection = TextDetectionConfig {
+            score_threshold: 0.3,
+            box_threshold: 0.6,
+            unclip_ratio: 2.0,
+            limit_type: Some(LimitType::Max),
+            max_side_len: Some(4000),
+            ..TextDetectionConfig::default()
+        };
+        if perf.ocr_max_side > 0 {
+            detection.limit_side_len = Some(perf.ocr_max_side);
+        } else {
+            detection.limit_side_len = Some(4000);
+        }
         let ocr = OAROCRBuilder::new(read("det.onnx")?, read("rec.onnx")?, "")
             .character_dict_content(dictionary)
+            .ort_session(session)
+            .text_detection_config(detection)
             .build()
             .map_err(|e| ocr_error(format!("could not load the OCR models: {e}")))?;
         Ok(Self {
@@ -147,7 +218,8 @@ impl PaddleOcr {
 impl OcrEngine for PaddleOcr {
     fn recognize(&mut self, frame: &Frame, lang: &Lang) -> Result<Vec<TextBlock>> {
         check_language(&self.languages, lang)?;
-        let image = frame_to_rgb(frame)?;
+        let (image, factor) = frame_to_rgb(frame, MAX_INPUT_SIDE)?;
+        let scale = factor as f32;
         let mut results = self
             .ocr
             .predict(vec![image])
@@ -165,7 +237,7 @@ impl OcrEngine for PaddleOcr {
                     .bounding_box
                     .points
                     .iter()
-                    .map(|p| (p.x, p.y))
+                    .map(|p| (p.x * scale, p.y * scale))
                     .collect();
                 Detected {
                     text: text.to_string(),
@@ -277,9 +349,48 @@ mod tests {
     #[test]
     fn frames_convert_to_rgb_dropping_alpha() {
         let frame = Frame::new(2, 1, vec![1, 2, 3, 255, 4, 5, 6, 0]).unwrap();
-        let rgb = frame_to_rgb(&frame).unwrap();
-        assert_eq!(rgb.dimensions(), (2, 1));
+        let (rgb, factor) = frame_to_rgb(&frame, MAX_INPUT_SIDE).unwrap();
+        assert_eq!((rgb.dimensions(), factor), ((2, 1), 1));
         assert_eq!(rgb.as_raw(), &[1, 2, 3, 4, 5, 6]);
+    }
+
+    #[test]
+    fn oversized_frames_are_shrunk_by_averaging_blocks() {
+        // 4x2 con límite 2: factor 2, bloques de 2x2 -> 2x1.
+        let mut rgba = Vec::new();
+        for y in 0..2u8 {
+            for x in 0..4u8 {
+                let value = if x < 2 { 10 + y * 10 } else { 200 };
+                rgba.extend_from_slice(&[value, value, value, 255]);
+            }
+        }
+        let frame = Frame::new(4, 2, rgba).unwrap();
+        let (rgb, factor) = frame_to_rgb(&frame, 2).unwrap();
+        assert_eq!((rgb.dimensions(), factor), ((2, 1), 2));
+        assert_eq!(
+            rgb.as_raw(),
+            &[15, 15, 15, 200, 200, 200],
+            "promedio de 10 y 20"
+        );
+    }
+
+    #[test]
+    fn the_shrink_factor_keeps_the_longest_side_within_the_limit() {
+        assert_eq!(shrink_factor(1920, 1080, 3840), 1);
+        assert_eq!(shrink_factor(3840, 2160, 3840), 1);
+        assert_eq!(shrink_factor(7680, 4320, 3840), 2);
+        assert_eq!(shrink_factor(7681, 10, 3840), 3);
+        assert_eq!(shrink_factor(10, 10, 0), 10, "límite 0 se trata como 1");
+    }
+
+    #[test]
+    fn a_frame_with_a_wrong_buffer_is_refused() {
+        let frame = Frame {
+            width: 2,
+            height: 2,
+            rgba: vec![0; 7],
+        };
+        assert!(frame_to_rgb(&frame, MAX_INPUT_SIDE).is_err());
     }
 
     #[test]

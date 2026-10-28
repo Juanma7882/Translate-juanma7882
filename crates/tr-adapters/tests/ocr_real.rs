@@ -150,3 +150,57 @@ fn a_screenshot_sized_frame_is_processed() {
         blocks[0].bbox
     );
 }
+
+fn engine_with(perf: &tr_adapters::perf::PerfConfig) -> PaddleOcr {
+    PaddleOcr::load_with(&models_dir(), &["en", "ja"], perf).expect("cargar los modelos de OCR")
+}
+
+#[test]
+#[ignore = "necesita modelos reales (TR_MODELS_DIR)"]
+fn smaller_detection_side_and_one_thread_still_read_the_subtitles() {
+    let perf = tr_adapters::perf::PerfConfig {
+        intra_threads: 1,
+        ocr_max_side: 640,
+        ..Default::default()
+    };
+    let mut ocr = engine_with(&perf);
+    for (file, expected) in [
+        ("en1.png", "Hello world, this is a test."),
+        ("en_sub.png", "I will not let you down."),
+    ] {
+        let blocks = ocr
+            .recognize(&fixture(file), &Lang::new("en").unwrap())
+            .unwrap();
+        assert_eq!(joined(&blocks), expected, "{file}");
+    }
+}
+
+#[test]
+#[ignore = "necesita modelos reales (TR_MODELS_DIR)"]
+fn a_huge_frame_is_shrunk_and_boxes_stay_in_original_coordinates() {
+    // 4000x600 blanco con la imagen pegada arriba a la izquierda: supera el límite de 3840.
+    let src = fixture("en1.png");
+    let (w, h) = (4000u32, 600u32);
+    let mut rgba = vec![255u8; (w * h * 4) as usize];
+    for y in 0..src.height {
+        for x in 0..src.width {
+            let (s, d) = (
+                ((y * src.width + x) * 4) as usize,
+                ((y * w + x) * 4) as usize,
+            );
+            rgba[d..d + 4].copy_from_slice(&src.rgba[s..s + 4]);
+        }
+    }
+    let frame = Frame::new(w, h, rgba).unwrap();
+    let mut ocr = engine();
+    let blocks = ocr.recognize(&frame, &Lang::new("en").unwrap()).unwrap();
+    assert!(!blocks.is_empty(), "debe leer algo");
+    for b in &blocks {
+        assert!(b.bbox.x + b.bbox.width <= w && b.bbox.y + b.bbox.height <= h);
+        assert!(
+            b.bbox.x < 1000,
+            "la caja está donde estaba el texto: {:?}",
+            b.bbox
+        );
+    }
+}
