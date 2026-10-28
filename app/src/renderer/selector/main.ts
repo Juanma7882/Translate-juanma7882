@@ -45,8 +45,11 @@ if (api) {
     const hint = document.getElementById('hint')
     if (hint) {
       const { index, total } = init.screen
-      if (preview) hint.textContent = 'Región seleccionada'
-      else if (total > 1) hint.textContent = `Pantalla ${index} de ${total} · Tab para cambiar de pantalla · Arrastra para elegir la región · Esc para cancelar`
+      const overlay = init.purpose === 'overlay'
+      const what = overlay ? 'dónde aparecen los subtítulos' : 'la región'
+      const screens = total > 1 ? `Pantalla ${index} de ${total} · Tab para cambiar de pantalla · ` : ''
+      if (preview) hint.textContent = overlay ? 'Aquí aparecen los subtítulos' : 'Región seleccionada'
+      else if (overlay || total > 1) hint.textContent = `${screens}Arrastra para elegir ${what} · Esc para cancelar`
     }
     draw()
   })

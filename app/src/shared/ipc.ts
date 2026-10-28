@@ -76,6 +76,8 @@ export interface SelectorInit {
   screen: { index: number; total: number }
   /** `true` solo enseña `lastRegion` unos segundos, sin aceptar ratón ni teclado. */
   preview?: boolean
+  /** Qué se elige: la región a traducir (por defecto) o dónde aparecen los subtítulos. */
+  purpose?: 'region' | 'overlay'
 }
 
 export interface SelectorApi {

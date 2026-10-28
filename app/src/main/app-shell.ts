@@ -11,6 +11,7 @@ import { AppController } from './app-controller.ts'
 import type { EngineHost } from './engine-host.ts'
 import { ModelsService } from './models-service.ts'
 import { OverlayController } from './overlay-controller.ts'
+import { OverlayPicker } from './overlay-picker.ts'
 import { RegionPicker } from './region-picker.ts'
 import type { DisplaySource } from './region-picker.ts'
 import { registerOverlayIpc } from './overlay-ipc.ts'
@@ -72,7 +73,7 @@ export class AppShell {
       windows,
       settings,
       picker: new RegionPicker(windows, displays, () => settings.get().lastRegion),
-      displays,
+      overlayPicker: (region, current) => new OverlayPicker(windows, displays, region, current),
       configure: () => this.models.configure(),
     })
     this.overlay = new OverlayController(windows, settings, displays)

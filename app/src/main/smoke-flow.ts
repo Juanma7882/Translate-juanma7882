@@ -13,8 +13,9 @@ import type { SavedRegion } from '../shared/settings.ts'
 import { AppController } from './app-controller.ts'
 import type { EngineHost } from './engine-host.ts'
 import { ModelsService } from './models-service.ts'
-import type { DisplaySource } from './overlay-picker.ts'
+import { OverlayPicker } from './overlay-picker.ts'
 import { RegionPicker } from './region-picker.ts'
+import type { DisplaySource } from './region-picker.ts'
 import { SettingsStore } from './settings-store.ts'
 import type { WindowManager } from './windows.ts'
 
@@ -55,7 +56,7 @@ export async function runFlowSmoke(host: EngineHost, windows: WindowManager, dis
   expect(settings.update({ engines: 'fake' }).ok, 'se pueden guardar los ajustes')
   let controller: AppController
   const models = new ModelsService(host, settings, () => controller.state.running)
-  controller = new AppController({ host, windows, settings, picker: new RegionPicker(windows, displays, () => settings.get().lastRegion), displays, configure: () => models.configure() })
+  controller = new AppController({ host, windows, settings, picker: new RegionPicker(windows, displays, () => settings.get().lastRegion), overlayPicker: (r, c) => new OverlayPicker(windows, displays, r, c), configure: () => models.configure() })
   host.start()
   await host.whenReady()
 
@@ -67,8 +68,13 @@ export async function runFlowSmoke(host: EngineHost, windows: WindowManager, dis
   const chosen = controller.chooseRegion()
   await waitFor(() => windows.get('selector') !== undefined && !windows.get('selector')!.webContents.isLoading(), 'the selector')
   await sleep(300)
+  const regionWindow = windows.get('selector')!
+  drag(regionWindow)
+  // Después de la región se elige dónde aparecen los subtítulos (otra ventana de selector).
+  await waitFor(() => { const w = windows.get('selector'); return w !== undefined && w !== regionWindow && !w.webContents.isLoading() }, 'the subtitle selector')
+  await sleep(300)
   drag(windows.get('selector')!)
-  expect(await chosen, `elegir la región inicia la traducción (avisos: ${JSON.stringify(notices)})`)
+  expect(await chosen,`elegir la región inicia la traducción (avisos: ${JSON.stringify(notices)})`)
   await waitFor(() => translations > 0, 'the first translation')
   expect(controller.state.running && !controller.state.paused, 'el controlador queda en marcha')
   ok('elegir una región con el ratón inicia la traducción')
@@ -77,6 +83,10 @@ export async function runFlowSmoke(host: EngineHost, windows: WindowManager, dis
   const scale = displays.underCursor().scaleFactor
   expect(saved.monitor === monitorIndex(displays.all(), displays.underCursor()) && saved.x === Math.round(120 * scale) && saved.width === Math.round(420 * scale) - Math.round(120 * scale), `la región queda guardada: ${JSON.stringify(saved)}`)
   ok('la región elegida se guarda en los ajustes')
+  const overlay = settings.get().overlay
+  const bounds = displays.underCursor().bounds
+  expect(overlay.placement === 'manual' && overlay.x === bounds.x + 120 && overlay.y === bounds.y + 90 && overlay.width === 300, `el recuadro de subtítulos se guarda: ${JSON.stringify(overlay)}`)
+  ok('el recuadro de subtítulos elegido se guarda en los ajustes')
 
   // Pausa y reanudación llegan al motor: durante la pausa no hay traducciones nuevas.
   await controller.pause()
@@ -103,7 +113,7 @@ export async function runFlowSmoke(host: EngineHost, windows: WindowManager, dis
     windows,
     settings: restartedSettings,
     picker: new RegionPicker(windows, displays, () => restartedSettings.get().lastRegion),
-    displays,
+    overlayPicker: (r, c) => new OverlayPicker(windows, displays, r, c),
     configure: () => restartedModels.configure(),
   })
   let again = 0

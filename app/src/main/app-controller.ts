@@ -18,8 +18,8 @@ import type { AudioSourceRequest, EngineEvent } from '../shared/protocol.ts'
 import type { SavedRegion } from '../shared/settings.ts'
 import type { EngineHost } from './engine-host.ts'
 import { noticeForCrash, noticeForEngineError, noticeForStartFailure } from './notices.ts'
-import type { DisplaySource } from './overlay-picker.ts'
-import { OverlayPicker } from './overlay-picker.ts'
+import type { DipRect } from '../shared/ipc.ts'
+import type { OverlayPosition } from './overlay-picker.ts'
 import type { RegionPicker } from './region-picker.ts'
 import type { SettingsStore } from './settings-store.ts'
 import type { WindowManager } from './windows.ts'
@@ -43,7 +43,8 @@ export interface ControllerDeps {
   windows: WindowManager
   settings: SettingsStore
   picker: RegionPicker
-  displays: DisplaySource
+  /** Crea el selector de dónde aparecen los subtítulos (`current`: recuadro actual, si es manual). */
+  overlayPicker: (region: SavedRegion, current: DipRect | null) => { pick(): Promise<OverlayPosition | null>; preview(): Promise<boolean> }
   /** Configura el motor con los ajustes actuales (lo hace al arrancar una traducción). */
   configure: () => Promise<void>
   timers?: ControllerTimers
@@ -136,20 +137,28 @@ export class AppController extends EventEmitter<ControllerEvents> {
       return false
     }
 
-    // Abrir selector de overlay para elegir dónde mostrar la traducción
-    const overlayPicker = new OverlayPicker(this.deps.windows, this.deps.displays, region)
-    const position = await overlayPicker.pick()
-    if (position) {
-      const overlaySettings = this.deps.settings.get().overlay
-      const positionSaved = this.deps.settings.update({
-        overlay: { ...overlaySettings, placement: 'manual', x: position.x, y: position.y },
-      })
-      if (!positionSaved.ok) {
-        this.emit('notice', { level: 'error', message: 'No se pudo guardar la posición del overlay' })
-      }
-    }
-
+    await this.pickAndSaveOverlay(region)
     return this.start(region)
+  }
+
+  /** Recuadro actual de los subtítulos en el escritorio, si tienen posición manual (el alto es el de las líneas configuradas). */
+  private overlayRect(): { x: number; y: number; width: number; height: number } | null {
+    const { overlay } = this.deps.settings.get()
+    if (overlay.placement !== 'manual') return null
+    return { x: overlay.x, y: overlay.y, width: overlay.width, height: Math.round(overlay.fontSize * 1.4 * overlay.maxLines + 24) }
+  }
+
+  /** Abre el selector de subtítulos y guarda el recuadro elegido como posición manual. */
+  private async pickAndSaveOverlay(region: SavedRegion): Promise<boolean> {
+    const position = await this.deps.overlayPicker(region, this.overlayRect()).pick()
+    if (!position) return false
+    const width = Math.max(200, Math.min(3000, position.width))
+    const saved = this.deps.settings.update({ overlay: { placement: 'manual', x: position.x, y: position.y, width } })
+    if (!saved.ok) {
+      this.emit('notice', { level: 'error', message: 'No se pudo guardar dónde aparecen los subtítulos' })
+      return false
+    }
+    return true
   }
 
   /** Abre solo el selector de región (sin pasar a overlay); se guarda y comienza si se elige. */
@@ -171,18 +180,7 @@ export class AppController extends EventEmitter<ControllerEvents> {
       this.emit('notice', { level: 'error', message: 'Primero elige una región a traducir' })
       return false
     }
-    const overlayPicker = new OverlayPicker(this.deps.windows, this.deps.displays, lastRegion)
-    const position = await overlayPicker.pick()
-    if (!position) return false
-    const overlaySettings = this.deps.settings.get().overlay
-    const saved = this.deps.settings.update({
-      overlay: { ...overlaySettings, placement: 'manual', x: position.x, y: position.y },
-    })
-    if (!saved.ok) {
-      this.emit('notice', { level: 'error', message: 'No se pudo guardar la posición del overlay' })
-      return false
-    }
-    return true
+    return this.pickAndSaveOverlay(lastRegion)
   }
 
   /** Marca unos segundos la región guardada sobre la pantalla; `false` si no hay ninguna o hay un selector abierto. */
@@ -193,19 +191,13 @@ export class AppController extends EventEmitter<ControllerEvents> {
 
   /** Abre el selector de overlay en modo preview (sin permitir cambios). */
   async showOverlayPosition(): Promise<boolean> {
-    const { lastRegion, overlay } = this.deps.settings.get()
-    if (!lastRegion) {
-      this.emit('notice', { level: 'error', message: 'Primero elige una región a traducir' })
-      return false
-    }
-    if (overlay.placement !== 'manual') {
+    const { lastRegion } = this.deps.settings.get()
+    const current = this.overlayRect()
+    if (!lastRegion || !current) {
       this.emit('notice', { level: 'info', message: 'Los subtítulos se colocan solos junto a la región: usa «Cambiar posición» para fijarlos' })
       return false
     }
-    // El alto real depende del texto; se marca el de las líneas configuradas.
-    const height = Math.round(overlay.fontSize * 1.4 * overlay.maxLines + 24)
-    const overlayPicker = new OverlayPicker(this.deps.windows, this.deps.displays, lastRegion)
-    return overlayPicker.preview({ x: overlay.x, y: overlay.y, width: overlay.width, height })
+    return this.deps.overlayPicker(lastRegion, current).preview()
   }
 
   /** Traduce la última región usada; si no hay ninguna, pide elegirla (salvo en modo audio, que no la necesita). */
