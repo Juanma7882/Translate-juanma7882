@@ -17,26 +17,26 @@ Estado actual relevante:
 
 **Goals:**
 - Origen y destinos como datos independientes en ajustes, motor, binding y UI.
-- 0 a 3 destinos por sesión; con 0 destinos, cero modelos de traducción.
-- Un evento por frase con todas las traducciones, para que el overlay nunca muestre pistas desfasadas entre sí.
+- 1 o 2 subtítulos por sesión (0 a 2 destinos, el original cuenta como un subtítulo); con 0 destinos, cero modelos de traducción.
+- Un evento por frase con todas las traducciones, para que el overlay nunca muestre subtítulos desfasados entre sí, y con las traducciones hechas **a la vez**: la espera es la de la más lenta, no la suma.
 - Que agregar un idioma o un motor siga sin tocar `tr-core` más allá de los tipos de evento (regla 3).
 - Migración transparente de ajustes guardados.
 
 **Non-Goals:**
 - Traducción pivote (es→de vía inglés): no hay modelos de pares nuevos ni cadena de dos traducciones.
-- Paralelizar las traducciones entre sí en esta versión (ver Decisión 4).
-- Elegir otro orden de pistas que el fijo (original primero, destinos en orden de elección).
+- Mostrar parciales o el original antes de que terminen las traducciones (un evento por frase, ver Decisión 2); si la latencia de la más lenta no cumple el presupuesto, se estudia aparte.
+- Elegir otro orden de subtítulos que el fijo (original arriba, destinos en el orden de elección).
 - Coloreado gramatical (otra change).
 
 ## Decisions
 
-### 1. Ajustes: `targets: string[]` + `overlay.showOriginal` como pista original
+### 1. Ajustes: `targets: string[]` + `overlay.showOriginal` como subtítulo original
 
-`Settings.to` se sustituye por `targets` (0–3 códigos distintos, ≠ `from`). La pista original sigue siendo `overlay.showOriginal` (no se duplica la fuente de verdad) y su control visual pasa de Apariencia a la pestaña Idiomas. Invariante validada en `parseSettings`/`applyPatch`: `showOriginal || targets.length > 0`; al romperse se rechaza el parche (`applyPatch`) o, al leer del disco, se restaura `showOriginal = true` con aviso.
+`Settings.to` se sustituye por `targets` (0–2 códigos distintos, ≠ `from`). El subtítulo original sigue siendo `overlay.showOriginal` (no se duplica la fuente de verdad) y su control visual pasa de Apariencia a la pestaña Idiomas. Invariante validada en `parseSettings`/`applyPatch`: `1 ≤ (showOriginal ? 1 : 0) + targets.length ≤ 2`; al romperse se rechaza el parche (`applyPatch`) o, al leer del disco, se restaura a un estado válido con aviso (si hay exceso se conservan el original y el primer destino; si falta todo, `showOriginal = true`). La combinación original + 2 destinos son tres subtítulos y no es válida.
 
 `SETTINGS_VERSION` se queda en 1: la lectura acepta el campo antiguo `to` (texto válido) cuando falta `targets` y lo convierte en `[to]`. Los ajustes importados (`settings-transfer.ts`) pasan por la misma lectura. `applyPatch` ya sustituye los valores no-objeto enteros, así que un parche `targets: [...]` reemplaza la lista.
 
-*Alternativas descartadas*: (a) conservar `to` y añadir `extraTargets`: dos campos con semántica asimétrica y no permite «solo original»; (b) una lista `tracks: [{kind:'original'|'translation', lang}]`: más flexible (orden libre) pero el orden libre está fuera de alcance y complica la validación y la UI sin que nadie lo pida; (c) subir `SETTINGS_VERSION` a 2: hoy una versión desconocida restablece **todos** los ajustes a los valores por defecto, que es peor que migrar un campo.
+*Alternativas descartadas*: (a) conservar `to` y añadir `extraTargets`: dos campos con semántica asimétrica y no permite «solo original»; (b) una lista `tracks: [{kind:'original'|'translation', lang}]` o de idiomas con orden elegible: más flexible (orden libre) pero el orden libre está fuera de alcance y complica la validación y la UI; las dos casillas de la interfaz («Subtítulo 1» y «Subtítulo 2») se traducen al modelo actual sin guardar un orden; (c) subir `SETTINGS_VERSION` a 2: hoy una versión desconocida restablece **todos** los ajustes a los valores por defecto, que es peor que migrar un campo.
 
 ### 2. Evento del núcleo con lista de traducciones
 
@@ -46,13 +46,17 @@ Estado actual relevante:
 
 ### 3. Procesadores con una lista de traductores
 
-`RegionConfig` y `AudioConfig` pasan de `to: Lang` a `targets: Vec<Lang>`; `RegionProcessor`/`AudioProcessor` reciben `Vec<Arc<dyn Translator>>` en el mismo orden que `targets` (un `Arc` por destino, el trait no cambia). Por frase: para cada destino, caché → traductor → caché; el orden de la lista es el orden de las líneas.
+`RegionConfig` y `AudioConfig` pasan de `to: Lang` a `targets: Vec<Lang>`; `RegionProcessor`/`AudioProcessor` reciben `Vec<Arc<dyn Translator>>` en el mismo orden que `targets` (un `Arc` por destino, el trait no cambia). Por frase: para cada destino, caché → traductor → caché, con los destinos en paralelo (Decisión 4); el orden de la lista es el orden de las líneas, no el orden en que terminan.
 
 Fallos parciales (specs: «Orden y fallos parciales»): cada fallo emite su `Event::Error` (categoría `translation`) y su destino se omite de `translations`. El reintento actual (reiniciar estabilizador y detector) se conserva **solo si ningún destino tuvo éxito**; si al menos uno lo tuvo se emite el evento parcial y el destino fallido no se reintenta hasta que cambie el texto (evita un bucle de errores a cada frame y mantiene el overlay vivo). Sin destinos no se llama a ningún traductor y el evento sale con `translations` vacío.
 
-### 4. Traducción secuencial en el hilo del pipeline
+### 4. Traducción de los destinos en paralelo
 
-Los N destinos se traducen uno tras otro. La carga de modelos sí es paralela (ya lo es entre OCR y traductor en `real.rs`; se extiende a un hilo por destino con `std::thread::scope`). Razones para no paralelizar la inferencia ahora: cada `OpusMt` ya usa varios hilos de ONNX Runtime (`intra_threads`), así que paralelizar entre destinos compite por los mismos núcleos y el beneficio es incierto; la versión secuencial es determinista y trivial de probar con los fakes. Se mide en `docs/perf` (tarea de rendimiento): si 3 destinos exceden el presupuesto de latencia, se evalúa el paralelismo como cambio aparte.
+Con dos destinos, cada frase se traduce **a la vez**: el procesador lanza una tarea por destino con `std::thread::scope` (hilos de duración acotada a la frase, sin pool ni runtime asíncrono, coherente con «hilos y canales, sin tokio en el núcleo»), espera a las dos y ensambla `translations` en el orden de la lista de destinos, no en el de llegada. La latencia visible pasa de la suma a la de la traducción más lenta. Con un solo destino no se crea ningún hilo extra. `Translator` ya es `Send + Sync`, y la caché se comparte tras su `Mutex`, así que no hace falta cambiar el trait. La carga de modelos también es paralela (un hilo por destino, como entre OCR y traductor en `real.rs`).
+
+Contención: cada `OpusMt` usa varios hilos de ONNX Runtime (`intra_threads`) y dos traducciones simultáneas compiten por los mismos núcleos. Mitigación: con destinos en paralelo y `intra_threads` automático, el motor reparte los hilos entre los destinos (`intra_threads / n`, mínimo 1) en vez de sobresuscribir la CPU; un valor explícito del usuario se respeta. La tarea de rendimiento mide 1 destino, 2 en serie y 2 en paralelo para confirmar la ganancia.
+
+*Alternativas descartadas*: traducción en serie (la suma de las dos latencias retrasa el texto, que es justo lo que el usuario quiere evitar); pool de hilos permanente (complejidad y estado sin necesidad para un máximo de 2 tareas por frase); `async`/tokio (viola la regla del núcleo).
 
 ### 5. Modelos requeridos por conjunto de destinos
 
@@ -64,13 +68,13 @@ Los N destinos se traducen uno tras otro. La carga de modelos sí es paralela (y
 
 ### 7. Binding: listas en vez de textos
 
-`startRegionTranslation(rect, from, to: string[])`, `startAudioSubtitles(from, to: string[], source?)`, `modelStatus(from, to: string[], scope?)`, `downloadModels(from, to: string[], scope?)`. El helper `languages()` valida en Rust (≤3, sin repetidos, ≠ origen, formato) y devuelve `InvalidArg`. Eventos: `TranslationEvent { original, translations: {lang, text}[], timestampMs }` y `SubtitleEvent { original, translations: {lang, text}[], isFinal, timestampMs }`. Es un cambio incompatible de la API de JS, aceptable porque el único consumidor es la propia app, que se actualiza en la misma change. El protocolo main↔worker (`protocol.ts`) cambia en las mismas órdenes.
+`startRegionTranslation(rect, from, to: string[])`, `startAudioSubtitles(from, to: string[], source?)`, `modelStatus(from, to: string[], scope?)`, `downloadModels(from, to: string[], scope?)`. El helper `languages()` valida en Rust (≤2, sin repetidos, ≠ origen, formato) y devuelve `InvalidArg`. Eventos: `TranslationEvent { original, translations: {lang, text}[], timestampMs }` y `SubtitleEvent { original, translations: {lang, text}[], isFinal, timestampMs }`. Es un cambio incompatible de la API de JS, aceptable porque el único consumidor es la propia app, que se actualiza en la misma change. El protocolo main↔worker (`protocol.ts`) cambia en las mismas órdenes.
 
 ### 8. Interfaz: origen, destinos y pistas en la pestaña Idiomas
 
 - **Origen**: selector con los idiomas que el modo actual puede leer (texto → `ocrLanguages`; audio → `sttLanguages`; automático → intersección), con nombre en español (`languageName`).
-- **Destinos**: lista de las pistas de traducción (máx. 3) con un selector «Añadir idioma» que ofrece `catalog.pairs.filter(p => p.from === origen)` menos los ya elegidos; cada fila muestra estado de modelos (`modelStatus(from, [lang])`), botón de descargar y quitar. Pista original: casilla «Mostrar el texto original».
-- **Reglas de coherencia** en una función pura (`form.ts`, con pruebas): cambiar el origen filtra destinos y devuelve la lista de los quitados para avisar; imposibilidad de quedar sin pistas; límite de tres. Se guarda con un único parche atómico `{from, targets, overlay:{showOriginal}}` para no pasar por estados inválidos.
+- **Subtítulos**: dos casillas, «Subtítulo 1» (siempre activo) y «Subtítulo 2» (opcional, con interruptor). Cada una elige su idioma entre el origen (= texto original, `showOriginal`) y `catalog.pairs.filter(p => p.from === origen)`, sin repetir el idioma de la otra. La interfaz traduce las dos casillas al modelo `showOriginal` + `targets`; el orden en pantalla es fijo (original arriba) y la interfaz lo indica. Cada idioma traducido muestra el estado de sus modelos (`modelStatus(from, [lang])`) y un botón de descargar.
+- **Reglas de coherencia** en una función pura (`form.ts`, con pruebas): cambiar el origen filtra destinos y devuelve la lista de los quitados para avisar; imposibilidad de quedar sin subtítulos; máximo de dos (no se ofrece activar un tercero). Se guarda con un único parche atómico `{from, targets, overlay:{showOriginal}}` para no pasar por estados inválidos.
 - **Inicio** (`ui-inicio-y-primer-uso`): el menú rápido sigue ofreciendo pares instalados; elegir uno fija `from` y `targets = [to]` (conserva `showOriginal`). El resumen del par muestra «inglés → español + francés» cuando hay varios destinos. La guía de primer uso valora «modelos instalados» sobre origen y todos los destinos.
 - **Reinicio**: la clave de sesión del controlador (`sessionKey`) incluye origen y destinos; `showOriginal` no la afecta (se aplica en vivo por el estilo del overlay).
 
@@ -84,11 +88,13 @@ Núcleo: pruebas deterministas con `FakeTranslator` por destino (orden, 0 destin
 
 ## Risks / Trade-offs
 
-- **Latencia y RAM crecen con cada destino** (~100 MB y una inferencia más por frase) → límite de 3, traducción secuencial medida en `docs/perf`, caché compartida, y los destinos extra solo se cargan si se eligen.
+- **RAM y CPU crecen con cada destino** (~100 MB y una inferencia más por frase; hasta ~200 MB con dos) → límite de 2 subtítulos, caché compartida, los destinos solo se cargan si se eligen, y la traducción en paralelo reparte los hilos de ONNX entre destinos para no sobresuscribir la CPU.
+- **La paralelización puede no ganar tanto como se espera** si el equipo tiene pocos núcleos (dos inferencias compiten) → se mide 1 destino, 2 en serie y 2 en paralelo en `docs/perf`; si en paralelo no mejora a la versión en serie, se mantiene en serie por simplicidad y se documenta en el ADR.
+- **Un hilo por frase y destino** (`thread::scope`) tiene un coste de creación pequeño frente a una inferencia de cientos de milisegundos → se mide; un pool solo se justificaría si el coste fuese visible.
 - **Un destino que falla siempre** (p. ej. modelo corrupto) emite un error por frase → el error se informa por el canal de errores existente; el overlay sigue mostrando las demás pistas; la validación previa de modelos evita el caso normal.
 - **Cambio incompatible del binding** → solo lo consume la app; el compilador de TypeScript y las pruebas de `tr-bindings` detectan cualquier uso olvidado.
 - **Dependencia de orden entre changes**: `settings-window`/`home-start-screen` los define `ui-inicio-y-primer-uso` → archivarla antes; si no se archivara, el delta de «Idiomas» no aplicaría.
-- **Overlay más alto** con 4 líneas puede tapar contenido → la colocación automática ya lo mantiene fuera de la región; `overlayHeight` se ajusta al número real de pistas y el límite de líneas por pista se mantiene configurable.
+- **Overlay más alto** con dos subtítulos puede tapar contenido → la colocación automática ya lo mantiene fuera de la región; `overlayHeight` se ajusta al número real de subtítulos y el límite de líneas por subtítulo se mantiene configurable.
 - **Origen sin destinos instalados** (solo original) es un modo nuevo para la guía de primer uso → el paso «descargar un idioma» se considera cumplido con los modelos de reconocimiento del origen cuando no hay destinos.
 
 ## Migration Plan

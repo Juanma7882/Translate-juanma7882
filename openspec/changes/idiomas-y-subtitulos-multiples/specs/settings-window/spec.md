@@ -23,25 +23,29 @@ La ventana SHALL permitir elegir el idioma de origen y los idiomas de destino co
 
 ## ADDED Requirements
 
-### Requirement: Elección de pistas de subtítulo
-La pestaña Idiomas SHALL permitir activar la pista original y añadir o quitar hasta tres destinos de traducción, mostrando por cada destino si sus modelos están instalados y permitiendo descargarlos. SHALL impedir dejar la configuración sin ninguna pista activa y SHALL indicar el límite de tres traducciones. La opción de mostrar el original SHALL estar solo en este lugar.
+### Requirement: Elección de subtítulos
+La pestaña Idiomas SHALL presentar dos subtítulos: «Subtítulo 1», siempre activo, y «Subtítulo 2», opcional, que el usuario puede activar y desactivar. Cada uno SHALL permitir elegir su idioma entre el idioma de origen (el texto original, sin traducir) y los destinos disponibles desde ese origen, sin permitir el mismo idioma en los dos. Por cada idioma traducido SHALL mostrar si sus modelos están instalados y permitir descargarlos. SHALL indicar que se muestran como máximo dos subtítulos, y SHALL informar de que el original se muestra siempre arriba y la traducción debajo.
 
-#### Scenario: Añadir un segundo destino
-- **WHEN** el usuario tiene español como destino y añade francés
-- **THEN** la lista de pistas muestra original, español y francés, y indica si faltan modelos del francés con un botón para descargarlos
+#### Scenario: Activar el segundo subtítulo
+- **WHEN** el usuario tiene el original como subtítulo 1 y activa el subtítulo 2 eligiendo francés
+- **THEN** la lista muestra original y francés, e indica si faltan modelos del francés con un botón para descargarlos
 
-#### Scenario: Quitar el último destino
-- **WHEN** el usuario quita el único destino con la pista original activa
-- **THEN** queda solo la pista original y la ventana indica que se mostrará el texto sin traducir
+#### Scenario: Desactivar el segundo subtítulo
+- **WHEN** el usuario desactiva el subtítulo 2
+- **THEN** queda un solo subtítulo y la ventana lo indica
 
-#### Scenario: Sin ninguna pista
-- **WHEN** el usuario intenta desactivar la pista original sin destinos elegidos
-- **THEN** la ventana no lo permite y explica que debe haber al menos una pista
+#### Scenario: Mismo idioma en los dos
+- **WHEN** el subtítulo 1 está en español
+- **THEN** el subtítulo 2 no ofrece el español
 
-#### Scenario: Cuarto destino
-- **WHEN** ya hay tres destinos elegidos
-- **THEN** no se pueden añadir más y se indica el límite
+#### Scenario: Un solo subtítulo traducido
+- **WHEN** el usuario elige español como subtítulo 1 y no activa el 2
+- **THEN** se muestra solo la traducción al español y no se exige el modelo del original más allá del reconocimiento
+
+#### Scenario: Máximo de dos
+- **WHEN** ya hay dos subtítulos activos
+- **THEN** no se ofrece activar un tercero y se indica el límite de dos
 
 #### Scenario: Cambio con una sesión en marcha
-- **WHEN** hay una sesión en marcha y el usuario cambia el origen o los destinos
+- **WHEN** hay una sesión en marcha y el usuario cambia el origen o un idioma traducido
 - **THEN** la ventana avisa de que la sesión se reiniciará con la configuración nueva

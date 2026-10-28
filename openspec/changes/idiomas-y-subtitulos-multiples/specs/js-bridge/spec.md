@@ -3,7 +3,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Comandos
-La API SHALL ofrecer `startRegionTranslation(rect, from, to)`, `startAudioSubtitles(from, to, source)` y `stop()`, donde `to` es una lista de cero a tres idiomas de destino.
+La API SHALL ofrecer `startRegionTranslation(rect, from, to)`, `startAudioSubtitles(from, to, source)` y `stop()`, donde `to` es una lista de cero a dos idiomas de destino.
 
 #### Scenario: Iniciar y detener
 - **WHEN** JS invoca `startRegionTranslation` y luego `stop`
@@ -14,7 +14,7 @@ La API SHALL ofrecer `startRegionTranslation(rect, from, to)`, `startAudioSubtit
 - **THEN** el comando falla con un error descriptivo y no inicia el motor
 
 #### Scenario: Lista de destinos inválida
-- **WHEN** JS invoca un comando con más de tres destinos, un destino repetido o un destino igual al origen
+- **WHEN** JS invoca un comando con más de dos destinos, un destino repetido o un destino igual al origen
 - **THEN** el comando falla con un error de argumento inválido y no inicia el motor
 
 #### Scenario: Sin destinos

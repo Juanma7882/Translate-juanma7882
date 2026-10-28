@@ -3,26 +3,30 @@
 ## MODIFIED Requirements
 
 ### Requirement: Original y traducción visibles
-El overlay SHALL mostrar a la vez las pistas de subtítulo elegidas, cada una en su propia línea: el texto original, si su pista está activa, y la traducción de cada destino, y SHALL actualizarlas cuando llega un nuevo evento. Cada línea SHALL identificar su idioma, de forma accesible, y SHALL mostrar además una etiqueta corta del idioma cuando hay más de una pista. Si todavía no hay ninguna traducción (por ejemplo, en un subtítulo parcial), el overlay SHALL mostrar el texto original aunque su pista esté desactivada.
+El overlay SHALL mostrar a la vez los subtítulos elegidos (uno o dos), cada uno en su propia línea: el texto original, si su subtítulo está activo, y la traducción de cada destino, y SHALL actualizarlas cuando llega un nuevo evento. Cada línea SHALL identificar su idioma, de forma accesible, y SHALL mostrar además una etiqueta corta del idioma cuando hay dos subtítulos. Si todavía no hay ninguna traducción (por ejemplo, en un subtítulo parcial), el overlay SHALL mostrar el texto original aunque su subtítulo esté desactivado.
 
 #### Scenario: Nueva traducción
 - **WHEN** llega un evento de traducción con original y una traducción
 - **THEN** el overlay muestra el original y la traducción de ese evento
 
-#### Scenario: Varias traducciones
-- **WHEN** llega un evento con original y traducciones al español y al francés, con las tres pistas activas
-- **THEN** el overlay muestra tres líneas, en el orden original, español, francés, cada una con su etiqueta de idioma
+#### Scenario: Dos subtítulos
+- **WHEN** llega un evento con original y traducción al español, con los dos subtítulos activos
+- **THEN** el overlay muestra dos líneas, primero el original y después el español, cada una con su etiqueta de idioma
+
+#### Scenario: Dos traducciones
+- **WHEN** llega un evento con traducciones al español y al francés, con el original desactivado
+- **THEN** el overlay muestra dos líneas, en el orden de los destinos, cada una con su etiqueta de idioma
 
 #### Scenario: Solo el original
-- **WHEN** llega un evento sin traducciones y la pista original está activa
+- **WHEN** llega un evento sin traducciones y el subtítulo original está activo
 - **THEN** el overlay muestra únicamente el texto original
 
-#### Scenario: Pista original desactivada
-- **WHEN** llega un evento con traducciones y la pista original está desactivada
+#### Scenario: Subtítulo original desactivado
+- **WHEN** llega un evento con traducciones y el subtítulo original está desactivado
 - **THEN** el overlay muestra solo las traducciones
 
 #### Scenario: Parcial sin traducir
-- **WHEN** llega un subtítulo parcial sin traducciones y la pista original está desactivada
+- **WHEN** llega un subtítulo parcial sin traducciones y el subtítulo original está desactivado
 - **THEN** el overlay muestra el texto parcial como provisional hasta que llegue el final
 
 #### Scenario: Sin texto
@@ -31,9 +35,9 @@ El overlay SHALL mostrar a la vez las pistas de subtítulo elegidas, cada una en
 
 ## ADDED Requirements
 
-### Requirement: Límite de líneas por pista
-El límite de líneas configurado SHALL aplicarse a cada pista por separado, y la altura de la ventana SHALL ajustarse al total de líneas mostradas.
+### Requirement: Límite de líneas por subtítulo
+El límite de líneas configurado SHALL aplicarse a cada subtítulo por separado, y la altura de la ventana SHALL ajustarse al total de líneas mostradas.
 
-#### Scenario: Dos pistas con límite de una línea
-- **WHEN** el límite es 1 y hay dos pistas con textos de tres líneas cada una
-- **THEN** cada pista muestra una línea truncada con puntos suspensivos y la ventana ocupa la altura de las dos
+#### Scenario: Dos subtítulos con límite de una línea
+- **WHEN** el límite es 1 y hay dos subtítulos con textos de tres líneas cada uno
+- **THEN** cada subtítulo muestra una línea truncada con puntos suspensivos y la ventana ocupa la altura de los dos

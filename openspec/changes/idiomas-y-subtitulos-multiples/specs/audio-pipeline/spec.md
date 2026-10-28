@@ -3,7 +3,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Subtítulos desde audio
-Dados un idioma de origen y una lista de cero a tres idiomas de destino, el pipeline SHALL recibir audio, transcribirlo y emitir subtítulos con el texto transcrito y la lista de sus traducciones, cada una con su idioma.
+Dados un idioma de origen y una lista de cero a dos idiomas de destino, el pipeline SHALL recibir audio, transcribirlo y emitir subtítulos con el texto transcrito y la lista de sus traducciones, cada una con su idioma.
 
 #### Scenario: Habla detectada
 - **WHEN** el audio contiene habla
@@ -14,11 +14,15 @@ Dados un idioma de origen y una lista de cero a tres idiomas de destino, el pipe
 - **THEN** el subtítulo final lleva el texto transcrito y ninguna traducción, sin invocar ningún traductor
 
 ### Requirement: Traducción de segmentos finales
-El pipeline SHALL traducir los segmentos finales a cada destino. Los segmentos parciales MAY mostrarse sin traducir o con la traducción limitada en frecuencia. El pipeline SHALL informar al reconocimiento de voz si cada ventana cierra la intervención (silencio posterior) para que pueda emitir el segmento final.
+El pipeline SHALL traducir los segmentos finales a cada destino, a la vez cuando hay dos. Los segmentos parciales MAY mostrarse sin traducir o con la traducción limitada en frecuencia. El pipeline SHALL informar al reconocimiento de voz si cada ventana cierra la intervención (silencio posterior) para que pueda emitir el segmento final.
 
 #### Scenario: Segmento final
 - **WHEN** se cierra un segmento con dos destinos
 - **THEN** se emite un subtítulo con la traducción del texto final a cada destino
+
+#### Scenario: Destinos en paralelo
+- **WHEN** se cierra un segmento con dos destinos y cada traducción tarda lo mismo
+- **THEN** el subtítulo final se emite tras el tiempo de una traducción y no tras la suma de las dos
 
 #### Scenario: Un destino falla
 - **WHEN** la traducción del segmento final falla para un destino y se completa para el otro
