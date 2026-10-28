@@ -15,6 +15,7 @@ export function engineOptionsFrom(settings: Settings): EngineOptions {
     options.autoFallback = true
     options.fallbackNoTextMs = settings.fallbackSeconds * 1000
   }
+  if (settings.voiceThreshold > 0) options.voiceThreshold = settings.voiceThreshold
   // `0` es "automático": no se envía y el motor usa su valor por defecto.
   const { intraThreads, beamWidth, cacheCapacity, ocrMaxSide, lowMemory } = settings.performance
   const performance: PerformanceOptions = {}

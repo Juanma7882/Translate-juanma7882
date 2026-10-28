@@ -137,7 +137,7 @@ export function HomePanel({ api, settings, appState, notice, levels, catalog, pr
       <fieldset id="audio-source">
         <legend>Audio</legend>
         <SourcePicker api={api} settings={settings} active={active} save={save} />
-        <LevelMeter api={api} levels={levels} active={active} status={meter} />
+        <LevelMeter api={api} levels={levels} active={active} status={meter} settings={settings} save={save} />
       </fieldset>
     </>
   )
@@ -252,11 +252,22 @@ function SourcePicker({ api, settings, active, save }: { api: SettingsApi; setti
 
 // ----------------------------------------------------------------------------------- medidor
 
-function LevelMeter({ api, levels, active, status }: { api: SettingsApi; levels: LevelStore; active: boolean; status: MeterStatus }) {
+interface MeterProps {
+  api: SettingsApi
+  levels: LevelStore
+  active: boolean
+  status: MeterStatus
+  settings: Settings
+  save: (patch: SettingsPatch) => Promise<boolean>
+}
+
+function LevelMeter({ api, levels, active, status, settings, save }: MeterProps) {
   // Hay captura midiendo: la sesión traduciendo o la escucha previa. Si no, la barra queda a cero.
   const live = meterLive(status)
   const note = meterNote(status)
-  const [threshold, setThreshold] = useState<number | null>(null)
+  const [engineThreshold, setThreshold] = useState<number | null>(null)
+  // El ajuste del usuario manda sobre el del motor, que solo se actualiza al reconfigurarlo.
+  const threshold = settings.voiceThreshold > 0 ? settings.voiceThreshold : engineThreshold
   const [advice, setAdvice] = useState<LevelAdvice>(null)
   const fill = useRef<HTMLDivElement>(null)
   const meter = useRef<HTMLDivElement>(null)
@@ -353,6 +364,23 @@ function LevelMeter({ api, levels, active, status }: { api: SettingsApi; levels:
         {note}
       </p>
       <p class="hint meter-hint">La marca indica el umbral a partir del cual el audio cuenta como voz.</p>
+      <label for="voice-threshold">
+        Umbral de voz (% del nivel; vacío = automático)
+        <input
+          id="voice-threshold"
+          type="number"
+          min="0.1"
+          max="50"
+          step="0.1"
+          placeholder={engineThreshold === null ? '' : String(+(engineThreshold * 100).toFixed(2))}
+          value={settings.voiceThreshold > 0 ? +(settings.voiceThreshold * 100).toFixed(2) : ''}
+          onChange={(e) => {
+            const raw = (e.currentTarget as HTMLInputElement).value.trim()
+            void save({ voiceThreshold: raw === '' ? 0 : Number(raw) / 100 })
+          }}
+        />
+      </label>
+      <p class="hint">Bájalo si no detecta voz baja; súbelo si el ruido de fondo se confunde con voz. Se aplica al iniciar la sesión.</p>
       <div id="level-advice" role="status" aria-live="polite">
         {advice && <p class="notice warning">{ADVICE_TEXT[advice]}</p>}
       </div>

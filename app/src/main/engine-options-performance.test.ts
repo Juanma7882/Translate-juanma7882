@@ -21,3 +21,8 @@ test('poca memoria desactivada y lado 0 no se envían', () => {
   const on = engineOptionsFrom({ ...defaultSettings(), performance: { intraThreads: 0, beamWidth: 0, cacheCapacity: 0, ocrMaxSide: 0, lowMemory: true } })
   assert.deepEqual(on.performance, { lowMemory: true })
 })
+
+test('el umbral de voz solo se envía si el usuario lo fijó', () => {
+  assert.equal(engineOptionsFrom(defaultSettings()).voiceThreshold, undefined)
+  assert.equal(engineOptionsFrom({ ...defaultSettings(), voiceThreshold: 0.02 }).voiceThreshold, 0.02)
+})

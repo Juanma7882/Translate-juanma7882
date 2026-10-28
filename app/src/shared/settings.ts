@@ -73,6 +73,8 @@ export interface Settings {
   fallbackSeconds: number
   /** Fuente del audio: todo el sistema o una aplicación (por nombre de programa, nunca por PID). */
   audioSource: AudioSourceChoice
+  /** Nivel RMS (0 a 1) a partir del cual el audio cuenta como voz: 0 (por defecto del motor) o 0,001 a 0,5. */
+  voiceThreshold: number
   /** Carpeta de modelos; `null` usa la de datos del usuario. */
   modelsDir: string | null
   lastRegion: SavedRegion | null
@@ -90,6 +92,7 @@ export function defaultSettings(): Settings {
     mode: 'auto',
     fallbackSeconds: 3,
     audioSource: { kind: 'system' },
+    voiceThreshold: 0,
     modelsDir: null,
     lastRegion: null,
     overlay: {
@@ -176,6 +179,15 @@ function readOcrSide(reader: Reader, source: Dict): number {
   return reader.number(source, 'ocrMaxSide', 'performance.ocrMaxSide', 0, 160, 4000, true)
 }
 
+export const MIN_VOICE_THRESHOLD = 0.001
+export const MAX_VOICE_THRESHOLD = 0.5
+
+/** El umbral de voz es 0 (por defecto) o un nivel RMS entre 0,001 y 0,5. */
+function readVoiceThreshold(reader: Reader, source: Dict): number {
+  if (source['voiceThreshold'] === 0) return 0
+  return reader.number(source, 'voiceThreshold', 'voiceThreshold', 0, MIN_VOICE_THRESHOLD, MAX_VOICE_THRESHOLD)
+}
+
 /** Longitud máxima del nombre de un programa. */
 export const MAX_PROGRAM_LENGTH = 128
 // eslint-disable-next-line no-control-regex
@@ -246,6 +258,7 @@ export function parseSettings(raw: unknown): ParseResult {
     mode: reader.oneOf(raw, 'mode', 'mode', defaults.mode, MODES),
     fallbackSeconds: reader.number(raw, 'fallbackSeconds', 'fallbackSeconds', defaults.fallbackSeconds, 1, 60, true),
     audioSource: readAudioSource(reader, raw.audioSource),
+    voiceThreshold: readVoiceThreshold(reader, raw),
     modelsDir: modelsDirOk && modelsDirValue !== undefined ? (modelsDirValue as string | null) : defaults.modelsDir,
     lastRegion: readRegion(reader, raw.lastRegion),
     overlay: {

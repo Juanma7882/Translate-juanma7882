@@ -84,3 +84,14 @@ describe('colores, líneas y rendimiento (hito 5)', () => {
     for (const [performance, error] of cases) assert.deepEqual(applyPatch(base, { performance }), { ok: false, errors: [error] })
   })
 })
+
+describe('voiceThreshold', () => {
+  const base = defaultSettings()
+  test('0 es automático y 0,001 a 0,5 es válido', () => {
+    assert.equal(base.voiceThreshold, 0)
+    for (const value of [0, 0.001, 0.02, 0.5]) assert.equal(applyPatch(base, { voiceThreshold: value }).ok, true)
+  })
+  test('fuera de rango se rechaza', () => {
+    for (const value of [-0.1, 0.0005, 0.51, 'x']) assert.deepEqual(applyPatch(base, { voiceThreshold: value }), { ok: false, errors: ['invalid voiceThreshold'] })
+  })
+})

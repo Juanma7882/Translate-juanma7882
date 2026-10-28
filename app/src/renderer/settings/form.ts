@@ -60,6 +60,7 @@ const FIELD_MESSAGES: Record<string, string> = {
   'invalid engines': 'Elige un conjunto de motores válido.',
   'invalid mode': 'Elige un modo válido: automático, solo texto o solo audio.',
   'invalid fallbackSeconds': 'La espera para pasar a audio debe ser un número entero de segundos entre 1 y 60.',
+  'invalid voiceThreshold': 'El umbral de voz debe estar entre 0,1 % y 50 %.',
   'invalid modelsDir': 'La carpeta de modelos no es válida.',
   'invalid overlay.opacity': 'La opacidad debe estar entre 0,1 y 1.',
   'invalid overlay.fontSize': 'El tamaño de fuente debe estar entre 10 y 96 píxeles.',
@@ -197,6 +198,7 @@ export const FONT_CHOICES: readonly { label: string; value: string }[] = [
 
 const FIELD_IDS: Record<string, string> = {
   'invalid fallbackSeconds': 'fallbackSeconds',
+  'invalid voiceThreshold': 'voiceThreshold',
   'invalid overlay.opacity': 'opacity',
   'invalid overlay.fontSize': 'fontSize',
   'invalid overlay.fontFamily': 'fontFamily',
