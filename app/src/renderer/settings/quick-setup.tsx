@@ -126,6 +126,24 @@ export function PairMenu({ api, settings, catalog, running, active, progress, sa
   )
 }
 
+// ---------------------------------------------------------------------------- posición overlay
+
+export function OverlayPositionRow({ busy, onChoose }: { busy: boolean; onChoose: () => void }) {
+  return (
+    <div id="overlay-position-row" class="setup-row">
+      <span class="setup-label" id="overlay-label">
+        Posición del overlay
+      </span>
+      <span class="setup-value" id="overlay-text" aria-labelledby="overlay-label">
+        Manual
+      </span>
+      <button type="button" id="choose-overlay-position" disabled={busy} onClick={onChoose}>
+        Cambiar posición
+      </button>
+    </div>
+  )
+}
+
 // ---------------------------------------------------------------------------------------- modo
 
 export function ModeRow({ settings, save }: { settings: Settings; save: (patch: SettingsPatch) => Promise<boolean> }) {

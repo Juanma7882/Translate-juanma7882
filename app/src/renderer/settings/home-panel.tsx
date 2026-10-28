@@ -33,7 +33,7 @@ import {
 import type { LevelAdvice, LevelStore, MeterStatus } from './home.ts'
 import { useAudioWatch } from './audio-watch.ts'
 import { scopeForMode } from '../../shared/mode.ts'
-import { ModeRow, PairMenu, RegionRow } from './quick-setup.tsx'
+import { ModeRow, OverlayPositionRow, PairMenu, RegionRow } from './quick-setup.tsx'
 import { StartGuide } from './start-guide.tsx'
 
 /** Cada cuánto se refresca la lista de aplicaciones mientras la pestaña está a la vista. */
@@ -53,7 +53,7 @@ interface Props {
   goToLanguages: () => void
 }
 
-type Action = 'start' | 'pause' | 'resume' | 'restart' | 'stop' | 'region' | 'show'
+type Action = 'start' | 'pause' | 'resume' | 'restart' | 'stop' | 'region' | 'show' | 'pickRegion' | 'pickOverlayPosition'
 
 export function HomePanel({ api, settings, appState, notice, levels, catalog, progress, active, save, goToLanguages }: Props) {
   const phase = phaseOf(appState)
@@ -76,6 +76,8 @@ export function HomePanel({ api, settings, appState, notice, levels, catalog, pr
       else if (action === 'restart') await api.restartSession()
       else if (action === 'region') await api.chooseRegion()
       else if (action === 'show') await api.showRegion()
+      else if (action === 'pickRegion') await api.pickRegion()
+      else if (action === 'pickOverlayPosition') await api.pickOverlayPosition()
       else await api.stopSession()
     } catch (e) {
       setFailure(e instanceof Error ? e.message : String(e))
@@ -131,6 +133,7 @@ export function HomePanel({ api, settings, appState, notice, levels, catalog, pr
       <fieldset id="what-to-translate">
         <legend>Qué se traduce</legend>
         <RegionRow settings={settings} busy={pending !== null} onChoose={() => void run('region')} onShow={() => void run('show')} />
+        <OverlayPositionRow busy={pending !== null} onChoose={() => void run('pickOverlayPosition')} />
         <PairMenu api={api} settings={settings} catalog={catalog} running={running} active={active} progress={progress} save={save} goToLanguages={goToLanguages} />
         <ModeRow settings={settings} save={save} />
       </fieldset>
