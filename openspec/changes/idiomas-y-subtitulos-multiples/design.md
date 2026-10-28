@@ -25,6 +25,7 @@ Estado actual relevante:
 **Non-Goals:**
 - Traducción pivote (es→de vía inglés): no hay modelos de pares nuevos ni cadena de dos traducciones.
 - Mostrar parciales o el original antes de que terminen las traducciones (un evento por frase, ver Decisión 2); si la latencia de la más lenta no cumple el presupuesto, se estudia aparte.
+- Acelerar la traducción con GPU (CUDA, DirectML u otra): queda anotado como mejora futura, solo si la medición de 8.2 muestra que la CPU no alcanza el presupuesto de latencia con dos destinos. Exigiría un adaptador de ejecución por plataforma, dependencias nuevas (regla 5) y un respaldo en CPU para equipos sin gráfica compatible.
 - Elegir otro orden de subtítulos que el fijo (original arriba, destinos en el orden de elección).
 - Coloreado gramatical (otra change).
 
