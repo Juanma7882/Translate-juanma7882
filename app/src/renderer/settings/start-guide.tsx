@@ -54,13 +54,14 @@ export function StartGuide({ api, settings, running, active, progress, onAction 
     }
     let alive = true
     api
-      .modelStatus(settings.from, settings.to, scopeForMode(settings.mode))
+      .modelStatus(settings.from, settings.targets, scopeForMode(settings.mode))
       .then((list) => alive && setModelsReady(summarize(list).allReady))
       .catch(() => alive && setModelsReady(false))
     return () => {
       alive = false
     }
-  }, [api, finished, active, settings.engines, settings.from, settings.to, settings.mode, progress])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `targetsKey` resume `settings.targets`
+  }, [api, finished, active, settings.engines, settings.from, settings.targets.join('+'), settings.mode, progress])
 
   useEffect(() => {
     if (!running || started) return

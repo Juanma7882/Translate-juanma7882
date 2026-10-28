@@ -43,7 +43,8 @@ export function ModelsPanel({ api, settings, appState, progress, clearProgress, 
   const [confirming, setConfirming] = useState<string | null>(null)
   const [dirDraft, setDirDraft] = useState<string | null>(null)
 
-  const { from, to, engines, modelsDir } = settings
+  const { from, targets, engines, modelsDir } = settings
+  const targetsKey = targets.join('+')
   const real = engines === 'real'
 
   const refresh = useCallback(async () => {
@@ -58,17 +59,18 @@ export function ModelsPanel({ api, settings, appState, progress, clearProgress, 
       return
     }
     try {
-      setStatuses(await api.modelStatus(from, to))
+      setStatuses(await api.modelStatus(from, targets))
     } catch {
       setStatuses([])
     }
     // Los modelos de audio pueden no existir para este idioma: sin fila en ese caso.
     try {
-      setAudioStatuses(await api.modelStatus(from, to, 'audio'))
+      setAudioStatuses(await api.modelStatus(from, targets, 'audio'))
     } catch {
       setAudioStatuses([])
     }
-  }, [api, from, to, real, modelsDir])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `targetsKey` resume `targets`
+  }, [api, from, targetsKey, real, modelsDir])
 
   useEffect(() => {
     void refresh()
@@ -90,7 +92,7 @@ export function ModelsPanel({ api, settings, appState, progress, clearProgress, 
     clearProgress()
     setDownload({ phase: 'running' })
     try {
-      await api.downloadModels(from, to, scope)
+      await api.downloadModels(from, targets, scope)
       setDownload({ phase: 'idle' })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)

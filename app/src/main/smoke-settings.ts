@@ -131,7 +131,7 @@ export async function runSettingsSmoke(host: EngineHost, windows: WindowManager,
     const file = join(dir, 'settings.json')
     const settings = new SettingsStore(file)
     settings.load()
-    expect(settings.update({ engines: 'real', from: 'en', to: 'es' }).ok, 'ajustes iniciales')
+    expect(settings.update({ engines: 'real', from: 'en', targets: ['es'] }).ok, 'ajustes iniciales')
 
     const modelsDir = mkdtempSync(join(tmpdir(), 'tr-settings-models-'))
     // Una sesión simulada: el controlador real no hace falta para probar los bloqueos de la interfaz.
@@ -361,14 +361,40 @@ export async function runSettingsSmoke(host: EngineHost, windows: WindowManager,
     ok('la carpeta de modelos se valida en línea, se cambia, se elige con el diálogo y vuelve a la predeterminada')
 
     // Cambios que se guardan y se aplican (la fuente de verdad es el almacén del proceso principal).
+    // Subtítulos: el 1 elige el idioma (aquí, la traducción), el 2 es opcional y nunca repite el idioma del 1.
+    await click(window, '#tab-languages')
+    await waitFor(() => exists(window, '#subtitle-1'), 'the subtitle selectors')
+    expect((await evaluate<string>(window, `document.getElementById('subtitle-1').value`)) === 'en', 'por defecto el subtítulo 1 es el original')
+    expect(settings.get().overlay.showOriginal && settings.get().targets.join() === 'es', 'por defecto: original y español')
+    expect(await evaluate<boolean>(window, `document.getElementById('subtitle-2-on').checked`), 'el subtítulo 2 está activo (la traducción)')
+    expect((await evaluate<string[]>(window, `[...document.getElementById('subtitle-2').options].map(o => o.value)`)).join() === 'es', 'el subtítulo 2 no repite el idioma del 1')
+    // Sin el segundo subtítulo queda uno solo: el original.
+    await setControl(window, '#subtitle-2-on', false)
+    await waitFor(() => settings.get().overlay.showOriginal && settings.get().targets.length === 0, 'only the original to remain')
+    expect(!(await exists(window, '#subtitle-2')), 'el selector del subtítulo 2 desaparece')
+    // Un solo subtítulo traducido: el 1 pasa del original a la traducción.
+    await setControl(window, '#subtitle-1', 'es')
+    await waitFor(() => !settings.get().overlay.showOriginal && settings.get().targets.join() === 'es', 'only the translation to remain')
+    // Activar el segundo: ofrece lo que el primero no usa (el original) y el original pasa arriba.
+    await setControl(window, '#subtitle-2-on', true)
+    await waitFor(() => settings.get().overlay.showOriginal && settings.get().targets.join() === 'es', 'the second subtitle (the original) to be saved')
+    await waitFor(async () => (await evaluate<string>(window, `document.getElementById('subtitle-1').value`)) === 'en', 'the original to move to the top')
+    expect((await evaluate<string[]>(window, `[...document.getElementById('subtitle-2').options].map(o => o.value)`)).join() === 'es', 'el subtítulo 2 no repite el idioma del 1')
+    // Vuelta a una sola traducción, que es como siguen las pruebas.
+    await setControl(window, '#subtitle-2-on', false)
+    await waitFor(() => settings.get().overlay.showOriginal && settings.get().targets.length === 0, 'only the original again')
+    await setControl(window, '#subtitle-1', 'es')
+    await waitFor(() => !settings.get().overlay.showOriginal && settings.get().targets.join() === 'es', 'only the translation again')
+    expect(settings.get().overlay.showOriginal === false && settings.get().targets.join() === 'es', 'queda un solo subtítulo: la traducción')
+    ok('los subtítulos se eligen por casilla, sin repetir idioma, de uno en uno o de dos en dos')
+
     await click(window, '#tab-appearance')
     await setControl(window, '#opacity', '0.5')
     await waitFor(() => settings.get().overlay.opacity === 0.5, 'opacity to be saved')
     await setControl(window, '#fontSize', '36')
     await waitFor(() => settings.get().overlay.fontSize === 36, 'font size to be saved')
-    await setControl(window, '#showOriginal', false)
-    await waitFor(() => !settings.get().overlay.showOriginal, 'showOriginal to be saved')
-    await waitFor(async () => !(await exists(window, '#preview .original')), 'the preview to hide the original')
+    expect(!(await exists(window, '#showOriginal')), 'el original ya no se elige en Apariencia')
+    await waitFor(async () => !(await exists(window, '#preview .track.secondary')), 'the preview to hide the original')
     expect((await evaluate<string>(window, `document.getElementById('preview').style.fontSize`)) === '36px', 'la vista previa refleja el tamaño')
     ok('los cambios se guardan y la vista previa los refleja')
 
