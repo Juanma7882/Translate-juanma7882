@@ -141,7 +141,7 @@ La API SHALL exponer `modelInventory()`, `deleteModel(id)`, `cancelModelDownload
 - **THEN** `downloadModels` se rechaza con un error de cancelación
 
 ### Requirement: Opciones de rendimiento
-`EngineOptions` SHALL aceptar un campo opcional `performance` con `intraThreads` (1 a 64), `beamWidth` (1 a 8) y `cacheCapacity` (1 a 1 000 000); los valores fuera de rango SHALL rechazarse como argumento inválido sin cambiar el estado, y la ausencia del campo SHALL usar los valores por defecto del motor.
+`EngineOptions` SHALL aceptar un campo opcional `performance` con `intraThreads` (1 a 64), `beamWidth` (1 a 8), `cacheCapacity` (1 a 1 000 000), `ocrMaxSide` (160 a 4000) y `lowMemory` (booleano); los valores fuera de rango SHALL rechazarse como argumento inválido sin cambiar el estado, y la ausencia del campo SHALL usar los valores por defecto del motor.
 
 #### Scenario: Valor fuera de rango
 - **WHEN** `configure` recibe `performance.beamWidth` igual a 0
@@ -150,3 +150,10 @@ La API SHALL exponer `modelInventory()`, `deleteModel(id)`, `cancelModelDownload
 #### Scenario: Sin rendimiento
 - **WHEN** `configure` no recibe `performance`
 - **THEN** se usan los valores por defecto del motor
+
+### Requirement: Contadores de la caché
+El puente SHALL exponer `cacheStats()`, que devuelve solo contadores numéricos de la caché de traducciones del motor actual (`hits`, `misses`, `inserts`, `evictions`, `hitRatio`) y MUST NOT incluir textos, claves ni traducciones.
+
+#### Scenario: Motor recién configurado
+- **WHEN** se llama a `cacheStats` justo después de `configure`
+- **THEN** todos los contadores valen 0

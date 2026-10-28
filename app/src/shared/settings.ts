@@ -49,6 +49,10 @@ export interface PerformanceSettings {
   beamWidth: number
   /** Entradas de la caché de traducciones, 0 (por defecto) o 16 a 1 000 000. */
   cacheCapacity: number
+  /** Lado máximo de detección del OCR en píxeles, 0 (por defecto, 960) o 160 a 4000. */
+  ocrMaxSide: number
+  /** Prioriza la RAM sobre la latencia. */
+  lowMemory: boolean
 }
 
 export interface Shortcuts {
@@ -98,7 +102,7 @@ export function defaultSettings(): Settings {
       backgroundColor: '#0c0c10',
       maxLines: 2,
     },
-    performance: { intraThreads: 0, beamWidth: 0, cacheCapacity: 0 },
+    performance: { intraThreads: 0, beamWidth: 0, cacheCapacity: 0, ocrMaxSide: 0, lowMemory: false },
     shortcuts: { selectRegion: 'CommandOrControl+Shift+T', togglePause: 'CommandOrControl+Shift+P', toggleMode: 'CommandOrControl+Shift+M' },
   }
 }
@@ -160,6 +164,12 @@ function readCache(reader: Reader, source: Dict): number {
   const value = source['cacheCapacity']
   if (value === 0) return 0
   return reader.number(source, 'cacheCapacity', 'performance.cacheCapacity', 0, 16, 1_000_000, true)
+}
+
+/** El lado de detección es 0 (por defecto) o un entero entre 160 y 4000. */
+function readOcrSide(reader: Reader, source: Dict): number {
+  if (source['ocrMaxSide'] === 0) return 0
+  return reader.number(source, 'ocrMaxSide', 'performance.ocrMaxSide', 0, 160, 4000, true)
 }
 
 function readRegion(reader: Reader, value: unknown): SavedRegion | null {
@@ -227,6 +237,8 @@ export function parseSettings(raw: unknown): ParseResult {
       intraThreads: reader.number(performanceSource, 'intraThreads', 'performance.intraThreads', 0, 0, 64, true),
       beamWidth: reader.number(performanceSource, 'beamWidth', 'performance.beamWidth', 0, 0, 8, true),
       cacheCapacity: readCache(reader, performanceSource),
+      ocrMaxSide: readOcrSide(reader, performanceSource),
+      lowMemory: reader.boolean(performanceSource, 'lowMemory', 'performance.lowMemory', false),
     },
     shortcuts: {
       selectRegion: reader.pattern(shortcutSource, 'selectRegion', 'shortcuts.selectRegion', defaults.shortcuts.selectRegion, ACCELERATOR_PATTERN),

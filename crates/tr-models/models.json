@@ -11,9 +11,9 @@
         },
         {
           "name": "decoder.onnx",
-          "url": "https://huggingface.co/Xenova/opus-mt-de-en/resolve/399dfd68706739fffd503f876093e455ae268a06/onnx/decoder_model_quantized.onnx",
-          "sha256": "e44c1c4b50e8f51e49d4d5e54a9af1550dc74763d4023644a38af62611e6efc9",
-          "size": 56281702
+          "url": "https://huggingface.co/Xenova/opus-mt-de-en/resolve/399dfd68706739fffd503f876093e455ae268a06/onnx/decoder_model_merged_quantized.onnx",
+          "sha256": "4712800584b2d77c2f9e620bf29523e2b20b62f65ade5011ee01780e2b0ea5d3",
+          "size": 56652404
         },
         {
           "name": "source.spm",
@@ -45,9 +45,9 @@
         },
         {
           "name": "decoder.onnx",
-          "url": "https://huggingface.co/Xenova/opus-mt-en-de/resolve/1ca130c44c4c5441ef16d48aae521a424ab644f7/onnx/decoder_model_quantized.onnx",
-          "sha256": "75ef79aa9bde9e3dce9ca584c29507be5f464973f6c600c89ff419bc8de29ebc",
-          "size": 56281702
+          "url": "https://huggingface.co/Xenova/opus-mt-en-de/resolve/1ca130c44c4c5441ef16d48aae521a424ab644f7/onnx/decoder_model_merged_quantized.onnx",
+          "sha256": "8b46a825964cdd182fe47cc780f0fb87d357eae1f47cf20aa63c1c09be5b510c",
+          "size": 56652404
         },
         {
           "name": "source.spm",
@@ -79,9 +79,9 @@
         },
         {
           "name": "decoder.onnx",
-          "url": "https://huggingface.co/Xenova/opus-mt-en-es/resolve/4b002a4c7edd54a7ced58877258b87f7efd3f892/onnx/decoder_model_quantized.onnx",
-          "sha256": "2b45074cc819f1d901e40510d7bc0781d99327d16c7eca04518c4ee0c3d6ba10",
-          "size": 59842102
+          "url": "https://huggingface.co/Xenova/opus-mt-en-es/resolve/4b002a4c7edd54a7ced58877258b87f7efd3f892/onnx/decoder_model_merged_quantized.onnx",
+          "sha256": "58ee5ddd6e22d1693d8722b90c1486afb93700a4376cf28fd74175052ad530ae",
+          "size": 60212804
         },
         {
           "name": "source.spm",
@@ -113,9 +113,9 @@
         },
         {
           "name": "decoder.onnx",
-          "url": "https://huggingface.co/Xenova/opus-mt-en-fr/resolve/28726206f80896b90035bd99cccd5cc1e151f916/onnx/decoder_model_quantized.onnx",
-          "sha256": "bdacc5f38e4d2b805a2fc9f38cf43844cdea56666e735137dbacf2a54a785257",
-          "size": 57010810
+          "url": "https://huggingface.co/Xenova/opus-mt-en-fr/resolve/28726206f80896b90035bd99cccd5cc1e151f916/onnx/decoder_model_merged_quantized.onnx",
+          "sha256": "333b244bce16023df04541c8cf9fd60aec9b0569da393c4b831d561897b0bda8",
+          "size": 57381512
         },
         {
           "name": "source.spm",
@@ -147,9 +147,9 @@
         },
         {
           "name": "decoder.onnx",
-          "url": "https://huggingface.co/Xenova/opus-mt-en-it/resolve/075406e3c8c2c30634d4a1bd8f00c21d9e162011/onnx/decoder_model_quantized.onnx",
-          "sha256": "d5c77fd7f60eebdf81d3f6f6fecd8e6804529cbcbecc2bb742fd60f225e2cf3e",
-          "size": 67599646
+          "url": "https://huggingface.co/Xenova/opus-mt-en-it/resolve/075406e3c8c2c30634d4a1bd8f00c21d9e162011/onnx/decoder_model_merged_quantized.onnx",
+          "sha256": "f9db146ed7665ea7d437dc4df564e3af5df923366de4d52aaf2c4b4e3e4ae4f1",
+          "size": 67970348
         },
         {
           "name": "source.spm",
@@ -181,9 +181,9 @@
         },
         {
           "name": "decoder.onnx",
-          "url": "https://huggingface.co/Xenova/opus-mt-es-en/resolve/eadfd7c658a9d8929ac3b8e996b68a68e2c7d480/onnx/decoder_model_quantized.onnx",
-          "sha256": "d518f1f0041b2831f0aeb5a087cf899742cd9d4b574f6b98ad9f816b8c06925b",
-          "size": 59842102
+          "url": "https://huggingface.co/Xenova/opus-mt-es-en/resolve/eadfd7c658a9d8929ac3b8e996b68a68e2c7d480/onnx/decoder_model_merged_quantized.onnx",
+          "sha256": "4cd91ab30240d295ce907b5100826031838c672005e57e524d711122d75605fa",
+          "size": 60212804
         },
         {
           "name": "source.spm",
@@ -215,9 +215,9 @@
         },
         {
           "name": "decoder.onnx",
-          "url": "https://huggingface.co/Xenova/opus-mt-es-fr/resolve/3bef5f612825d503f6fb85e0527a1fe30f2578c2/onnx/decoder_model_quantized.onnx",
-          "sha256": "6181188095a4a158ca3d7046127d7b8965984680e52ea9c0d50eb919221a43b5",
-          "size": 64909738
+          "url": "https://huggingface.co/Xenova/opus-mt-es-fr/resolve/3bef5f612825d503f6fb85e0527a1fe30f2578c2/onnx/decoder_model_merged_quantized.onnx",
+          "sha256": "f6e43796a68566c95ab387277c223726ac988b307e875c239b340424eb057a92",
+          "size": 65280440
         },
         {
           "name": "source.spm",
@@ -249,9 +249,9 @@
         },
         {
           "name": "decoder.onnx",
-          "url": "https://huggingface.co/Xenova/opus-mt-fr-en/resolve/6b166a182780e118c997879d0ad5be4b53671644/onnx/decoder_model_quantized.onnx",
-          "sha256": "8c5a0c5d113a1c4c5ae46e014aacf770f3bff2109fe8b74ead6aae5c5f408ffc",
-          "size": 57010810
+          "url": "https://huggingface.co/Xenova/opus-mt-fr-en/resolve/6b166a182780e118c997879d0ad5be4b53671644/onnx/decoder_model_merged_quantized.onnx",
+          "sha256": "73bc7ac8e29c42e6f212ebcc29a2991d3646a04aabb642c0036aa54b40e4e1a9",
+          "size": 57381512
         },
         {
           "name": "source.spm",
@@ -283,9 +283,9 @@
         },
         {
           "name": "decoder.onnx",
-          "url": "https://huggingface.co/Xenova/opus-mt-fr-es/resolve/962338be51033b548c13dbb6f4da3ddb8c8aba0e/onnx/decoder_model_quantized.onnx",
-          "sha256": "733e93de273f0bfc483e37d66125aefae7525f91e6e10bd2d480b7f831301348",
-          "size": 64909738
+          "url": "https://huggingface.co/Xenova/opus-mt-fr-es/resolve/962338be51033b548c13dbb6f4da3ddb8c8aba0e/onnx/decoder_model_merged_quantized.onnx",
+          "sha256": "ff991f24d534a62db615697ed9555db80be28fbf9e5677d8ebb1f78c6aabc2c6",
+          "size": 65280440
         },
         {
           "name": "source.spm",
@@ -317,9 +317,9 @@
         },
         {
           "name": "decoder.onnx",
-          "url": "https://huggingface.co/Xenova/opus-mt-it-en/resolve/fd0b89b9c052adc1f2f64152f555aa17353728be/onnx/decoder_model_quantized.onnx",
-          "sha256": "203bac7b98e438e65e1ddfcbec254ffb6811e6a8f4f71e93517ca9550323bf6e",
-          "size": 67777150
+          "url": "https://huggingface.co/Xenova/opus-mt-it-en/resolve/fd0b89b9c052adc1f2f64152f555aa17353728be/onnx/decoder_model_merged_quantized.onnx",
+          "sha256": "aebc2789cd2ef8062fbda020bac90b61e68458ba98a4c43cea63c1d2310ba2b8",
+          "size": 68147852
         },
         {
           "name": "source.spm",

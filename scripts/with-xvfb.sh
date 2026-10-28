@@ -9,6 +9,10 @@
 # ~/.local/xvfb (ver CLAUDE.md), que se arranca sin privilegios con un overlayfs que añade
 # `xkbcomp` a /usr/bin dentro de un namespace de usuario.
 #
+# Se arranca con `-noreset`: por defecto Xvfb se regenera al cerrarse el último cliente y rechaza las
+# conexiones durante un instante, lo que hacía fallar capturas sueltas ("Connection error") en las
+# pruebas que abren y cierran clientes (real_fallback). Ver docs/adr/0006-rendimiento.md.
+#
 # Variables: XVFB_DISPLAY (por defecto :99) y XVFB_GEOMETRY (por defecto 1280x720x24).
 set -euo pipefail
 
@@ -18,7 +22,7 @@ log="$(mktemp)"
 overlay=""
 
 if command -v Xvfb >/dev/null 2>&1; then
-  Xvfb "$display" -screen 0 "$geometry" -nolisten tcp >"$log" 2>&1 &
+  Xvfb "$display" -screen 0 "$geometry" -nolisten tcp -noreset >"$log" 2>&1 &
   xvfb_pid=$!
 elif [ -x "$HOME/.local/xvfb/usr/bin/Xvfb" ]; then
   root="$HOME/.local/xvfb"
@@ -28,7 +32,7 @@ elif [ -x "$HOME/.local/xvfb/usr/bin/Xvfb" ]; then
   LD_LIBRARY_PATH="$root/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH:-}" \
     unshare -rm bash -c "
       mount -t overlay overlay -o lowerdir=/usr/bin,upperdir=$overlay/upper,workdir=$overlay/work /usr/bin || exit 97
-      exec '$root/usr/bin/Xvfb' '$display' -screen 0 '$geometry' -nolisten tcp -xkbdir '$root/usr/share/X11/xkb'
+      exec '$root/usr/bin/Xvfb' '$display' -screen 0 '$geometry' -nolisten tcp -noreset -xkbdir '$root/usr/share/X11/xkb'
     " >"$log" 2>&1 &
   xvfb_pid=$!
 else

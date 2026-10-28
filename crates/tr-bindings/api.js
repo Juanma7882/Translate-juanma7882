@@ -133,6 +133,10 @@ module.exports = {
   validateModelsDir(path) {
     return native.validateModelsDir(path)
   },
+  // Solo contadores de la caché de traducciones del motor actual; nunca contenido.
+  cacheStats() {
+    return native.cacheStats()
+  },
   onTranslation: subscribe('translation'),
   onSubtitle: subscribe('subtitle'),
   onError: subscribe('error'),

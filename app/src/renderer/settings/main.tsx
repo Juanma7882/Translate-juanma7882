@@ -417,6 +417,16 @@ function App({ api }: { api: SettingsApi }) {
               <input {...fieldProps('perf-cache', fieldIssues)} type="number" min="0" max="1000000" value={perf.cacheCapacity} onChange={(e) => void save({ performance: { cacheCapacity: num(e) } })} />
               <FieldError id="perf-cache" issues={fieldIssues} />
             </label>
+            <label for="perf-ocr-side">
+              Tamaño de análisis del OCR en píxeles (0 = por defecto, de 160 a 4000)
+              <input {...fieldProps('perf-ocr-side', fieldIssues)} type="number" min="0" max="4000" value={perf.ocrMaxSide} onChange={(e) => void save({ performance: { ocrMaxSide: num(e) } })} />
+              <FieldError id="perf-ocr-side" issues={fieldIssues} />
+            </label>
+            <p class="hint">Menos píxeles es más rápido y usa menos memoria, pero puede no leer letra pequeña.</p>
+            <label class="inline" for="perf-lowmem">
+              <input id="perf-lowmem" type="checkbox" checked={perf.lowMemory} onChange={(e) => void save({ performance: { lowMemory: e.currentTarget.checked } })} />
+              Priorizar la memoria sobre la velocidad
+            </label>
           </fieldset>
 
           <fieldset id="transfer">

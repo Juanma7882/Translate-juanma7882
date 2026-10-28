@@ -9,6 +9,22 @@
  */
 export declare const __napiBindingTarget: 'native' | 'wasm32-wasi' | 'wasm32-wasip1'
 
+/**
+ * Contadores de la caché de traducciones del motor actual (solo números). Se reinician con
+ * `configure`, que crea un motor nuevo.
+ */
+export declare function cacheStats(): CacheStatsInfo
+
+/** Contadores de la caché de traducciones del motor actual (nunca contenido). */
+export interface CacheStatsInfo {
+  hits: number
+  misses: number
+  inserts: number
+  evictions: number
+  /** Fracción de consultas que acertaron (0 a 1). */
+  hitRatio: number
+}
+
 /** Interrumpe la descarga de modelos en curso; lo descargado se conserva para reanudar. */
 export declare function cancelModelDownload(): void
 
@@ -158,6 +174,13 @@ export interface PerformanceOptions {
   beamWidth?: number
   /** Entradas de la caché de traducciones (1 a 1 000 000). */
   cacheCapacity?: number
+  /**
+   * Lado máximo, en píxeles, con que el OCR detecta texto (160 a 4000; por defecto 960).
+   * Menos es más rápido y gasta menos RAM, pero puede perder letra pequeña.
+   */
+  ocrMaxSide?: number
+  /** Prioriza la RAM sobre la latencia (por defecto `false`). */
+  lowMemory?: boolean
 }
 
 /** Uso interno de `api.js`: cuántos eventos de progreso de modelos se han emitido en total. */

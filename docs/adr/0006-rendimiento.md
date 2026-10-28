@@ -33,12 +33,13 @@
 - Un decoder fp32 reduce la traducción a 146 ms (-42 %) con +176 MB de disco y +130 MiB de RAM. Es una opción de calidad/velocidad para un manifiesto futuro, no el defecto.
 - `xcap` en X11 tarda ~187 ms por captura, igual para 800x150 que para 1280x720: reconecta con el servidor X en cada llamada. Con el intervalo por defecto de 200 ms la captura domina el ciclo. Si el Hito 6 necesita más cadencia habrá que capturar con una conexión persistente (xcb directo en Linux) o medir Windows/macOS, donde la API es otra.
 - La detección de cambio ya evitaba el OCR en frames sin cambios; ahora cuesta 4-5 veces menos.
+- **Fallo intermitente "Connection error" en `real_fallback` (5B).** `xcap` abre una conexión X nueva en cada captura (no se puede reutilizar desde su API). Bajo Xvfb, que por defecto se regenera al cerrarse el último cliente, una conexión que llegaba en ese instante fallaba (2 de 8 ejecuciones) justo después de que el test retirara su ventana y no quedaran más clientes. Con `-noreset` en `scripts/with-xvfb.sh` pasó 15 de 15, y el adaptador reintenta ahora hasta 3 veces con 40 ms de espera los errores de conexión transitorios (`Connection error`, E/S, tubería rota); también pasó 15 de 15 con Xvfb sin `-noreset`. Un error que persiste o permanente (región inválida, entorno no soportado) llega igual, una vez, como `CoreError::Capture` con la causa del sistema.
 
 ## Consecuencias
 
-- **El manifiesto de modelos (`tr-models/models.json`) debe pasar a `decoder_model_merged_quantized.onnx` como `decoder.onnx`** para que la caché KV llegue a producción. Pares verificados: en-es `58ee5ddd6e22d1693d8722b90c1486afb93700a4376cf28fd74175052ad530ae` y es-en `4cd91ab30240d295ce907b5100826031838c672005e57e524d711122d75605fa`, ambos 60 212 804 bytes (URLs con el mismo commit que el resto del par, carpeta `onnx/`). Los demás pares nuevos hay que comprobarlos uno a uno.
+- **Hecho (5B): el manifiesto entrega `decoder_model_merged_quantized.onnx` como `decoder.onnx`** en los 10 pares, con SHA-256 y tamaño reales descargados par a par (en-es `58ee5ddd...30ae` y es-en `4cd91ab3...05fa`, 60 212 804 bytes; los demás en `docs/perf/hito-5.md`). El respaldo sin caché sigue en el código y en un test; `decoder_merged.onnx` queda solo como compatibilidad de carpetas de desarrollo. Medido en 5B: traducción -20 %, frame -> traducción -12 %, arranque +250 ms, RAM tras arrancar +75 MiB, pico -20 %.
 - Con el "merged" el arranque de texto pasa de ~370 a ~720 ms (optimizar el grafo con `If` es más lento) y la RAM sube ~70 MiB; la latencia de frame baja ~12 %.
-- Las opciones `ocrMaxSide`, `lowMemory` y `cacheStats` no están en el puente JS (`performance` solo lleva hilos y haz); conectarlas es trabajo de los bindings.
+- **Hecho (5B): los bindings exponen `performance.ocrMaxSide` (160 a 4000), `performance.lowMemory` y `cacheStats()`** (solo contadores; sin contenido). Ajustes (pestaña Avanzado) conecta `ocrMaxSide` y `lowMemory`; las estadísticas de la caché no se muestran en la interfaz.
 - Pendiente de medir: Windows y macOS, audio en vivo, texto con ruido real.
 
 ## Alternativas descartadas

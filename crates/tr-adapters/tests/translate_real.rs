@@ -266,42 +266,33 @@ fn beam_search_keeps_the_quality_of_the_reference_sentences() {
 }
 
 #[test]
-#[ignore = "necesita modelos reales (TR_MODELS_DIR)"]
+#[ignore = "necesita modelos reales (TR_MODELS_DIR) y la carpeta mt-opus-en-es-plain"]
 fn the_decoder_without_cache_still_translates_the_same_sentences() {
-    // Carpeta temporal con enlaces a los modelos y `decoder.onnx` sin caché (si hay "merged",
-    // `decoder_merged.onnx` se omite). Solo enlaces: no se escribe contenido.
-    #[cfg(unix)]
-    {
-        let root = PathBuf::from(std::env::var_os("TR_MODELS_DIR").expect("define TR_MODELS_DIR"))
-            .join("mt-opus-en-es");
-        let dir = std::env::temp_dir().join(format!("tr-mt-plain-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        for name in tr_adapters::translate::MODEL_FILES {
-            std::os::unix::fs::symlink(root.join(name), dir.join(name)).unwrap();
-        }
-        let mt = OpusMt::load(&dir, &lang("en"), &lang("es")).unwrap();
-        assert!(!mt.uses_kv_cache());
-        assert_eq!(
-            mt.translate("Where is the train station?", &lang("en"), &lang("es"))
-                .unwrap(),
-            "¿Dónde está la estación de tren?"
-        );
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
+    // El manifiesto entrega el decoder con caché. Para probar el respaldo sin caché hace falta
+    // una carpeta `mt-opus-en-es-plain` dentro de TR_MODELS_DIR: los mismos archivos de
+    // `mt-opus-en-es` (pueden ser enlaces) pero con `decoder.onnx` = `onnx/decoder_model_quantized.onnx`
+    // de Xenova/opus-mt-en-es@4b002a4c7edd54a7ced58877258b87f7efd3f892
+    // (sha256 2b45074cc819f1d901e40510d7bc0781d99327d16c7eca04518c4ee0c3d6ba10).
+    let plain = PathBuf::from(std::env::var_os("TR_MODELS_DIR").expect("define TR_MODELS_DIR"))
+        .join("mt-opus-en-es-plain");
+    assert!(
+        plain.join("decoder.onnx").is_file(),
+        "falta {} (ver el comentario de este test)",
+        plain.display()
+    );
+    let mt = OpusMt::load(&plain, &lang("en"), &lang("es")).unwrap();
+    assert!(!mt.uses_kv_cache());
+    assert_eq!(
+        mt.translate("Where is the train station?", &lang("en"), &lang("es"))
+            .unwrap(),
+        "¿Dónde está la estación de tren?"
+    );
 }
 
 #[test]
 #[ignore = "necesita modelos reales (TR_MODELS_DIR)"]
-fn the_kv_cache_is_used_when_the_merged_decoder_is_available() {
-    let root = PathBuf::from(std::env::var_os("TR_MODELS_DIR").expect("define TR_MODELS_DIR"))
-        .join("mt-opus-en-es");
-    if !root
-        .join(tr_adapters::translate::CACHED_DECODER_FILE)
-        .is_file()
-    {
-        return; // sin el decoder con caché no hay nada que comprobar
-    }
+fn the_decoder_delivered_by_the_manifest_uses_the_kv_cache() {
+    // El modelo descargado con el manifiesto (decoder "merged" como `decoder.onnx`) activa la caché.
     assert!(load("en-es").uses_kv_cache());
 }
 

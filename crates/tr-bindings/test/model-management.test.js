@@ -288,9 +288,28 @@ describe('carpeta de modelos', () => {
 
 describe('opciones de rendimiento', () => {
   test('valores en rango o ausentes se aceptan', () => {
-    for (const performance of [undefined, {}, { intraThreads: 1 }, { beamWidth: 8 }, { cacheCapacity: 1 }, { intraThreads: 64, beamWidth: 1, cacheCapacity: 1_000_000 }]) {
+    for (const performance of [undefined, {}, { intraThreads: 1 }, { beamWidth: 8 }, { cacheCapacity: 1 }, { intraThreads: 64, beamWidth: 1, cacheCapacity: 1_000_000 }, { ocrMaxSide: 160 }, { ocrMaxSide: 4000, lowMemory: true }, { lowMemory: false }]) {
       assert.doesNotThrow(() => api.configure({ performance }), JSON.stringify(performance))
     }
+  })
+
+  test('cacheStats devuelve solo contadores y la caché cuenta las repeticiones', async () => {
+    api.configure({ frameIntervalMs: 5 })
+    const empty = api.cacheStats()
+    assert.deepEqual(Object.keys(empty).sort(), ['evictions', 'hitRatio', 'hits', 'inserts', 'misses'])
+    for (const value of Object.values(empty)) assert.equal(typeof value, 'number')
+    assert.deepEqual(empty, { hits: 0, misses: 0, inserts: 0, evictions: 0, hitRatio: 0 })
+
+    const events = []
+    api.onTranslation((e) => events.push(e))
+    api.startRegionTranslation(REGION, 'en', 'es')
+    assert.ok(await waitFor(() => events.length >= 1))
+    api.stop()
+    const stats = api.cacheStats()
+    assert.ok(stats.misses >= 1 && stats.inserts >= 1, JSON.stringify(stats))
+    assert.ok(stats.hitRatio >= 0 && stats.hitRatio <= 1)
+    api.configure({})
+    assert.equal(api.cacheStats().inserts, 0, 'configure crea un motor nuevo')
   })
 
   test('valores fuera de rango son argumentos inválidos y no cambian nada', async () => {
@@ -306,6 +325,8 @@ describe('opciones de rendimiento', () => {
       [{ beamWidth: 9 }, /beamWidth/],
       [{ cacheCapacity: 0 }, /cacheCapacity/],
       [{ cacheCapacity: 1_000_001 }, /cacheCapacity/],
+      [{ ocrMaxSide: 159 }, /ocrMaxSide/],
+      [{ ocrMaxSide: 4001 }, /ocrMaxSide/],
     ]
     for (const [performance, message] of bad) {
       assert.throws(() => api.configure({ performance }), (e) => e.code === 'InvalidArg' && message.test(e.message), JSON.stringify(performance))

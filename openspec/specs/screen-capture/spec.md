@@ -24,7 +24,7 @@ El sistema SHALL interpretar la región en píxeles físicos y, junto con el ide
 - **THEN** el sistema informa un error de captura o recorta la región a los límites, sin fallar de forma silenciosa
 
 ### Requirement: Errores de captura descriptivos
-El sistema SHALL informar como error de captura, con un mensaje accionable, los casos en que no se puede capturar: monitor inexistente, falta de permisos y entornos no soportados (por ejemplo Wayland sin portal).
+El sistema SHALL informar como error de captura, con un mensaje accionable, los casos en que no se puede capturar: monitor inexistente, falta de permisos y entornos no soportados (por ejemplo Wayland sin portal).  Un fallo pasajero de conexión con el servidor gráfico SHALL reintentarse un número acotado de veces con una espera corta; si persiste, SHALL informarse como error de captura sin contenido.
 
 #### Scenario: Monitor inexistente
 - **WHEN** se pide una región de un monitor que no existe
@@ -33,6 +33,14 @@ El sistema SHALL informar como error de captura, con un mensaje accionable, los 
 #### Scenario: Entorno no soportado
 - **WHEN** el entorno gráfico no permite capturar
 - **THEN** el error de captura explica la causa y qué hacer, y el sistema no se cierra
+
+#### Scenario: Fallo de conexión pasajero
+- **WHEN** el servidor gráfico rechaza una conexión de captura un instante y la acepta enseguida
+- **THEN** la captura se completa sin informar error
+
+#### Scenario: Fallo de conexión persistente
+- **WHEN** la conexión falla en todos los reintentos acotados
+- **THEN** se informa un error de captura con la causa del sistema
 
 ### Requirement: Contenido protegido
 Si el sistema operativo entrega una captura vacía por contenido protegido, el sistema SHALL tratarla como una captura normal sin texto y MUST NOT fallar.

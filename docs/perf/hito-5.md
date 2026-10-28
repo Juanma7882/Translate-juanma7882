@@ -76,3 +76,26 @@ Variables: `TR_BEAMS`, `TR_THREADS` (0 = automático), `TR_OCR_MAX_SIDE`, `TR_LO
 Para comparar antes/después: `git worktree add ~/base HEAD`, compilar allí el mismo ejemplo con `CARGO_TARGET_DIR` distinto y alternar ambos binarios al menos 3 veces; quedarse con la mediana. Con la máquina ocupada las cifras absolutas se inflan: comparar siempre ejecuciones alternadas.
 
 Qué no se mide aquí: Windows y macOS (hay que repetir en cada plataforma antes del Hito 6), audio de sistema en vivo (se midió la ventana ya capturada), texto de juegos con ruido real.
+
+## Cierre del Hito 5: KV-cache en producción (5B)
+
+El manifiesto entrega ahora `decoder_model_merged_quantized.onnx` como `decoder.onnx` en los 10 pares (en-es, es-en, en-fr, fr-en, en-de, de-en, en-it, it-en, es-fr, fr-es); todos tienen el export "merged" cuantizado. SHA-256 y tamaños son los reales, descargados desde el mismo commit de cada par (`onnx/decoder_model_merged_quantized.onnx`); en-es y es-en coinciden con los del ADR 0006. `fetch` volvió a descargar los 10 y se comprobó que cada `decoder.onnx` coincide con el manifiesto.
+
+Tamaño del decoder (bytes): en-es y es-en 60 212 804; en-fr y fr-en 57 381 512; en-de y de-en 56 652 404; en-it 67 970 348; it-en 68 147 852; es-fr y fr-es 65 280 440. El "merged" pesa 370 702 bytes más que el anterior en todos los pares (el disco por par apenas cambia).
+
+Mediana de 3 ejecuciones alternadas (mismo binario; "antes" = `decoder_model_quantized.onnx` sin caché, "después" = el del manifiesto), par en-es, voraz:
+
+| Medida | Antes (sin caché) | Después (KV-cache) | Cambio |
+|---|---|---|---|
+| Traducción, media de medianas por frase (10 frases) | 354-371 ms | 285-294 ms | -20 % |
+| chrF medio (referencias propias) | 86,79 | 86,30 | -0,5 (igual que lo documentado en 5A) |
+| Traducción, RAM (RSS, adaptador solo) | 644 MiB | 577 MiB | -67 MiB |
+| Motor completo, arranque con modelos de texto | 344-382 ms | 610-623 ms | +~250 ms (optimizar el grafo "merged" con `If`) |
+| Motor completo, RAM tras arrancar | 303-309 MiB | 381-384 MiB | +~75 MiB |
+| Motor completo, RAM pico | 949-1115 MiB | 768-833 MiB | -~20 % |
+| Motor completo, frame con texto -> traducción | 435-499 ms | 379-389 ms | -~12 % |
+| CPU en reposo / con texto estable | 1,0-1,1 % / 2,0 % | 1,0-1,1 % / 1,7-2,3 % | = |
+
+Las 10 frases exactas de los tests reales (`translate_real`, `real_pairs`, `real_pipeline`) siguen cumpliéndose con la caché. Se mantiene dentro de los presupuestos (arranque <= 1,2 s, frame -> traducción <= 600 ms). El decoder sin caché sigue cubierto por un test (`the_decoder_without_cache_still_translates_the_same_sentences`) que usa una carpeta de prueba `mt-opus-en-es-plain` con `decoder_model_quantized.onnx` (ver el comentario del test). `decoder_merged.onnx` sigue admitido en carpetas de desarrollo, pero ya no hace falta.
+
+Las medidas se tomaron en la misma máquina que la tabla de 5A pero con otra carga, así que sus cifras absolutas difieren un poco; lo comparable es la relación antes/después.

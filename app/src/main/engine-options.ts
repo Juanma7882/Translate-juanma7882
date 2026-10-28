@@ -16,11 +16,13 @@ export function engineOptionsFrom(settings: Settings): EngineOptions {
     options.fallbackNoTextMs = settings.fallbackSeconds * 1000
   }
   // `0` es "automático": no se envía y el motor usa su valor por defecto.
-  const { intraThreads, beamWidth, cacheCapacity } = settings.performance
+  const { intraThreads, beamWidth, cacheCapacity, ocrMaxSide, lowMemory } = settings.performance
   const performance: PerformanceOptions = {}
   if (intraThreads > 0) performance.intraThreads = intraThreads
   if (beamWidth > 0) performance.beamWidth = beamWidth
   if (cacheCapacity > 0) performance.cacheCapacity = cacheCapacity
+  if (ocrMaxSide > 0) performance.ocrMaxSide = ocrMaxSide
+  if (lowMemory) performance.lowMemory = true
   if (Object.keys(performance).length > 0) options.performance = performance
   return options
 }

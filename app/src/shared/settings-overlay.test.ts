@@ -10,7 +10,7 @@ describe('colores, líneas y rendimiento (hito 5)', () => {
     assert.equal(base.overlay.textColor, '#ffffff')
     assert.equal(base.overlay.backgroundColor, '#0c0c10')
     assert.equal(base.overlay.maxLines, 2)
-    assert.deepEqual(base.performance, { intraThreads: 0, beamWidth: 0, cacheCapacity: 0 })
+    assert.deepEqual(base.performance, { intraThreads: 0, beamWidth: 0, cacheCapacity: 0, ocrMaxSide: 0, lowMemory: false })
   })
 
   test('un archivo anterior al hito 5 se completa con los valores nuevos sin avisos', () => {
@@ -63,9 +63,9 @@ describe('colores, líneas y rendimiento (hito 5)', () => {
   })
 
   test('el rendimiento acepta automático (0) y valores en rango', () => {
-    const ok = applyPatch(base, { performance: { intraThreads: 4, beamWidth: 3, cacheCapacity: 512 } })
+    const ok = applyPatch(base, { performance: { intraThreads: 4, beamWidth: 3, cacheCapacity: 512, ocrMaxSide: 640, lowMemory: true } })
     assert.ok(ok.ok)
-    if (ok.ok) assert.deepEqual(ok.settings.performance, { intraThreads: 4, beamWidth: 3, cacheCapacity: 512 })
+    if (ok.ok) assert.deepEqual(ok.settings.performance, { intraThreads: 4, beamWidth: 3, cacheCapacity: 512, ocrMaxSide: 640, lowMemory: true })
     assert.equal(applyPatch(base, { performance: { cacheCapacity: 0 } }).ok, true)
   })
 
@@ -77,6 +77,9 @@ describe('colores, líneas y rendimiento (hito 5)', () => {
       [{ cacheCapacity: 5 }, 'invalid performance.cacheCapacity'],
       [{ cacheCapacity: 2_000_000 }, 'invalid performance.cacheCapacity'],
       [{ cacheCapacity: 100.5 }, 'invalid performance.cacheCapacity'],
+      [{ ocrMaxSide: 159 }, 'invalid performance.ocrMaxSide'],
+      [{ ocrMaxSide: 4001 }, 'invalid performance.ocrMaxSide'],
+      [{ ocrMaxSide: 640.5 }, 'invalid performance.ocrMaxSide'],
     ]
     for (const [performance, error] of cases) assert.deepEqual(applyPatch(base, { performance }), { ok: false, errors: [error] })
   })

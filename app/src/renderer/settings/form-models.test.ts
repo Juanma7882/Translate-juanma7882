@@ -43,6 +43,8 @@ describe('errores junto al campo', () => {
     assert.equal(fieldOf('invalid overlay.fontSize'), 'fontSize')
     assert.equal(fieldOf('invalid overlay.contrast'), 'textColor')
     assert.equal(fieldOf('invalid performance.beamWidth'), 'perf-beam')
+    assert.equal(fieldOf('invalid performance.ocrMaxSide'), 'perf-ocr-side')
+    assert.equal(fieldOf('invalid performance.lowMemory'), 'perf-lowmem')
     assert.equal(fieldOf('invalid modelsDir: not-writable'), 'models-dir')
     assert.equal(fieldOf('from and to must differ'), null)
   })

@@ -33,6 +33,42 @@ fn describe_failure(cause: &str, wayland: bool) -> CoreError {
     capture_error(format!("could not capture the screen: {cause}.{hint}"))
 }
 
+/// Reintentos tras el primer fallo transitorio y espera entre ellos. `xcap` abre una conexión X
+/// nueva en cada captura; si el servidor la rechaza justo en ese instante (p. ej. Xvfb
+/// regenerándose al cerrarse el último cliente, o un servidor saturado) el siguiente intento
+/// funciona. Un fallo que persiste tras estos reintentos se informa tal cual.
+const TRANSIENT_RETRIES: u32 = 3;
+const TRANSIENT_WAIT: Duration = Duration::from_millis(40);
+
+/// ¿Es un fallo pasajero de conexión (y no, p. ej., una región inválida o un servidor ausente)?
+/// Solo mira el texto del error del sistema, nunca contenido.
+fn is_transient(cause: &str) -> bool {
+    let cause = cause.to_ascii_lowercase();
+    cause.contains("connection error")
+        || cause.contains("i/o error")
+        || cause.contains("connection reset")
+        || cause.contains("broken pipe")
+}
+
+/// Ejecuta `op`, repitiéndola hasta `retries` veces con `wait` entre intentos mientras el error
+/// sea transitorio. Devuelve el último error si no se recupera.
+fn retry_transient<T, E: std::fmt::Display>(
+    retries: u32,
+    wait: Duration,
+    mut op: impl FnMut() -> std::result::Result<T, E>,
+) -> std::result::Result<T, E> {
+    let mut attempt = 0;
+    loop {
+        match op() {
+            Err(error) if attempt < retries && is_transient(&error.to_string()) => {
+                attempt += 1;
+                std::thread::sleep(wait);
+            }
+            other => return other,
+        }
+    }
+}
+
 fn explain(error: &xcap::XCapError) -> CoreError {
     describe_failure(&error.to_string(), wayland_session())
 }
@@ -56,7 +92,8 @@ impl XcapScreen {
     }
 
     fn load() -> Result<Snapshot> {
-        let found = Monitor::all().map_err(|e| explain(&e))?;
+        let found = retry_transient(TRANSIENT_RETRIES, TRANSIENT_WAIT, Monitor::all)
+            .map_err(|e| explain(&e))?;
         let raw = found
             .iter()
             .map(
@@ -101,13 +138,15 @@ impl ScreenCapture for XcapScreen {
     fn grab(&mut self, region: &Region) -> Result<Frame> {
         let snapshot = self.snapshot()?;
         let plan = geometry::plan(region, &snapshot.geometry)?;
-        let image = snapshot.monitors[plan.monitor]
-            .capture_region(plan.x, plan.y, plan.width, plan.height)
-            .map_err(|e| {
-                // La configuración de monitores pudo cambiar: se vuelve a leer en la próxima captura.
-                self.snapshot = None;
-                explain(&e)
-            })?;
+        let monitor = &snapshot.monitors[plan.monitor];
+        let image = retry_transient(TRANSIENT_RETRIES, TRANSIENT_WAIT, || {
+            monitor.capture_region(plan.x, plan.y, plan.width, plan.height)
+        })
+        .map_err(|e| {
+            // La configuración de monitores pudo cambiar: se vuelve a leer en la próxima captura.
+            self.snapshot = None;
+            explain(&e)
+        })?;
         let (width, height) = (image.width(), image.height());
         // Un frame negro (p. ej. contenido protegido) es un frame normal, sin texto: no es un error.
         Frame::new(width, height, image.into_raw())
@@ -141,6 +180,52 @@ mod tests {
             message.contains("no compositor"),
             "conserva la causa original"
         );
+    }
+
+    const NO_WAIT: Duration = Duration::from_millis(0);
+
+    #[test]
+    fn a_transient_connection_error_is_retried_until_it_recovers() {
+        let mut calls = 0;
+        let result = retry_transient(3, NO_WAIT, || {
+            calls += 1;
+            if calls < 3 {
+                Err("Connection error, possible I/O error".to_owned())
+            } else {
+                Ok(calls)
+            }
+        });
+        assert_eq!(result, Ok(3));
+    }
+
+    #[test]
+    fn a_persistent_transient_error_is_reported_after_the_bounded_retries() {
+        let mut calls = 0;
+        let result: std::result::Result<(), String> = retry_transient(3, NO_WAIT, || {
+            calls += 1;
+            Err("Connection error, possible I/O error".to_owned())
+        });
+        assert_eq!(calls, 4, "un intento y tres reintentos");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn permanent_errors_are_not_retried() {
+        let mut calls = 0;
+        let result: std::result::Result<(), String> = retry_transient(3, NO_WAIT, || {
+            calls += 1;
+            Err("Invalid capture region: out of bounds".to_owned())
+        });
+        assert_eq!(calls, 1);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn only_connection_failures_count_as_transient() {
+        assert!(is_transient("Connection error, possible I/O error"));
+        assert!(is_transient("Broken pipe"));
+        assert!(!is_transient("Not supported"));
+        assert!(!is_transient("Invalid capture region: x"));
     }
 
     #[test]

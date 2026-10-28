@@ -2,7 +2,7 @@
 //!
 //! API: `startRegionTranslation`, `startAudioSubtitles`, `stop`, `pause`, `resume`, `configure`,
 //! `modelStatus`, `downloadModels`, `modelInventory`, `deleteModel`, `cancelModelDownload`,
-//! `validateModelsDir` y los registros `onTranslation`, `onSubtitle`, `onError`,
+//! `validateModelsDir`, `cacheStats` y los registros `onTranslation`, `onSubtitle`, `onError`,
 //! `onModelProgress`, `onModeChanged`. Capturas y audio nunca cruzan hacia JS.
 //!
 //! Modos: `startRegionTranslation` con `autoFallback: true` es el modo automático (texto con paso
@@ -84,6 +84,22 @@ pub struct PerformanceOptions {
     pub beam_width: Option<u32>,
     /// Entradas de la caché de traducciones (1 a 1 000 000).
     pub cache_capacity: Option<u32>,
+    /// Lado máximo, en píxeles, con que el OCR detecta texto (160 a 4000; por defecto 960).
+    /// Menos es más rápido y gasta menos RAM, pero puede perder letra pequeña.
+    pub ocr_max_side: Option<u32>,
+    /// Prioriza la RAM sobre la latencia (por defecto `false`).
+    pub low_memory: Option<bool>,
+}
+
+/// Contadores de la caché de traducciones del motor actual (nunca contenido).
+#[napi(object)]
+pub struct CacheStatsInfo {
+    pub hits: f64,
+    pub misses: f64,
+    pub inserts: f64,
+    pub evictions: f64,
+    /// Fracción de consultas que acertaron (0 a 1).
+    pub hit_ratio: f64,
 }
 
 /// Opciones del motor; todas opcionales. Se aplican en el próximo arranque.
@@ -157,7 +173,8 @@ fn ranged(value: Option<u32>, label: &str, min: u32, max: u32) -> napi::Result<O
 }
 
 /// Aplica los parámetros de rendimiento a la configuración. `cacheCapacity` ya lo usa el motor;
-/// `intraThreads` y `beamWidth` quedan en `EngineConfig.performance` para los adaptadores (5A).
+/// `intraThreads` y `beamWidth` quedan en `EngineConfig.performance` para los adaptadores (5A);
+/// `ocrMaxSide` y `lowMemory` van a `EngineConfig.perf`.
 fn apply_performance(
     config: &mut EngineConfig,
     performance: &PerformanceOptions,
@@ -170,6 +187,12 @@ fn apply_performance(
         1,
         1_000_000,
     )?;
+    let ocr_max_side = ranged(
+        performance.ocr_max_side,
+        "performance.ocrMaxSide",
+        160,
+        4000,
+    )?;
     config.performance = PerformanceConfig {
         intra_threads,
         beam_width,
@@ -177,7 +200,28 @@ fn apply_performance(
     if let Some(capacity) = cache {
         config.cache_capacity = capacity;
     }
+    if let Some(side) = ocr_max_side {
+        // Validado en 160..=4000: cabe en u32.
+        config.perf.ocr_max_side = side as u32;
+    }
+    if let Some(low_memory) = performance.low_memory {
+        config.perf.low_memory = low_memory;
+    }
     Ok(())
+}
+
+/// Contadores de la caché de traducciones del motor actual (solo números). Se reinician con
+/// `configure`, que crea un motor nuevo.
+#[napi]
+pub fn cache_stats() -> CacheStatsInfo {
+    let stats = engine().cache_stats();
+    CacheStatsInfo {
+        hits: stats.hits as f64,
+        misses: stats.misses as f64,
+        inserts: stats.inserts as f64,
+        evictions: stats.evictions as f64,
+        hit_ratio: stats.hit_ratio(),
+    }
 }
 
 /// Construye la configuración validando **todo** antes de tocar el estado del motor.

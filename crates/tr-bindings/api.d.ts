@@ -1,4 +1,5 @@
 import type {
+  CacheStatsInfo,
   EngineOptions,
   ErrorEvent,
   InstalledModelInfo,
@@ -17,6 +18,7 @@ import type {
 } from './index'
 
 export type {
+  CacheStatsInfo,
   EngineOptions,
   ErrorEvent,
   InstalledModelInfo,
@@ -99,6 +101,12 @@ export function cancelModelDownload(): Promise<void>
 
 /** Comprueba si una ruta sirve como carpeta de modelos; `reason` explica por qué no. */
 export function validateModelsDir(path: string): ModelsDirCheck
+
+/**
+ * Contadores de la caché de traducciones del motor actual (aciertos, fallos, inserciones,
+ * desalojos y fracción de aciertos). Solo números; se reinician con `configure`.
+ */
+export function cacheStats(): CacheStatsInfo
 
 export function onTranslation(listener: (event: TranslationEvent) => void): Unsubscribe
 export function onSubtitle(listener: (event: SubtitleEvent) => void): Unsubscribe

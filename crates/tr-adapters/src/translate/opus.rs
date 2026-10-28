@@ -24,8 +24,8 @@ pub const MODEL_FILES: [&str; 5] = [
 ];
 
 /// Decoder opcional con caché de claves/valores (export "merged"). Si está, se prefiere a
-/// `decoder.onnx`. Transitorio: cuando el manifiesto entregue el "merged" como `decoder.onnx`
-/// este archivo deja de hacer falta (el tipo de decoder se detecta por sus entradas).
+/// `decoder.onnx`. Solo compatibilidad con carpetas de desarrollo: el manifiesto ya entrega el
+/// "merged" como `decoder.onnx` (el tipo de decoder se detecta por sus entradas).
 pub const CACHED_DECODER_FILE: &str = "decoder_merged.onnx";
 
 /// Piezas de entrada como máximo (la terminación incluida): acota el coste de textos largos.

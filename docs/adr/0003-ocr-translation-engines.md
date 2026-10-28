@@ -98,6 +98,7 @@ Modelos de traducción: `https://huggingface.co/Xenova/opus-mt-<par>/resolve/<re
 | vocab.json | 1 720 044 | b074b4cca0036ade5a39ea97faabd534e1015482c480fc2cb02c6481983eb163 | b074b4cca0036ade5a39ea97faabd534e1015482c480fc2cb02c6481983eb163 |
 | config.json | — | 499eae1f97eeba63172fc884f92fd727ae803b7ceb79c0f653aa4b011152af2f | fab3a7f93185bc5aa7b419f6a1e6e74d98c8f2a506c94493d3019bf46da3478d |
 
+Nota (Hito 5B): el manifiesto ya no entrega `onnx/decoder_model_quantized.onnx` sino `onnx/decoder_model_merged_quantized.onnx` (con caché KV) como `decoder.onnx`; los hashes vigentes están en `crates/tr-models/models.json` y en `docs/perf/hito-5.md`. La tabla de arriba es el decoder original.
 (`target.spm` no hace falta: la decodificación usa `vocab.json`.) Tamaño total por par ≈ 115 MB; OCR small ≈ 31 MB.
 
 ## Consecuencias y riesgos
