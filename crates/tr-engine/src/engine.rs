@@ -14,12 +14,16 @@ use tr_core::audio::{AudioConfig, AudioPipeline, AudioProcessor, AudioRunner};
 use tr_core::cache::{DEFAULT_CAPACITY, TranslationCache};
 use tr_core::clock::SystemClock;
 use tr_core::fallback::{FallbackConfig, FallbackSetup, TextOrAudioPipeline};
+use tr_core::monitor::LevelMonitor;
 use tr_core::region::{RegionConfig, RegionPipeline, RegionProcessor};
 use tr_core::runner::LoopTiming;
 use tr_core::testing::FakeTranslator;
-use tr_core::{CoreError, EventSink, Lang, Region, Result, Translator};
+use tr_core::{
+    AppAudio, AudioCapture, AudioSource, AudioSourceLister, ChunkCallback, CoreError, EventSink,
+    Lang, Region, Result, Translator,
+};
 
-use crate::fake::{DemoAudio, DemoOcr, DemoScreen, DemoStt};
+use crate::fake::{DemoAudio, DemoOcr, DemoScreen, DemoSourceLister, DemoStt};
 use tr_models::Manifest;
 
 use crate::models::Models;
@@ -160,6 +164,42 @@ fn audio_parts(
     }
 }
 
+/// Fija la fuente de una captura: el runner del núcleo arranca con `start`, que aquí pide
+/// `start_source` con la fuente elegida. Así `tr-core` no cambia.
+struct SourcedCapture {
+    inner: Box<dyn AudioCapture>,
+    source: AudioSource,
+}
+
+impl AudioCapture for SourcedCapture {
+    fn start(&mut self, on_chunk: ChunkCallback) -> Result<()> {
+        self.inner.start_source(&self.source, on_chunk)
+    }
+
+    fn start_source(&mut self, source: &AudioSource, on_chunk: ChunkCallback) -> Result<()> {
+        self.inner.start_source(source, on_chunk)
+    }
+
+    fn stop(&mut self) {
+        self.inner.stop();
+    }
+}
+
+/// Captura de la escucha previa: la de demostración o la del sistema. No carga ningún modelo.
+fn monitor_capture(config: &EngineConfig) -> Result<Box<dyn AudioCapture>> {
+    match config.engines {
+        EngineKind::Fake => Ok(Box::new(DemoAudio::new(config.fake_audio_pace))),
+        EngineKind::Real => real::audio(),
+    }
+}
+
+fn audio_lister(kind: EngineKind) -> Box<dyn AudioSourceLister> {
+    match kind {
+        EngineKind::Fake => Box::new(DemoSourceLister),
+        EngineKind::Real => real::source_lister(),
+    }
+}
+
 enum Active {
     Text(RegionPipeline),
     Fallback(TextOrAudioPipeline),
@@ -171,20 +211,28 @@ pub struct Engine {
     sink: Arc<dyn EventSink>,
     clock: Arc<dyn Clock>,
     active: Option<Active>,
+    /// Escucha previa del nivel de una fuente de audio: no es una sesión (no usa modelos ni
+    /// traduce) y cede ante ellas. A lo sumo una.
+    monitor: Option<LevelMonitor>,
     /// Una sola caché para toda la vida del motor: sobrevive a pausas, cambios de modo y
     /// reinicios de sesión (la clave ya incluye el par de idiomas).
     cache: Arc<TranslationCache>,
+    /// Enumera las aplicaciones con audio de esta plataforma (o las de demostración).
+    lister: Box<dyn AudioSourceLister>,
 }
 
 impl Engine {
     pub fn new(config: EngineConfig, sink: Arc<dyn EventSink>) -> Self {
         let cache = Arc::new(TranslationCache::new(config.cache_capacity));
+        let config_kind = config.engines;
         Self {
             config,
             sink,
             clock: Arc::new(SystemClock::new()),
             active: None,
+            monitor: None,
             cache,
+            lister: audio_lister(config_kind),
         }
     }
 
@@ -225,6 +273,8 @@ impl Engine {
             )?),
             None => None,
         };
+        // La escucha cede ante la sesión; se detiene solo ahora, ya validado todo lo que puede fallar.
+        self.stop_audio_monitor();
         self.stop();
 
         let cache = Arc::clone(&self.cache);
@@ -272,9 +322,23 @@ impl Engine {
         Ok(())
     }
 
-    /// Subtitula el audio del sistema. Si ya había algo en marcha, lo reemplaza.
-    pub fn start_audio(&mut self, from: Lang, to: Lang) -> Result<()> {
-        let parts = audio_parts(&self.config, &from, &to, None)?;
+    /// Aplicaciones que están reproduciendo audio. `Err(Capture)` con el motivo si la plataforma
+    /// no puede listarlas. Solo metadatos (identificador y nombre).
+    pub fn list_audio_sources(&self) -> Result<Vec<AppAudio>> {
+        self.lister.list()
+    }
+
+    /// Subtitula el audio de `source` (todo el sistema o una aplicación). Si ya había algo en
+    /// marcha, lo reemplaza. Si faltan modelos lo anterior sigue; si la captura de la fuente
+    /// falla (p. ej. la aplicación ya no suena) lo anterior ya se detuvo.
+    pub fn start_audio(&mut self, from: Lang, to: Lang, source: AudioSource) -> Result<()> {
+        let mut parts = audio_parts(&self.config, &from, &to, None)?;
+        parts.audio = Box::new(SourcedCapture {
+            inner: parts.audio,
+            source,
+        });
+        // La escucha cede ante la sesión: el dispositivo lo abre una sola captura.
+        self.stop_audio_monitor();
         self.stop();
         let processor = AudioProcessor::new(
             AudioConfig::new(from, to),
@@ -287,6 +351,42 @@ impl Engine {
         let pipeline = AudioPipeline::start(parts.audio, processor, self.sink.clone())?;
         self.active = Some(Active::Audio(Box::new(pipeline)));
         Ok(())
+    }
+
+    /// Escucha `source` solo para medir su nivel (la barra de la interfaz antes de iniciar nada):
+    /// emite `Event::AudioLevel` por cada trozo, sin modelos, sin reconocer voz y sin conservar el
+    /// audio. Reemplaza una escucha anterior.
+    ///
+    /// Devuelve `Ok(false)`, sin abrir nada, si hay una sesión en marcha: la escucha cede ante ella.
+    /// Si la fuente no se puede abrir devuelve el error, que **no** se emite como evento.
+    pub fn start_audio_monitor(&mut self, source: AudioSource) -> Result<bool> {
+        if self.active.is_some() {
+            return Ok(false);
+        }
+        self.stop_audio_monitor();
+        let capture = monitor_capture(&self.config)?;
+        self.monitor = Some(LevelMonitor::start(capture, &source, self.sink.clone())?);
+        Ok(true)
+    }
+
+    /// Detiene la escucha previa; al volver no se emiten más niveles. Idempotente.
+    pub fn stop_audio_monitor(&mut self) {
+        if let Some(mut monitor) = self.monitor.take() {
+            monitor.stop();
+        }
+    }
+
+    pub fn is_monitoring(&self) -> bool {
+        self.monitor.as_ref().is_some_and(LevelMonitor::is_running)
+    }
+
+    /// Recibe la escucha previa de `previous`, el motor al que va a sustituir: cambiar la
+    /// configuración no debe apagarla en silencio.
+    pub fn adopt_monitor_from(&mut self, previous: &mut Engine) {
+        if let Some(monitor) = previous.monitor.take() {
+            self.stop_audio_monitor();
+            self.monitor = Some(monitor);
+        }
     }
 
     /// Pausa pantalla y audio. Solo aplica a los pipelines de región.
@@ -306,8 +406,8 @@ impl Engine {
         }
     }
 
-    /// Detiene lo que esté en marcha y libera sus hilos; al volver no se emiten más eventos.
-    /// Es idempotente.
+    /// Detiene la sesión que esté en marcha y libera sus hilos; al volver no se emiten más eventos
+    /// de ella. Es idempotente. No toca la escucha previa (ver [`stop_audio_monitor`](Self::stop_audio_monitor)).
     pub fn stop(&mut self) {
         match self.active.take() {
             Some(Active::Text(mut p)) => p.stop(),
@@ -321,5 +421,6 @@ impl Engine {
 impl Drop for Engine {
     fn drop(&mut self) {
         self.stop();
+        self.stop_audio_monitor();
     }
 }

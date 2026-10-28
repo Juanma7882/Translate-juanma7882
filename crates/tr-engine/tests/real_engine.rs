@@ -89,7 +89,9 @@ fn unsupported_languages_are_reported_before_looking_at_models() {
 #[test]
 fn real_audio_lists_the_missing_speech_models_and_starts_nothing() {
     let (mut engine, sink) = real_engine("audio");
-    let error = engine.start_audio(lang("en"), lang("es")).unwrap_err();
+    let error = engine
+        .start_audio(lang("en"), lang("es"), tr_core::AudioSource::System)
+        .unwrap_err();
     let CoreError::Model(message) = error else {
         panic!("debe ser un error de modelo")
     };
@@ -109,7 +111,9 @@ fn real_audio_lists_the_missing_speech_models_and_starts_nothing() {
 fn real_audio_rejects_unsupported_languages_before_looking_at_models() {
     let (mut engine, _sink) = real_engine("audio-lang");
     for (from, to) in [("ko", "es"), ("en", "ru")] {
-        let error = engine.start_audio(lang(from), lang(to)).unwrap_err();
+        let error = engine
+            .start_audio(lang(from), lang(to), tr_core::AudioSource::System)
+            .unwrap_err();
         assert!(
             matches!(&error, CoreError::InvalidArgument(m) if m.contains("unsupported")),
             "{from}->{to}: {error}"

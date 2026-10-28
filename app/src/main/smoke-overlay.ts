@@ -212,10 +212,11 @@ export async function runOverlaySmoke(windows: WindowManager, settings: Settings
   const look = await colors()
   expect(look.background === 'rgb(16, 32, 48)', `fondo: ${look.background}`)
   expect(look.clamp === '1' && look.truncated && look.height <= 30 * 1.3 * 1.5, `una línea con el resto cortado: ${JSON.stringify(look)}`)
-  expect(window.getBounds().height === overlayHeight(30, 1), `el alto de la ventana sigue al límite: ${window.getBounds().height}`)
+  // ±1 DIP: con escala de pantalla fraccionaria (p. ej. 150 % en Windows) el alto se redondea a píxeles físicos.
+  expect(Math.abs(window.getBounds().height - overlayHeight(30, 1)) <= 1, `el alto de la ventana sigue al límite: ${window.getBounds().height}`)
   settings.update({ overlay: { maxLines: 3 } })
   await waitFor(async () => (await colors()).clamp === '3' && (await colors()).height > look.height * 2, 'three lines to be shown')
-  expect(window.getBounds().height === overlayHeight(30, 3), `alto con tres líneas: ${window.getBounds().height}`)
+  expect(Math.abs(window.getBounds().height - overlayHeight(30, 3)) <= 1, `alto con tres líneas: ${window.getBounds().height}`)
   settings.update({ overlay: { maxLines: 2, width: 700, hideAfterMs: 300 } })
   ok('colores y límite de líneas se aplican en vivo y la ventana ajusta su alto')
 

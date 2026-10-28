@@ -4,8 +4,10 @@
 
 use std::time::Duration;
 
-use crate::error::Result;
-use crate::types::{AudioChunk, Event, Frame, Lang, Region, Segment, TextBlock};
+use crate::error::{CoreError, Result};
+use crate::types::{
+    AppAudio, AudioChunk, AudioSource, Event, Frame, Lang, Region, Segment, TextBlock,
+};
 
 pub trait ScreenCapture: Send {
     fn grab(&mut self, region: &Region) -> Result<Frame>;
@@ -19,8 +21,27 @@ pub trait OcrEngine: Send {
 pub type ChunkCallback = Box<dyn FnMut(AudioChunk) + Send>;
 
 pub trait AudioCapture: Send {
+    /// Captura el audio de todo el sistema.
     fn start(&mut self, on_chunk: ChunkCallback) -> Result<()>;
+
+    /// Captura de la fuente elegida. Por defecto solo admite el sistema; las plataformas con
+    /// captura por aplicación lo sustituyen.
+    fn start_source(&mut self, source: &AudioSource, on_chunk: ChunkCallback) -> Result<()> {
+        match source {
+            AudioSource::System => self.start(on_chunk),
+            AudioSource::Process { .. } => Err(CoreError::Capture(
+                "capturing a single application is not supported on this platform".into(),
+            )),
+        }
+    }
+
     fn stop(&mut self);
+}
+
+/// Enumera las aplicaciones que reproducen audio, sin abrir ninguna captura.
+pub trait AudioSourceLister: Send {
+    /// `Err(Capture)` con el motivo si la plataforma no puede listar aplicaciones.
+    fn list(&self) -> Result<Vec<AppAudio>>;
 }
 
 pub trait SpeechToText: Send {

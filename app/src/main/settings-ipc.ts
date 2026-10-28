@@ -3,7 +3,6 @@
 import { readFileSync, statSync, writeFileSync } from 'node:fs'
 
 import { ipcMain } from 'electron'
-import type { IpcMainInvokeEvent } from 'electron'
 import type { ModelScope } from 'tr-bindings'
 
 import { Channel } from '../shared/ipc.ts'
@@ -12,8 +11,10 @@ import type { EngineEvent } from '../shared/protocol.ts'
 import type { Settings } from '../shared/settings.ts'
 import { exportSettings, importSettings, MAX_IMPORT_BYTES } from '../shared/settings-transfer.ts'
 import type { AppController } from './app-controller.ts'
+import { AudioMonitor, MONITOR_CHANNELS, registerMonitorIpc } from './audio-monitor.ts'
 import type { EngineHost } from './engine-host.ts'
 import type { ModelsService } from './models-service.ts'
+import { guardedHandle, registerSessionIpc, SESSION_CHANNELS } from './session-ipc.ts'
 import type { SettingsStore } from './settings-store.ts'
 import type { WindowManager } from './windows.ts'
 
@@ -46,16 +47,7 @@ export function registerSettingsIpc({ windows, settings, models, host, controlle
     windows.get('settings')?.webContents.send(channel, payload)
   }
   // Rechaza cualquier invocación que no venga de la ventana de Ajustes.
-  const guard = (event: IpcMainInvokeEvent): void => {
-    const window = windows.get('settings')
-    if (!window || event.sender !== window.webContents) throw new Error('unauthorized sender')
-  }
-  const handle = <A extends unknown[], R>(channel: string, run: (...args: A) => R | Promise<R>): void => {
-    ipcMain.handle(channel, (event, ...args) => {
-      guard(event)
-      return run(...(args as A))
-    })
-  }
+  const handle = guardedHandle(ipcMain as never, () => windows.get('settings')?.webContents ?? null)
 
   handle(Channel.settingsGet, () => settings.get())
   handle(Channel.settingsUpdate, async (patch: unknown) => {
@@ -105,6 +97,23 @@ export function registerSettingsIpc({ windows, settings, models, host, controlle
   handle(Channel.modelsStatus, (from: string, to: string, scope?: unknown) => models.status(String(from), String(to), parseScope(scope)))
   handle(Channel.modelsDownload, (from: string, to: string, scope?: unknown) => models.download(String(from), String(to), parseScope(scope)))
 
+  const disposeSession = registerSessionIpc({ handle, controller, host, toWindow })
+
+  // Escucha previa del nivel: la ventana solo dice si Inicio está a la vista; aquí se decide si toca escuchar.
+  const monitor = new AudioMonitor({ host, controller, settings, prepare: () => models.ensureConfigured() })
+  const watchedWindows = new WeakSet<object>()
+  const disposeMonitorIpc = registerMonitorIpc({
+    handle,
+    monitor,
+    toWindow,
+    onWindowGone: (callback) => {
+      const window = windows.get('settings')
+      if (!window || watchedWindows.has(window)) return
+      watchedWindows.add(window)
+      window.once('closed', callback)
+    },
+  })
+
   const onSettings = settings.onChange((s: Settings) => toWindow(Channel.settingsChanged, s))
   const onEvent = (event: EngineEvent): void => {
     if (event.name === 'modelProgress') {
@@ -134,10 +143,15 @@ export function registerSettingsIpc({ windows, settings, models, host, controlle
       Channel.modelsCancel,
       Channel.modelsValidateDir,
       Channel.modelsPickDir,
+      ...SESSION_CHANNELS,
+      ...MONITOR_CHANNELS,
     ]) {
       ipcMain.removeHandler(channel)
     }
     onSettings()
+    disposeSession()
+    disposeMonitorIpc()
+    monitor.dispose()
     host.off('event', onEvent)
     controller.off('state', onState)
     controller.off('notice', onNotice)

@@ -57,7 +57,7 @@ export function importSettings(text: string, current: Settings): ImportResult {
   const merged: Record<string, unknown> = { ...defaults }
   for (const [key, value] of Object.entries(incoming)) {
     const base = defaults[key]
-    merged[key] = isDict(base) && isDict(value) ? { ...base, ...value } : value
+    merged[key] = key !== 'audioSource' && isDict(base) && isDict(value) ? { ...base, ...value } : value
   }
   merged['version'] = SETTINGS_VERSION
   merged['lastRegion'] = current.lastRegion

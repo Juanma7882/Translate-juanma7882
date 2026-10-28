@@ -15,7 +15,7 @@ ocr-paddle = ["dep:oar-ocr", "dep:ort", "dep:image"]
 translate-opus = ["dep:ort", "dep:sentencepiece-model", "dep:spm_precompiled", "dep:serde_json"]
 stt-whisper = ["dep:ort", "dep:realfft", "dep:serde_json"]
 # Captura del audio del sistema: cpal (Windows/macOS) o pulseaudio (Linux), según el destino.
-audio-loopback = ["dep:cpal", "dep:pulseaudio"]
+audio-loopback = ["dep:cpal", "dep:pulseaudio", "dep:wasapi", "dep:sysinfo"]
 
 # Los adaptadores solo LEEN modelos (rutas que les entrega la composición); nunca escriben.
 [dependencies]
@@ -36,6 +36,11 @@ pulseaudio = { workspace = true, optional = true }
 
 [target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
 cpal = { workspace = true, optional = true }
+
+# Captura por aplicacion (WASAPI process loopback) y enumeracion de sesiones, sin `unsafe` propio.
+[target.'cfg(windows)'.dependencies]
+wasapi = { workspace = true, optional = true }
+sysinfo = { workspace = true, optional = true }
 
 [dev-dependencies]
 # Solo para decodificar los PNG de prueba (tests/fixtures).

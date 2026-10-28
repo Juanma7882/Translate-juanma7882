@@ -3,6 +3,7 @@
 
 import type { BrowserWindow } from 'electron'
 
+import { monitorIndex } from '../shared/geometry.ts'
 import type { SavedRegion } from '../shared/settings.ts'
 import type { RegionPicker, DisplaySource } from './region-picker.ts'
 import type { WindowManager } from './windows.ts'
@@ -47,6 +48,7 @@ async function rectState(window: BrowserWindow): Promise<{ hidden: boolean; prev
 
 export async function runSelectorSmoke(windows: WindowManager, picker: RegionPicker, displays: DisplaySource, last: { value: SavedRegion | null }): Promise<void> {
   const scale = displays.underCursor().scaleFactor
+  const monitor = monitorIndex(displays.all(), displays.underCursor())
 
   // 1. Arrastrar y soltar devuelve la región física (escala aplicada) del monitor correcto.
   let pick = picker.pick()
@@ -55,6 +57,7 @@ export async function runSelectorSmoke(windows: WindowManager, picker: RegionPic
   await sleep(300)
   mouse(window, 'mouseDown', { x: 100, y: 80 })
   mouse(window, 'mouseMove', { x: 250, y: 150 })
+  await sleep(100)
   const dragging = await rectState(window)
   expect(!dragging.hidden && !dragging.previous && Math.round(dragging.w) === 150 && Math.round(dragging.h) === 70, 'el rectángulo se dibuja mientras se arrastra')
   mouse(window, 'mouseMove', { x: 400, y: 200 })
@@ -62,7 +65,7 @@ export async function runSelectorSmoke(windows: WindowManager, picker: RegionPic
   const region = await pick
   expect(region !== null, 'el arrastre confirma una región')
   expect(
-    region?.x === Math.round(100 * scale) && region?.y === Math.round(80 * scale) && region?.width === Math.round(400 * scale) - Math.round(100 * scale) && region?.height === Math.round(200 * scale) - Math.round(80 * scale) && region?.monitor === 0,
+    region?.x === Math.round(100 * scale) && region?.y === Math.round(80 * scale) && region?.width === Math.round(400 * scale) - Math.round(100 * scale) && region?.height === Math.round(200 * scale) - Math.round(80 * scale) && region?.monitor === monitor,
     `región física inesperada: ${JSON.stringify(region)}`,
   )
   expect(windows.get('selector') === undefined, 'la ventana se cierra al confirmar')

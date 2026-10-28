@@ -13,7 +13,7 @@ import type { Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { nativeTheme } from 'electron'
+import { nativeTheme, session as electronSession } from 'electron'
 import type { BrowserWindow } from 'electron'
 
 import type { AppController } from './app-controller.ts'
@@ -150,14 +150,28 @@ export async function runSettingsSmoke(host: EngineHost, windows: WindowManager,
       disposeOverlay()
     }
 
+    // La guía de primer uso recuerda en localStorage que terminó; cada ejecución parte de un perfil limpio.
+    await electronSession.defaultSession.clearStorageData({ storages: ['localstorage'] })
     const window = await windows.openSettings({ show: false })
     await waitFor(() => exists(window, '#models li'), 'the model list')
 
-    // Los idiomas ofrecidos salen del catálogo del motor (solo en -> es en este manifiesto).
-    const fromOptions = await evaluate<string[]>(window, `[...document.querySelectorAll('#from option')].map(o => o.value)`)
-    const toOptions = await evaluate<string[]>(window, `[...document.querySelectorAll('#to option')].map(o => o.value)`)
-    expect(JSON.stringify(fromOptions) === '["en"]' && JSON.stringify(toOptions) === '["es"]', `idiomas del catálogo: ${fromOptions} -> ${toOptions}`)
-    ok('los idiomas ofrecidos salen del catálogo de modelos')
+    // Los idiomas ofrecidos salen del catálogo del motor (solo en -> es en este manifiesto) y se gestionan en un único sitio.
+    await waitFor(() => exists(window, '#languages li[data-pair]'), 'the language list')
+    const pairs = await evaluate<string[]>(window, `[...document.querySelectorAll('#languages li[data-pair]')].map(li => li.dataset.pair)`)
+    expect(JSON.stringify(pairs) === '["en>es"]', `pares del catálogo: ${pairs}`)
+    expect(!(await exists(window, '#from')) && !(await exists(window, '#to')), 'General ya no duplica los selectores de idioma')
+    expect(await evaluate<boolean>(window, `document.getElementById('panel-advanced').querySelector('input[name=engines]') !== null`), 'Motores está en Avanzado')
+    expect(!(await evaluate<boolean>(window, `document.getElementById('panel-general').querySelector('input[name=engines]') !== null`)), 'Motores ya no está en General')
+    ok('los idiomas salen del catálogo, se eligen en un solo sitio y Motores vive en Avanzado')
+
+    // Inicio: sin modelos ni región la guía muestra los tres pasos y destaca el primero.
+    await waitFor(() => exists(window, '#first-run'), 'the first-run guide')
+    expect((await evaluate<string[]>(window, `[...document.querySelectorAll('#first-run li')].map(li => li.dataset.step)`)).join() === 'language,region,start', 'la guía tiene tres pasos')
+    expect(await evaluate<boolean>(window, `document.querySelector('#first-run li.current').dataset.step === 'language'`), 'se destaca el primer paso pendiente')
+    expect((await text(window, '#region-text')).includes('Falta'), 'Inicio avisa de que falta la región')
+    expect((await text(window, '#choose-region')).includes('Elegir región'), 'el botón dice «Elegir región»')
+    expect(await evaluate<boolean>(window, `document.getElementById('pair-select').selectedOptions[0].textContent.includes('sin instalar')`), 'el par activo figura sin instalar')
+    ok('Inicio guía el primer uso: tres pasos, región pendiente y par sin instalar')
 
     // Accesibilidad: cada control con etiqueta, fieldsets con leyenda y progreso con nombre accesible.
     const unlabeled = await evaluate<string[]>(
@@ -178,10 +192,11 @@ export async function runSettingsSmoke(host: EngineHost, windows: WindowManager,
 
     // Pestañas: roles WAI-ARIA, una sola en el orden de tabulación y navegación con el teclado.
     const tabs = await evaluate<string[]>(window, `[...document.querySelectorAll('[role=tab]')].map(t => t.id)`)
-    expect(tabs.join() === 'tab-general,tab-models,tab-appearance,tab-shortcuts,tab-advanced', `pestañas: ${tabs}`)
+    expect(tabs.join() === 'tab-home,tab-languages,tab-general,tab-models,tab-appearance,tab-shortcuts,tab-advanced', `pestañas: ${tabs}`)
     const stops = await evaluate<number>(window, `[...document.querySelectorAll('[role=tab]')].filter(t => t.tabIndex === 0).length`)
     expect(stops === 1, 'solo la pestaña activa está en el orden de tabulación')
     const key = (k: string) => evaluate(window, `document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(k)}, bubbles: true }))`)
+    await click(window, '#tab-general')
     await evaluate(window, `document.getElementById('tab-general').focus()`)
     await key('ArrowRight')
     await waitFor(async () => (await attr(window, '#tab-models', 'aria-selected')) === 'true', 'the models tab to be selected')
@@ -191,7 +206,7 @@ export async function runSettingsSmoke(host: EngineHost, windows: WindowManager,
     await key('End')
     await waitFor(async () => (await attr(window, '#tab-advanced', 'aria-selected')) === 'true', 'End to go to the last tab')
     await key('ArrowRight')
-    await waitFor(async () => (await attr(window, '#tab-general', 'aria-selected')) === 'true', 'the tabs to wrap around')
+    await waitFor(async () => (await attr(window, '#tab-home', 'aria-selected')) === 'true', 'the tabs to wrap around')
     await key('Home')
     await key('ArrowLeft')
     await waitFor(async () => (await attr(window, '#tab-advanced', 'aria-selected')) === 'true', 'ArrowLeft to wrap backwards')
@@ -294,6 +309,16 @@ export async function runSettingsSmoke(host: EngineHost, windows: WindowManager,
     // Con una traducción en marcha no se borra ni se cambia la carpeta.
     session.state = { running: true, paused: false, mode: null }
     session.emit('state', session.state)
+    // La guía de primer uso se completa sola (modelos listos, región guardada, sesión vista) y no vuelve.
+    expect(settings.update({ lastRegion: { x: 10, y: 20, width: 300, height: 80, monitor: 0 } }).ok, 'región de prueba')
+    await click(window, '#tab-home')
+    await waitFor(async () => !(await exists(window, '#first-run')), 'the guide to disappear')
+    expect((await text(window, '#region-text')).includes('300 × 80'), 'Inicio muestra la región guardada')
+    expect((await text(window, '#choose-region')).includes('Cambiar región'), 'el botón pasa a «Cambiar región»')
+    expect(await evaluate<boolean>(window, `document.getElementById('pair-select').disabled`), 'con la sesión en marcha el menú de idiomas se desactiva')
+    await click(window, '#tab-models')
+    await waitFor(async () => (await attr(window, '#installed li[data-model=t] [data-action=delete]', 'disabled')) !== null, 'delete buttons disabled while running')
+    ok('la guía se completa sola y desaparece; Inicio muestra la región y bloquea el cambio de idioma en marcha')
     await waitFor(async () => (await attr(window, '#installed li[data-model=t] [data-action=delete]', 'disabled')) !== null, 'delete buttons disabled while running')
     expect(await exists(window, '#delete-blocked'), 'se explica por qué no se puede borrar')
     const blocked = await evaluate<{ ok: boolean; reason?: string }>(window, `window.trSettings.deleteModel('t')`)
@@ -370,6 +395,9 @@ export async function runSettingsSmoke(host: EngineHost, windows: WindowManager,
     // Posición manual.
     await setControl(window, '#placement-manual', true)
     await waitFor(() => settings.get().overlay.placement === 'manual', 'manual placement to be saved')
+    expect(await evaluate<boolean>(window, `document.getElementById('position-coords').open === false`), 'X e Y están plegadas por defecto')
+    expect(await evaluate<boolean>(window, `!!(document.getElementById('move-overlay').compareDocumentPosition(document.getElementById('placement-auto')) & Node.DOCUMENT_POSITION_FOLLOWING)`), 'el botón de mover va antes que las opciones de posición')
+    expect(await evaluate<boolean>(window, `getComputedStyle(document.querySelector('.preview-sticky')).position === 'sticky'`), 'la vista previa queda fija')
     await setControl(window, '#overlay-x', '120')
     await waitFor(() => settings.get().overlay.x === 120, 'x to be saved')
     await setControl(window, '#placement-auto', true)
@@ -420,6 +448,14 @@ export async function runSettingsSmoke(host: EngineHost, windows: WindowManager,
     await setControl(window, '#mode-audio', true)
     await waitFor(() => settings.get().mode === 'audio', 'audio mode to be saved')
     await waitFor(async () => !(await exists(window, '#fallbackSeconds')), 'the fallback field to hide outside auto mode')
+    // Inicio refleja el modo: en solo audio no hay región que elegir.
+    expect(await evaluate<boolean>(window, `document.querySelector('input[name=home-mode][value=audio]').checked`), 'Inicio marca el modo elegido en General')
+    expect(!(await exists(window, '#choose-region')), 'en solo audio no se ofrece elegir región')
+    expect((await text(window, '#region-text')).includes('no necesita región'), 'Inicio explica que el modo no necesita región')
+    await setControl(window, 'input[name=home-mode][value=text]', true)
+    await waitFor(() => settings.get().mode === 'text', 'the mode chosen from Inicio to be saved')
+    await waitFor(async () => await evaluate<boolean>(window, `document.getElementById('mode-text').checked`), 'General to follow the mode chosen in Inicio')
+    expect(await exists(window, '#choose-region'), 'en solo texto vuelve el botón de región')
     await setControl(window, '#mode-text', true)
     await waitFor(() => settings.get().mode === 'text', 'text mode to be saved')
     await setControl(window, '#mode-auto', true)
@@ -490,6 +526,57 @@ export async function runSettingsSmoke(host: EngineHost, windows: WindowManager,
     expect(after.mode === 'auto' && after.performance.beamWidth === 0 && after.shortcuts.toggleMode === defaultSettings().shortcuts.toggleMode, 'las preferencias vuelven a su valor por defecto')
     expect(after.lastRegion?.width === 300 && after.modelsDir === join(dir, 'secreto'), 'restablecer conserva región y carpeta')
     ok('restablecer pide confirmación y conserva región y carpeta')
+
+    // Escucha previa del nivel: la barra se mueve en cuanto Inicio está a la vista, sin sesión, y cede ante una sesión.
+    // Con motores de demostración (el audio suena a ráfagas y no abre ningún dispositivo del equipo).
+    let levelEvents = 0
+    host.on('event', (event) => {
+      if (event.name === 'audioLevel') levelEvents += 1
+    })
+    /** Cuenta los niveles que llegan en una ventana de tiempo; cero = no hay ninguna captura midiendo. */
+    const levelsDuring = async (ms: number): Promise<number> => {
+      await sleep(400) // deja pasar lo que ya estuviera en vuelo
+      const before = levelEvents
+      await sleep(ms)
+      return levelEvents - before
+    }
+    expect(settings.update({ engines: 'fake', mode: 'auto', audioSource: { kind: 'system' } }).ok, 'ajustes de la escucha previa')
+    window.showInactive() // una ventana oculta cuenta como «fuera de vista»
+    await click(window, '#tab-home')
+    await waitFor(async () => (await text(window, '#monitor-note')).includes('Escuchando'), 'the preview note', 15_000)
+    await waitFor(async () => Number((await attr(window, '#level-meter', 'aria-valuenow')) ?? 0) > 0, 'the meter to move without a session')
+    ok('la barra se mueve en cuanto Inicio está a la vista, sin pulsar Iniciar')
+
+    // Una sesión la sustituye: el motor cierra la escucha antes de abrir su captura y, al terminar, vuelve a medir.
+    session.state = { running: true, paused: false, mode: null }
+    session.emit('state', session.state)
+    await waitFor(async () => (await text(window, '#monitor-note')) === '', 'the preview note to go away with a session')
+    expect((await levelsDuring(600)) === 0, 'la escucha no sigue midiendo con una sesión en marcha')
+    session.state = { running: false, paused: false, mode: null }
+    session.emit('state', session.state)
+    await waitFor(async () => (await text(window, '#monitor-note')).includes('Escuchando'), 'the preview to come back after the session')
+    expect((await levelsDuring(600)) > 0, 'al terminar la sesión la escucha vuelve a medir')
+    ok('con una sesión en marcha la escucha cede y al terminar vuelve a medir')
+
+    // «Solo texto» no usa el audio: no se abre ninguna captura y la barra lo explica.
+    expect(settings.update({ mode: 'text' }).ok, 'modo solo texto')
+    await waitFor(async () => (await text(window, '#monitor-note')).includes('Solo texto'), 'the text-mode note')
+    expect((await levelsDuring(600)) === 0, 'sin captura de audio en «Solo texto»')
+    expect(settings.update({ mode: 'auto' }).ok, 'modo automático')
+    await waitFor(async () => (await text(window, '#monitor-note')).includes('Escuchando'), 'the preview after the text mode')
+    ok('en «Solo texto» no se escucha el audio y se explica')
+
+    // Fuera de vista (otra pestaña o ventana oculta) no queda ninguna captura abierta.
+    await click(window, '#tab-general')
+    expect((await levelsDuring(600)) === 0, 'al salir de Inicio no queda ninguna captura abierta')
+    await click(window, '#tab-home')
+    await waitFor(() => levelEvents > 0 && text(window, '#monitor-note').then((t) => t.includes('Escuchando')), 'the preview to resume on return')
+    expect((await levelsDuring(600)) > 0, 'al volver a Inicio se vuelve a medir')
+    window.hide()
+    expect((await levelsDuring(600)) === 0, 'con la ventana oculta tampoco queda ninguna captura abierta')
+    ok('al salir de Inicio o ocultar la ventana la escucha se detiene y al volver se reanuda')
+
+    expect(settings.update({ engines: 'real' }).ok, 'se restauran los motores reales')
 
     // Tema claro y oscuro del sistema.
     const background = () => evaluate<string>(window, `getComputedStyle(document.body).backgroundColor`)

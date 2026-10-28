@@ -2,8 +2,9 @@
 //!
 //! API: `startRegionTranslation`, `startAudioSubtitles`, `stop`, `pause`, `resume`, `configure`,
 //! `modelStatus`, `downloadModels`, `modelInventory`, `deleteModel`, `cancelModelDownload`,
-//! `validateModelsDir`, `cacheStats` y los registros `onTranslation`, `onSubtitle`, `onError`,
-//! `onModelProgress`, `onModeChanged`. Capturas y audio nunca cruzan hacia JS.
+//! `validateModelsDir`, `cacheStats`, `listAudioSources`, `audioVoiceThreshold`,
+//! `startAudioMonitor`, `stopAudioMonitor` y los registros
+//! `onTranslation`, `onSubtitle`, `onError`, `onModelProgress`, `onModeChanged`, `onAudioLevel`. Capturas y audio nunca cruzan hacia JS.
 //!
 //! Modos: `startRegionTranslation` con `autoFallback: true` es el modo automático (texto con paso
 //! a audio) y es el único que emite `onModeChanged`; sin fallback es "solo texto" y
@@ -19,16 +20,17 @@ use std::time::Duration;
 use napi::bindgen_prelude::AsyncTask;
 use napi::{Error, Status};
 use napi_derive::{module_init, napi};
+use tr_engine::tr_core::audio::DEFAULT_VAD_THRESHOLD;
 use tr_engine::tr_core::fallback::FallbackConfig;
 use tr_engine::tr_core::runner::LoopTiming;
-use tr_engine::tr_core::{CoreError, ErrorCategory, Lang, Region, panic_hook};
+use tr_engine::tr_core::{AudioSource, CoreError, ErrorCategory, Lang, Region, panic_hook};
 use tr_engine::{
     Engine, EngineConfig, EngineKind, Manifest, ModelScope, Models, PerformanceConfig,
 };
 
 use events::{
-    BindingSink, Callback, Callbacks, ErrorEvent, ModeEvent, ModelProgressEvent, SubtitleEvent,
-    TranslationEvent,
+    AudioLevelEvent, BindingSink, Callback, Callbacks, ErrorEvent, ModeEvent, ModelProgressEvent,
+    SubtitleEvent, TranslationEvent,
 };
 use models::{DeleteTask, DownloadTask, InventoryTask, ModelCatalog, ModelsDirCheck, StatusTask};
 
@@ -265,11 +267,17 @@ fn build_config(options: &EngineOptions) -> napi::Result<EngineConfig> {
 }
 
 /// Aplica opciones al motor. Si alguna es inválida falla sin cambiar nada; si todas lo son,
-/// detiene lo que esté en marcha.
+/// detiene lo que esté en marcha, salvo la escucha previa del nivel (`startAudioMonitor`), que
+/// pasa al motor nuevo: no es una sesión y cambiar los ajustes no debe apagarla en silencio.
 #[napi]
 pub fn configure(options: EngineOptions) -> napi::Result<()> {
     let config = build_config(&options)?;
-    *engine() = new_engine(config);
+    let mut next = new_engine(config);
+    {
+        let mut current = engine();
+        next.adopt_monitor_from(&mut current);
+        *current = next;
+    }
     let previous = MODELS.lock().unwrap_or_else(PoisonError::into_inner).take();
     if let Some(previous) = previous {
         previous.cancel();
@@ -294,11 +302,113 @@ pub fn start_region_translation(rect: Rect, from: String, to: String) -> napi::R
         .map_err(|e| to_napi(&e))
 }
 
-/// Subtitula el audio del sistema. Reemplaza lo que estuviera en marcha.
+/// Fuente de audio: `{ kind: 'system' }` o `{ kind: 'app', id, name }`.
+#[napi(object)]
+pub struct AudioSourceInput {
+    /// `system` (todo el sistema) o `app` (una aplicación).
+    pub kind: String,
+    /// Identificador de proceso de la aplicación (solo `app`).
+    pub id: Option<u32>,
+    /// Nombre del programa (solo `app`).
+    pub name: Option<String>,
+}
+
+/// Aplicación con audio activo.
+#[napi(object)]
+pub struct AudioAppInfo {
+    pub id: u32,
+    pub name: String,
+}
+
+/// Resultado de `listAudioSources`: con `supported: true` trae `apps`; si no, el motivo.
+#[napi(object)]
+pub struct AudioSourceList {
+    pub supported: bool,
+    pub apps: Option<Vec<AudioAppInfo>>,
+    pub reason: Option<String>,
+}
+
+fn audio_source(input: Option<AudioSourceInput>) -> napi::Result<AudioSource> {
+    let Some(input) = input else {
+        return Ok(AudioSource::System);
+    };
+    match input.kind.as_str() {
+        "system" => Ok(AudioSource::System),
+        "app" => match input.id {
+            Some(id) => Ok(AudioSource::Process {
+                id,
+                name: input.name.unwrap_or_default(),
+            }),
+            None => Err(invalid_arg("an application source needs an id")),
+        },
+        other => Err(invalid_arg(format!(
+            "unknown audio source kind `{other}` (use `system` or `app`)"
+        ))),
+    }
+}
+
+/// Subtitula el audio de `source` (por defecto, todo el sistema). Reemplaza lo que estuviera en marcha.
 #[napi]
-pub fn start_audio_subtitles(from: String, to: String) -> napi::Result<()> {
+pub fn start_audio_subtitles(
+    from: String,
+    to: String,
+    source: Option<AudioSourceInput>,
+) -> napi::Result<()> {
     let (from, to) = languages(&from, &to)?;
-    engine().start_audio(from, to).map_err(|e| to_napi(&e))
+    let source = audio_source(source)?;
+    engine()
+        .start_audio(from, to, source)
+        .map_err(|e| to_napi(&e))
+}
+
+/// Escucha `source` (por defecto, todo el sistema) solo para medir su nivel: `onAudioLevel` recibe un
+/// nivel por trozo de 100 ms, sin modelos, sin reconocer voz ni traducir y sin conservar el audio.
+/// Reemplaza una escucha anterior. Devuelve `false`, sin abrir nada, si hay una sesión en marcha:
+/// la escucha cede ante ella. Si la fuente no se puede abrir falla con el motivo.
+#[napi]
+pub fn start_audio_monitor(source: Option<AudioSourceInput>) -> napi::Result<bool> {
+    let source = audio_source(source)?;
+    engine()
+        .start_audio_monitor(source)
+        .map_err(|e| to_napi(&e))
+}
+
+/// Detiene la escucha previa; después no llegan más niveles de ella. Idempotente.
+#[napi]
+pub fn stop_audio_monitor() {
+    engine().stop_audio_monitor();
+}
+
+/// Aplicaciones que reproducen audio ahora. Síncrona; si la plataforma no puede listarlas devuelve
+/// `supported: false` con el motivo.
+#[napi]
+pub fn list_audio_sources() -> AudioSourceList {
+    match engine().list_audio_sources() {
+        Ok(apps) => AudioSourceList {
+            supported: true,
+            apps: Some(
+                apps.into_iter()
+                    .map(|app| AudioAppInfo {
+                        id: app.id,
+                        name: app.name,
+                    })
+                    .collect(),
+            ),
+            reason: None,
+        },
+        Err(error) => AudioSourceList {
+            supported: false,
+            apps: None,
+            reason: Some(error.to_string()),
+        },
+    }
+}
+
+/// Nivel RMS a partir del cual el motor considera que hay voz (de 0 a 1). Única fuente de verdad
+/// para la marca de la barra de nivel.
+#[napi]
+pub fn audio_voice_threshold() -> f64 {
+    f64::from(DEFAULT_VAD_THRESHOLD)
 }
 
 /// Detiene el motor y espera a que terminen sus hilos: no se producen más eventos. Los que ya
@@ -439,4 +549,9 @@ pub fn on_model_progress(callback: Callback<ModelProgressEvent>) {
 #[napi(ts_args_type = "callback: (event: ModeEvent) => void")]
 pub fn on_mode_changed(callback: Callback<ModeEvent>) {
     CALLBACKS.mode.set(callback);
+}
+
+#[napi(ts_args_type = "callback: (event: AudioLevelEvent) => void")]
+pub fn on_audio_level(callback: Callback<AudioLevelEvent>) {
+    CALLBACKS.level.set(callback);
 }

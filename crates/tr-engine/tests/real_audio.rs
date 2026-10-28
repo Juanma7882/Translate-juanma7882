@@ -155,7 +155,11 @@ fn a_phrase_played_on_the_speakers_becomes_a_translated_subtitle() {
         Arc::new(sink.clone()),
     );
     engine
-        .start_audio(Lang::new("en").unwrap(), Lang::new("es").unwrap())
+        .start_audio(
+            Lang::new("en").unwrap(),
+            Lang::new("es").unwrap(),
+            tr_core::AudioSource::System,
+        )
         .expect("arrancar los motores reales de audio");
 
     // Un poco de silencio, la frase y silencio al final para que el VAD cierre la intervención.

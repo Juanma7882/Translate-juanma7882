@@ -9,6 +9,41 @@
  */
 export declare const __napiBindingTarget: 'native' | 'wasm32-wasi' | 'wasm32-wasip1'
 
+/** Aplicación con audio activo. */
+export interface AudioAppInfo {
+  id: number
+  name: string
+}
+
+/** Nivel del último trozo de audio (de 0 a 1). Solo números. */
+export interface AudioLevelEvent {
+  rms: number
+  peak: number
+}
+
+/** Fuente de audio: `{ kind: 'system' }` o `{ kind: 'app', id, name }`. */
+export interface AudioSourceInput {
+  /** `system` (todo el sistema) o `app` (una aplicación). */
+  kind: string
+  /** Identificador de proceso de la aplicación (solo `app`). */
+  id?: number
+  /** Nombre del programa (solo `app`). */
+  name?: string
+}
+
+/** Resultado de `listAudioSources`: con `supported: true` trae `apps`; si no, el motivo. */
+export interface AudioSourceList {
+  supported: boolean
+  apps?: Array<AudioAppInfo>
+  reason?: string
+}
+
+/**
+ * Nivel RMS a partir del cual el motor considera que hay voz (de 0 a 1). Única fuente de verdad
+ * para la marca de la barra de nivel.
+ */
+export declare function audioVoiceThreshold(): number
+
 /**
  * Contadores de la caché de traducciones del motor actual (solo números). Se reinician con
  * `configure`, que crea un motor nuevo.
@@ -30,7 +65,8 @@ export declare function cancelModelDownload(): void
 
 /**
  * Aplica opciones al motor. Si alguna es inválida falla sin cambiar nada; si todas lo son,
- * detiene lo que esté en marcha.
+ * detiene lo que esté en marcha, salvo la escucha previa del nivel (`startAudioMonitor`), que
+ * pasa al motor nuevo: no es una sesión y cambiar los ajustes no debe apagarla en silencio.
  */
 export declare function configure(options: EngineOptions): void
 
@@ -93,6 +129,12 @@ export interface LangPair {
   to: string
 }
 
+/**
+ * Aplicaciones que reproducen audio ahora. Síncrona; si la plataforma no puede listarlas devuelve
+ * `supported: false` con el motivo.
+ */
+export declare function listAudioSources(): AudioSourceList
+
 export interface ModeEvent {
   /** `text`, `audio` o `paused`. */
   mode: string
@@ -153,6 +195,8 @@ export interface ModelStatusInfo {
   size: number
 }
 
+export declare function onAudioLevel(callback: (event: AudioLevelEvent) => void): void
+
 export declare function onError(callback: (event: ErrorEvent) => void): void
 
 export declare function onModeChanged(callback: (event: ModeEvent) => void): void
@@ -199,8 +243,16 @@ export interface Rect {
 /** Reanuda tras una pausa, en el modo previo. */
 export declare function resume(): void
 
-/** Subtitula el audio del sistema. Reemplaza lo que estuviera en marcha. */
-export declare function startAudioSubtitles(from: string, to: string): void
+/**
+ * Escucha `source` (por defecto, todo el sistema) solo para medir su nivel: `onAudioLevel` recibe un
+ * nivel por trozo de 100 ms, sin modelos, sin reconocer voz ni traducir y sin conservar el audio.
+ * Reemplaza una escucha anterior. Devuelve `false`, sin abrir nada, si hay una sesión en marcha:
+ * la escucha cede ante ella. Si la fuente no se puede abrir falla con el motivo.
+ */
+export declare function startAudioMonitor(source?: AudioSourceInput | undefined | null): boolean
+
+/** Subtitula el audio de `source` (por defecto, todo el sistema). Reemplaza lo que estuviera en marcha. */
+export declare function startAudioSubtitles(from: string, to: string, source?: AudioSourceInput | undefined | null): void
 
 /** Traduce el texto de una región de la pantalla. Reemplaza lo que estuviera en marcha. */
 export declare function startRegionTranslation(rect: Rect, from: string, to: string): void
@@ -210,6 +262,9 @@ export declare function startRegionTranslation(rect: Rect, from: string, to: str
  * estaban en cola hacia JS pueden entregarse enseguida; `api.js` los descarta. Idempotente.
  */
 export declare function stop(): void
+
+/** Detiene la escucha previa; después no llegan más niveles de ella. Idempotente. */
+export declare function stopAudioMonitor(): void
 
 export interface SubtitleEvent {
   original: string

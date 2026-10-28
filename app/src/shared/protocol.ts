@@ -16,12 +16,15 @@ import type {
   TranslationEvent,
 } from 'tr-bindings'
 
+import type { AudioLevel, AudioSourcesInfo } from './ipc.ts'
+
 export interface EngineEventMap {
   translation: TranslationEvent
   subtitle: SubtitleEvent
   error: ErrorEvent
   modelProgress: ModelProgressEvent
   mode: ModeEvent
+  audioLevel: AudioLevel
 }
 
 export type EngineEventName = keyof EngineEventMap
@@ -30,11 +33,14 @@ export type EngineEvent = {
   [K in EngineEventName]: { name: K; payload: EngineEventMap[K] }
 }[EngineEventName]
 
+/** Fuente de audio que entiende el motor: `id` sale de `listAudioSources`. */
+export type AudioSourceRequest = { kind: 'system' } | { kind: 'app'; id: number; name: string }
+
 /** Órdenes de main hacia el motor. */
 export type Command =
   | { type: 'configure'; options: EngineOptions }
   | { type: 'startRegion'; rect: Rect; from: string; to: string }
-  | { type: 'startAudio'; from: string; to: string }
+  | { type: 'startAudio'; from: string; to: string; source?: AudioSourceRequest }
   | { type: 'stop' }
   | { type: 'pause' }
   | { type: 'resume' }
@@ -45,6 +51,10 @@ export type Command =
   | { type: 'deleteModel'; modelId: string }
   | { type: 'cancelDownload' }
   | { type: 'validateModelsDir'; path: string }
+  | { type: 'listAudioSources' }
+  | { type: 'voiceThreshold' }
+  | { type: 'startAudioMonitor'; source?: AudioSourceRequest }
+  | { type: 'stopAudioMonitor' }
 
 /** Qué devuelve cada orden al completarse. */
 export type CommandResult<C extends Command> = C extends { type: 'modelStatus' }
@@ -57,7 +67,13 @@ export type CommandResult<C extends Command> = C extends { type: 'modelStatus' }
         ? number
         : C extends { type: 'validateModelsDir' }
           ? ModelsDirCheck
-          : void
+          : C extends { type: 'listAudioSources' }
+            ? AudioSourcesInfo
+            : C extends { type: 'voiceThreshold' }
+              ? number
+              : C extends { type: 'startAudioMonitor' }
+                ? boolean
+                : void
 
 export type Request = Command & { id: number }
 

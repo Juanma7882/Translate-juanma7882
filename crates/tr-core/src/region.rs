@@ -454,7 +454,8 @@ mod tests {
     #[test]
     fn slow_ocr_only_processes_the_latest_frames() {
         let rig = rig();
-        rig.ocr.set_latency(Duration::from_millis(30));
+        // Latencia holgada: en Windows `sleep(1 ms)` dura ~15 ms y las capturas serían pocas.
+        rig.ocr.set_latency(Duration::from_millis(150));
         let screen = FakeScreen::new();
         for i in 0..2000 {
             screen.push_frame(frame(if i % 2 == 0 { 0 } else { 200 }));

@@ -1,7 +1,7 @@
 // Prueba de punta a punta con motores reales (TR_SMOKE=e2e, necesita TR_MODELS_DIR y un servidor X):
 // una ventana de la propia app muestra un texto conocido, el selector devuelve su región, el motor la
 // captura, reconoce y traduce, y el overlay muestra la traducción. Bajo WSLg `xcap` no puede capturar
-// la pantalla: se ejecuta con `scripts/with-xvfb.sh` (ver `npm run smoke:e2e`).
+// la pantalla: se ejecuta con `scripts/with-xvfb.sh` (ver `pnpm run smoke:e2e`).
 
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -64,7 +64,7 @@ export async function runE2eSmoke(host: EngineHost, windows: WindowManager, disp
   expect(settings.update({ engines: 'real', from: 'en', to: 'es', modelsDir }).ok, 'ajustes')
 
   const notices: Notice[] = []
-  const shell = new AppShell({ host, windows, settings, displays, tray: noTray, shortcuts: { register: () => true, unregister: () => {} }, notify: (n) => notices.push(n), quit: () => {}, files: scriptedFiles() })
+  const shell = new AppShell({ host, windows, settings, displays, tray: noTray, shortcuts: { register: () => true, unregister: () => {} }, notify: (n) => notices.push(n), quit: () => {}, files: scriptedFiles(), openOnStart: false })
   shell.start()
   await host.whenReady()
 

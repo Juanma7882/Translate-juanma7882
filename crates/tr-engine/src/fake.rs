@@ -8,8 +8,9 @@ use std::time::Duration;
 
 use crossbeam_channel::{RecvTimeoutError, Sender, bounded};
 use tr_core::{
-    AudioCapture, AudioChunk, ChunkCallback, CoreError, Frame, Lang, OcrEngine, Region, Result,
-    SAMPLE_RATE, ScreenCapture, Segment, SegmentKind, SpeechToText, TextBlock,
+    AppAudio, AudioCapture, AudioChunk, AudioSource, AudioSourceLister, ChunkCallback, CoreError,
+    Frame, Lang, OcrEngine, Region, Result, SAMPLE_RATE, ScreenCapture, Segment, SegmentKind,
+    SpeechToText, TextBlock,
 };
 
 const SCREEN_PHRASES: [&str; 3] = [
@@ -29,6 +30,9 @@ const CHUNK: Duration = Duration::from_millis(100);
 /// Trozos de habla y de silencio por intervención (el silencio supera el hangover de 300 ms).
 const SPEECH_CHUNKS: usize = 12;
 const SILENCE_CHUNKS: usize = 4;
+/// Amplitud del habla de demostración: todo el sistema suena más fuerte que una sola aplicación.
+const SYSTEM_AMPLITUDE: f32 = 0.3;
+const APP_AMPLITUDE: f32 = 0.15;
 
 /// Pantalla cuyo brillo cambia cada `FRAMES_PER_TEXT` capturas.
 #[derive(Default)]
@@ -118,8 +122,27 @@ impl DemoAudio {
     }
 }
 
-impl AudioCapture for DemoAudio {
-    fn start(&mut self, mut on_chunk: ChunkCallback) -> Result<()> {
+/// Aplicaciones de demostración: `(id, nombre de programa)`.
+pub const DEMO_APPS: [(u32, &str); 2] = [(1001, "demo-player.exe"), (1002, "demo-browser.exe")];
+
+/// Lista fija de aplicaciones de demostración con audio.
+#[derive(Debug, Default)]
+pub struct DemoSourceLister;
+
+impl AudioSourceLister for DemoSourceLister {
+    fn list(&self) -> Result<Vec<AppAudio>> {
+        Ok(DEMO_APPS
+            .iter()
+            .map(|&(id, name)| AppAudio {
+                id,
+                name: name.to_owned(),
+            })
+            .collect())
+    }
+}
+
+impl DemoAudio {
+    fn run(&mut self, amplitude: f32, mut on_chunk: ChunkCallback) -> Result<()> {
         if self.worker.is_some() {
             return Err(CoreError::Capture("demo audio is already running".into()));
         }
@@ -131,7 +154,7 @@ impl AudioCapture for DemoAudio {
             let mut position = Duration::ZERO;
             loop {
                 for i in 0..SPEECH_CHUNKS + SILENCE_CHUNKS {
-                    let amplitude = if i < SPEECH_CHUNKS { 0.3 } else { 0.0 };
+                    let amplitude = if i < SPEECH_CHUNKS { amplitude } else { 0.0 };
                     on_chunk(AudioChunk::new(
                         vec![amplitude; samples_per_chunk],
                         position,
@@ -145,6 +168,28 @@ impl AudioCapture for DemoAudio {
         });
         self.worker = Some(Worker { stop, handle });
         Ok(())
+    }
+}
+
+impl AudioCapture for DemoAudio {
+    fn start(&mut self, on_chunk: ChunkCallback) -> Result<()> {
+        self.run(SYSTEM_AMPLITUDE, on_chunk)
+    }
+
+    /// Admite el sistema y las aplicaciones de [`DEMO_APPS`]; otra aplicación no existe.
+    fn start_source(&mut self, source: &AudioSource, on_chunk: ChunkCallback) -> Result<()> {
+        match source {
+            AudioSource::System => self.start(on_chunk),
+            AudioSource::Process { id, .. } => {
+                if DEMO_APPS.iter().any(|&(known, _)| known == *id) {
+                    self.run(APP_AMPLITUDE, on_chunk)
+                } else {
+                    Err(CoreError::Capture(
+                        "the application is not playing audio".into(),
+                    ))
+                }
+            }
+        }
     }
 
     fn stop(&mut self) {

@@ -1,4 +1,5 @@
 import type {
+  AudioLevelEvent,
   CacheStatsInfo,
   EngineOptions,
   ErrorEvent,
@@ -18,6 +19,7 @@ import type {
 } from './index'
 
 export type {
+  AudioLevelEvent,
   CacheStatsInfo,
   EngineOptions,
   ErrorEvent,
@@ -40,7 +42,8 @@ export type {
 export type Unsubscribe = () => void
 
 /**
- * Aplica opciones al motor (en el próximo arranque) y detiene lo que esté en marcha.
+ * Aplica opciones al motor (en el próximo arranque) y detiene lo que esté en marcha, salvo la escucha
+ * previa del nivel (`startAudioMonitor`), que pasa al motor nuevo.
  * Si alguna opción es inválida lanza un error con `code === 'InvalidArg'` y no cambia nada.
  */
 export function configure(options?: EngineOptions): void
@@ -58,7 +61,43 @@ export function startRegionTranslation(rect: Rect, from: string, to: string): vo
  * estuviera en marcha. Los subtítulos llegan por `onSubtitle`: parciales (sin traducir) mientras
  * se habla y un final traducido al cerrar la frase.
  */
-export function startAudioSubtitles(from: string, to: string): void
+export function startAudioSubtitles(from: string, to: string, source?: AudioSourceSelection): void
+
+/** Fuente de audio: todo el sistema o una aplicación (id de proceso y nombre de programa). */
+export type AudioSourceSelection =
+  | { kind: 'system' }
+  | { kind: 'app'; id: number; name: string }
+
+/** Aplicación que está reproduciendo audio. */
+export interface AudioApp {
+  id: number
+  name: string
+}
+
+/** Lista de fuentes: `supported: false` si la plataforma no puede listar aplicaciones (con el motivo). */
+export type AudioSourceList =
+  | { supported: true; apps: AudioApp[] }
+  | { supported: false; reason: string }
+
+/**
+ * Aplicaciones que reproducen audio ahora. Síncrona. Nunca lanza: un fallo de la plataforma se
+ * informa como `{ supported: false, reason }`.
+ */
+export function listAudioSources(): AudioSourceList
+
+/** Umbral de voz del motor (RMS, 0 a 1), para dibujar su marca en la barra de nivel. */
+export function audioVoiceThreshold(): number
+
+/**
+ * Escucha previa del nivel: abre `source` (por defecto, todo el sistema) solo para medirlo, sin sesión
+ * ni modelos ni conservar el audio; los niveles llegan por `onAudioLevel`. Reemplaza una escucha anterior.
+ * Devuelve `false`, sin abrir nada, si hay una sesión en marcha (la escucha cede ante ella). Lanza con el
+ * motivo si la fuente no se puede abrir, y con `code === 'InvalidArg'` si no es válida.
+ */
+export function startAudioMonitor(source?: AudioSourceSelection): boolean
+
+/** Detiene la escucha previa; no llega ningún nivel más de ella. Es idempotente. */
+export function stopAudioMonitor(): void
 
 /** Detiene el motor. Tras volver no llega ningún evento más de la sesión. Es idempotente. */
 export function stop(): void
@@ -113,3 +152,5 @@ export function onSubtitle(listener: (event: SubtitleEvent) => void): Unsubscrib
 export function onError(listener: (event: ErrorEvent) => void): Unsubscribe
 export function onModelProgress(listener: (event: ModelProgressEvent) => void): Unsubscribe
 export function onModeChanged(listener: (event: ModeEvent) => void): Unsubscribe
+/** Nivel `{ rms, peak }` (0 a 1) de cada trozo de 100 ms de audio capturado, también en silencio, en una sesión o en la escucha previa. Solo números. */
+export function onAudioLevel(listener: (event: AudioLevelEvent) => void): Unsubscribe

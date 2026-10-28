@@ -47,6 +47,19 @@ export const Channel = {
   overlayMoveDone: 'overlay:move-done',
   appState: 'app:state',
   appNotice: 'app:notice',
+  // Ventana principal (pestaña Inicio): controles de sesión y fuente de audio.
+  sessionStart: 'session:start',
+  sessionPause: 'session:pause',
+  sessionResume: 'session:resume',
+  sessionRestart: 'session:restart',
+  sessionStop: 'session:stop',
+  sessionChooseRegion: 'session:choose-region',
+  sessionState: 'session:state',
+  audioSources: 'audio:sources',
+  audioLevel: 'audio:level',
+  audioVoiceThreshold: 'audio:voice-threshold',
+  audioWatch: 'audio:watch',
+  audioMonitorState: 'audio:monitor-state',
 } as const
 
 // --------------------------------------------------------------------------------- selector
@@ -104,7 +117,46 @@ export type ModelProgress = { model: string; downloaded: number; total: number |
 export type OverlayMode = ActiveMode | 'paused'
 
 /** `mode` es el modo activo de la sesión en marcha (`null` en reposo); en pausa conserva el último. */
-export type AppState = { running: boolean; paused: boolean; mode: ActiveMode | null }
+
+/** Fuente de audio elegida; la aplicación se guarda por nombre de programa, no por PID. */
+export type AudioSourceChoice = { kind: 'system' } | { kind: 'app'; program: string }
+
+/** Aplicación que está sonando (solo metadatos). */
+export interface AudioApp {
+  id: number
+  /** Nombre del programa, p. ej. `firefox.exe`. */
+  name: string
+}
+
+/** Lista de aplicaciones con audio; `supported: false` si la plataforma no puede capturar por aplicación. */
+export type AudioSourcesInfo = { supported: true; apps: AudioApp[] } | { supported: false; reason: string }
+
+/** Nivel del audio capturado, de 0 a 1. Solo números. */
+export interface AudioLevel {
+  rms: number
+  peak: number
+}
+
+/**
+ * Escucha previa del nivel (la barra de Inicio antes de iniciar nada). `listening`: el motor mide la fuente elegida;
+ * `waiting`: espera a que suene la aplicación elegida; `error`: no se pudo abrir la fuente (con el motivo);
+ * `starting`: abriéndola; `idle`: no escucha (Inicio fuera de vista, sesión en marcha o modo «Solo texto»).
+ */
+export type MonitorState =
+  | { phase: 'idle' }
+  | { phase: 'starting' }
+  | { phase: 'listening' }
+  | { phase: 'waiting'; program: string }
+  | { phase: 'error'; reason: string }
+
+/**
+ * `phase` es el estado de la sesión para la interfaz; `waitingFor` (nombre de programa) solo vale en la fase `waiting`.
+ * `running` es verdadero con la sesión en marcha, en pausa o en espera de la aplicación elegida.
+ */
+export type AppState = { running: boolean; paused: boolean; mode: ActiveMode | null; phase: SessionPhase; waitingFor?: string }
+
+/** Estado de la sesión para la interfaz. `starting`: el motor aún responde; `waiting`: espera a la aplicación elegida. */
+export type SessionPhase = 'idle' | 'starting' | 'running' | 'paused' | 'waiting' | 'error'
 
 /** Aviso para el usuario: describe qué pasó, nunca incluye texto capturado ni traducido. */
 export interface Notice {
@@ -154,6 +206,29 @@ export interface SettingsApi {
   onModelProgress(listener: (progress: ModelProgress) => void): void
   onAppState(listener: (state: AppState) => void): void
   onNotice(listener: (notice: Notice) => void): void
+  /** Controles de sesión (todas son seguras si se repiten). */
+  startSession(): Promise<void>
+  pauseSession(): Promise<void>
+  resumeSession(): Promise<void>
+  restartSession(): Promise<void>
+  stopSession(): Promise<void>
+  /** Abre el selector de región; si se elige una, se guarda y se empieza a traducir. Devuelve si se eligió. */
+  chooseRegion(): Promise<boolean>
+  /** Estado actual de la sesión: al abrir la ventana con una sesión en marcha no hay que esperar a un cambio. */
+  getAppState(): Promise<AppState>
+  /** Aplicaciones con audio activo en este momento. */
+  listAudioSources(): Promise<AudioSourcesInfo>
+  /** Nivel del audio a 15 Hz como máximo; solo el último valor importa. */
+  onAudioLevel(listener: (level: AudioLevel) => void): void
+  /** Umbral RMS a partir del cual el audio cuenta como voz (marca de la barra). */
+  voiceThreshold(): Promise<number>
+  /**
+   * Declara si Inicio está a la vista. Mientras lo esté, sin sesión y fuera del modo «Solo texto», el motor mide el nivel
+   * de la fuente elegida para mover la barra aunque no se haya iniciado nada. Devuelve el estado de la escucha.
+   */
+  watchAudioLevel(on: boolean): Promise<MonitorState>
+  /** Cambios de estado de la escucha previa. */
+  onMonitorState(listener: (state: MonitorState) => void): void
 }
 
 declare global {

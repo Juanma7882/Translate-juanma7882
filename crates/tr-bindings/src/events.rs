@@ -53,6 +53,13 @@ pub struct ModeEvent {
     pub mode: String,
 }
 
+/// Nivel del último trozo de audio (de 0 a 1). Solo números.
+#[napi(object)]
+pub struct AudioLevelEvent {
+    pub rms: f64,
+    pub peak: f64,
+}
+
 /// Un callback por tipo de evento; registrar otro reemplaza al anterior.
 #[derive(Default)]
 pub struct Callbacks {
@@ -61,6 +68,7 @@ pub struct Callbacks {
     pub error: Slot<ErrorEvent>,
     pub model_progress: Slot<ModelProgressEvent>,
     pub mode: Slot<ModeEvent>,
+    pub level: Slot<AudioLevelEvent>,
 }
 
 pub struct Slot<T: 'static + JsValuesTupleIntoVec>(Mutex<Option<Callback<T>>>);
@@ -154,6 +162,10 @@ impl EventSink for BindingSink {
             }),
             Event::ModeChanged { mode } => callbacks.mode.deliver(ModeEvent {
                 mode: mode_name(mode).to_owned(),
+            }),
+            Event::AudioLevel { rms, peak } => callbacks.level.deliver(AudioLevelEvent {
+                rms: f64::from(rms),
+                peak: f64::from(peak),
             }),
         }
     }

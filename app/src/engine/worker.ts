@@ -6,6 +6,8 @@ import { existsSync } from 'node:fs'
 import type * as Engine from 'tr-bindings'
 
 import type { EngineEvent, Request, WorkerMessage } from '../shared/protocol.ts'
+import { runCommand } from './dispatch.ts'
+import type { NativeEngine } from './dispatch.ts'
 import { resolveNativeEntry } from './native-path.ts'
 
 // Empaquetada, la app lleva el módulo nativo en `resources/native` (fuera del asar); en desarrollo
@@ -15,7 +17,9 @@ const nativeEntry = resolveNativeEntry({
   resourcesPath: process.resourcesPath,
   exists: existsSync,
 })
-const engine: typeof Engine = nativeEntry ? require(nativeEntry) : require('tr-bindings')
+const loaded: typeof Engine = nativeEntry ? require(nativeEntry) : require('tr-bindings')
+
+const engine = loaded as NativeEngine
 
 const port = process.parentPort
 
@@ -32,52 +36,11 @@ engine.onSubtitle(forward<Extract<EngineEvent, { name: 'subtitle' }>>('subtitle'
 engine.onError(forward<Extract<EngineEvent, { name: 'error' }>>('error'))
 engine.onModelProgress(forward<Extract<EngineEvent, { name: 'modelProgress' }>>('modelProgress'))
 engine.onModeChanged(forward<Extract<EngineEvent, { name: 'mode' }>>('mode'))
-
-async function run(request: Request): Promise<unknown> {
-  switch (request.type) {
-    case 'configure':
-      engine.configure(request.options)
-      return undefined
-    case 'startRegion':
-      engine.startRegionTranslation(request.rect, request.from, request.to)
-      return undefined
-    case 'startAudio':
-      engine.startAudioSubtitles(request.from, request.to)
-      return undefined
-    case 'stop':
-      engine.stop()
-      return undefined
-    case 'pause':
-      engine.pause()
-      return undefined
-    case 'resume':
-      engine.resume()
-      return undefined
-    case 'modelCatalog':
-      return engine.modelCatalog()
-    case 'modelStatus':
-      return engine.modelStatus(request.from, request.to, request.scope)
-    case 'downloadModels':
-      return engine.downloadModels(request.from, request.to, request.scope)
-    case 'modelInventory':
-      return engine.modelInventory()
-    case 'deleteModel':
-      return engine.deleteModel(request.modelId)
-    case 'cancelDownload':
-      await engine.cancelModelDownload()
-      return undefined
-    case 'validateModelsDir':
-      return engine.validateModelsDir(request.path)
-    default: {
-      const unknown: never = request
-      throw new Error(`unknown command: ${JSON.stringify(unknown)}`)
-    }
-  }
-}
+engine.onAudioLevel?.(forward<Extract<EngineEvent, { name: 'audioLevel' }>>('audioLevel'))
 
 port.on('message', ({ data }) => {
   const request = data as Request
-  run(request).then(
+  runCommand(engine, request).then(
     (value) => send({ type: 'reply', id: request.id, value }),
     (error: unknown) =>
       send({ type: 'reply', id: request.id, error: error instanceof Error ? error.message : String(error) }),

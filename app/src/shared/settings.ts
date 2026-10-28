@@ -4,6 +4,7 @@
 // Los mensajes de aviso nombran el campo, no su valor.
 
 import { hasEnoughContrast } from './contrast.ts'
+import type { AudioSourceChoice } from './ipc.ts'
 import { MODES } from './mode.ts'
 import type { Mode } from './mode.ts'
 
@@ -70,6 +71,8 @@ export interface Settings {
   mode: Mode
   /** Segundos sin texto en la región antes de pasar a audio (modo `auto`), 1 a 60. */
   fallbackSeconds: number
+  /** Fuente del audio: todo el sistema o una aplicación (por nombre de programa, nunca por PID). */
+  audioSource: AudioSourceChoice
   /** Carpeta de modelos; `null` usa la de datos del usuario. */
   modelsDir: string | null
   lastRegion: SavedRegion | null
@@ -86,6 +89,7 @@ export function defaultSettings(): Settings {
     engines: 'real',
     mode: 'auto',
     fallbackSeconds: 3,
+    audioSource: { kind: 'system' },
     modelsDir: null,
     lastRegion: null,
     overlay: {
@@ -172,6 +176,30 @@ function readOcrSide(reader: Reader, source: Dict): number {
   return reader.number(source, 'ocrMaxSide', 'performance.ocrMaxSide', 0, 160, 4000, true)
 }
 
+/** Longitud máxima del nombre de un programa. */
+export const MAX_PROGRAM_LENGTH = 128
+// eslint-disable-next-line no-control-regex
+const FORBIDDEN_IN_PROGRAM = /[\\/:*?"<>|\u0000-\u001f\u007f]/u
+
+/** Un nombre de programa (`firefox.exe`), no una ruta: sin separadores, unidades ni caracteres de control. */
+export function isProgramName(value: unknown): value is string {
+  if (typeof value !== 'string' || value.trim().length === 0 || value.length > MAX_PROGRAM_LENGTH) return false
+  if (value !== value.trim() || value === '.' || value === '..') return false
+  // Sin separadores de ruta ni caracteres reservados o de control.
+  return !FORBIDDEN_IN_PROGRAM.test(value)
+}
+
+function readAudioSource(reader: Reader, value: unknown): AudioSourceChoice {
+  if (value === undefined) return { kind: 'system' }
+  if (isDict(value)) {
+    const keys = Object.keys(value)
+    if (value['kind'] === 'system' && keys.length === 1) return { kind: 'system' }
+    if (value['kind'] === 'app' && keys.length === 2 && isProgramName(value['program'])) return { kind: 'app', program: value['program'] }
+  }
+  reader.warnings.push('invalid audioSource')
+  return { kind: 'system' }
+}
+
 function readRegion(reader: Reader, value: unknown): SavedRegion | null {
   if (value === null || value === undefined) return null
   if (!isDict(value)) {
@@ -217,6 +245,7 @@ export function parseSettings(raw: unknown): ParseResult {
     engines: reader.oneOf(raw, 'engines', 'engines', defaults.engines, ['fake', 'real']),
     mode: reader.oneOf(raw, 'mode', 'mode', defaults.mode, MODES),
     fallbackSeconds: reader.number(raw, 'fallbackSeconds', 'fallbackSeconds', defaults.fallbackSeconds, 1, 60, true),
+    audioSource: readAudioSource(reader, raw.audioSource),
     modelsDir: modelsDirOk && modelsDirValue !== undefined ? (modelsDirValue as string | null) : defaults.modelsDir,
     lastRegion: readRegion(reader, raw.lastRegion),
     overlay: {
@@ -261,8 +290,8 @@ export function parseSettings(raw: unknown): ParseResult {
 }
 
 export type SettingsPatch = {
-  [K in keyof Settings]?: Settings[K] extends object | null ? Partial<NonNullable<Settings[K]>> | null : Settings[K]
-}
+  [K in Exclude<keyof Settings, 'audioSource'>]?: Settings[K] extends object | null ? Partial<NonNullable<Settings[K]>> | null : Settings[K]
+} & { audioSource?: AudioSourceChoice }
 
 export type UpdateResult = { ok: true; settings: Settings } | { ok: false; errors: string[] }
 
@@ -273,7 +302,8 @@ export function applyPatch(current: Settings, patch: unknown): UpdateResult {
   for (const [key, value] of Object.entries(patch)) {
     if (!(key in current) || key === 'version') return { ok: false, errors: [`unknown setting ${key}`] }
     const existing = (current as unknown as Dict)[key]
-    merged[key] = isDict(existing) && isDict(value) ? { ...existing, ...value } : value
+    // `audioSource` es una unión: se sustituye entera para no arrastrar `program` al pasar a `system`.
+    merged[key] = key !== 'audioSource' && isDict(existing) && isDict(value) ? { ...existing, ...value } : value
   }
   const { settings, warnings } = parseSettings(merged)
   return warnings.length > 0 ? { ok: false, errors: warnings } : { ok: true, settings }

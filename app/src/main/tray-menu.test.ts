@@ -20,25 +20,25 @@ function actions(calls: string[]): TrayActions {
 const item = (template: ReturnType<typeof trayTemplate>, prefix: string) => template.find((i) => i.label?.startsWith(prefix))!
 
 test('en reposo solo se puede elegir, traducir la última región, abrir ajustes y salir', () => {
-  const template = trayTemplate({ running: false, paused: false, mode: null }, true, actions([]))
+  const template = trayTemplate({ running: false, paused: false, mode: null, phase: 'idle' as const }, true, actions([]))
   assert.equal(item(template, 'Pausar').enabled, false)
   assert.equal(item(template, 'Detener').enabled, false)
   assert.equal(item(template, 'Traducir').enabled, true)
-  assert.equal(item(trayTemplate({ running: false, paused: false, mode: null }, false, actions([])), 'Traducir').enabled, false)
+  assert.equal(item(trayTemplate({ running: false, paused: false, mode: null, phase: 'idle' as const }, false, actions([])), 'Traducir').enabled, false)
 })
 
 test('en marcha se puede pausar y detener; en pausa el elemento pasa a "Reanudar"', () => {
-  const running = trayTemplate({ running: true, paused: false, mode: 'text' as const }, true, actions([]))
+  const running = trayTemplate({ running: true, paused: false, mode: 'text' as const, phase: 'running' as const }, true, actions([]))
   assert.equal(item(running, 'Pausar').enabled, true)
   assert.equal(item(running, 'Traducir').enabled, false)
-  const paused = trayTemplate({ running: true, paused: true, mode: 'text' as const }, true, actions([]))
+  const paused = trayTemplate({ running: true, paused: true, mode: 'text' as const, phase: 'paused' as const }, true, actions([]))
   assert.ok(item(paused, 'Reanudar'))
   assert.ok(!paused.some((i) => i.label === 'Pausar'))
 })
 
 test('cada elemento invoca su acción', () => {
   const calls: string[] = []
-  const template = trayTemplate({ running: true, paused: false, mode: 'text' as const }, true, actions(calls))
+  const template = trayTemplate({ running: true, paused: false, mode: 'text' as const, phase: 'running' as const }, true, actions(calls))
   for (const prefix of ['Elegir', 'Traducir', 'Pausar', 'Detener', 'Ajustes', 'Salir']) {
     ;(item(template, prefix).click as () => void)()
   }
@@ -46,16 +46,16 @@ test('cada elemento invoca su acción', () => {
 })
 
 test('la descripción de la bandeja refleja el estado', () => {
-  assert.match(trayTooltip({ running: false, paused: false, mode: null }), /reposo/)
-  assert.match(trayTooltip({ running: true, paused: false, mode: 'text' as const }), /traduciendo/)
-  assert.match(trayTooltip({ running: true, paused: true, mode: 'text' as const }), /pausa/)
+  assert.match(trayTooltip({ running: false, paused: false, mode: null, phase: 'idle' as const }), /reposo/)
+  assert.match(trayTooltip({ running: true, paused: false, mode: 'text' as const, phase: 'running' as const }), /traduciendo/)
+  assert.match(trayTooltip({ running: true, paused: true, mode: 'text' as const, phase: 'paused' as const }), /pausa/)
 })
 
 test('el submenú "Modo" marca el modo elegido y cada opción lo cambia', () => {
   const modes: string[] = []
   const calls = actions([])
   calls.setMode = (mode) => void modes.push(mode)
-  const template = trayTemplate({ running: false, paused: false, mode: null }, true, calls, 'text')
+  const template = trayTemplate({ running: false, paused: false, mode: null, phase: 'idle' as const }, true, calls, 'text')
   const submenu = item(template, 'Modo').submenu as Electron.MenuItemConstructorOptions[]
   assert.deepEqual(submenu.map((i) => [i.label, i.checked]), [['Automático', false], ['Solo texto', true], ['Solo audio', false]])
   for (const option of submenu) (option.click as () => void)()
@@ -63,13 +63,22 @@ test('el submenú "Modo" marca el modo elegido y cada opción lo cambia', () => 
 })
 
 test('en modo audio se puede traducir sin región guardada', () => {
-  const idle = { running: false, paused: false, mode: null }
+  const idle = { running: false, paused: false, mode: null, phase: 'idle' as const }
   assert.equal(item(trayTemplate(idle, false, actions([]), 'audio'), 'Traducir').enabled, true)
   assert.equal(item(trayTemplate(idle, false, actions([]), 'auto'), 'Traducir').enabled, false)
 })
 
 test('el tooltip incluye el modo activo', () => {
-  assert.match(trayTooltip({ running: true, paused: false, mode: 'audio' }), /audio/)
-  assert.match(trayTooltip({ running: true, paused: false, mode: 'text' }), /texto/)
-  assert.match(trayTooltip({ running: true, paused: true, mode: 'audio' }), /pausa.*audio/)
+  assert.match(trayTooltip({ running: true, paused: false, mode: 'audio' as const, phase: 'running' as const }), /audio/)
+  assert.match(trayTooltip({ running: true, paused: false, mode: 'text' as const, phase: 'running' as const }), /texto/)
+  assert.match(trayTooltip({ running: true, paused: true, mode: 'audio' as const, phase: 'paused' as const }), /pausa.*audio/)
+})
+
+test('al iniciar no se ofrece traducir otra vez y el tooltip lo dice; en espera nombra el estado', () => {
+  const starting = { running: false, paused: false, mode: null, phase: 'starting' as const }
+  assert.equal(item(trayTemplate(starting, true, actions([])), 'Traducir').enabled, false)
+  assert.match(trayTooltip(starting), /iniciando/)
+  const waiting = { running: true, paused: false, mode: 'audio' as const, phase: 'waiting' as const, waitingFor: 'firefox.exe' }
+  assert.match(trayTooltip(waiting), /espera/)
+  assert.equal(item(trayTemplate(waiting, true, actions([])), 'Detener').enabled, true)
 })

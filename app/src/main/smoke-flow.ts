@@ -8,6 +8,7 @@ import { join } from 'node:path'
 
 import type { BrowserWindow } from 'electron'
 
+import { monitorIndex } from '../shared/geometry.ts'
 import type { SavedRegion } from '../shared/settings.ts'
 import { AppController } from './app-controller.ts'
 import type { EngineHost } from './engine-host.ts'
@@ -74,7 +75,7 @@ export async function runFlowSmoke(host: EngineHost, windows: WindowManager, dis
 
   const saved = JSON.parse(readFileSync(file, 'utf8')).lastRegion as SavedRegion
   const scale = displays.underCursor().scaleFactor
-  expect(saved.monitor === 0 && saved.x === Math.round(120 * scale) && saved.width === Math.round(420 * scale) - Math.round(120 * scale), `la región queda guardada: ${JSON.stringify(saved)}`)
+  expect(saved.monitor === monitorIndex(displays.all(), displays.underCursor()) && saved.x === Math.round(120 * scale) && saved.width === Math.round(420 * scale) - Math.round(120 * scale), `la región queda guardada: ${JSON.stringify(saved)}`)
   ok('la región elegida se guarda en los ajustes')
 
   // Pausa y reanudación llegan al motor: durante la pausa no hay traducciones nuevas.

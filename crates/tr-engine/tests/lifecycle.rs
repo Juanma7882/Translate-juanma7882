@@ -2,6 +2,9 @@
 //!
 //! Va en su propio binario de test con una única prueba: el conteo de hilos es del
 //! proceso completo y otras pruebas en paralelo lo falsearían.
+//!
+//! Solo Linux: cuenta hilos con `/proc/self/task` (sin equivalente seguro en Windows/macOS).
+#![cfg(target_os = "linux")]
 
 use std::fs;
 use std::sync::Arc;
@@ -53,7 +56,9 @@ fn repeated_start_stop_leaves_no_threads_behind() {
         if round % 2 == 0 {
             engine.start_region(region, en.clone(), es.clone()).unwrap();
         } else {
-            engine.start_audio(en.clone(), es.clone()).unwrap();
+            engine
+                .start_audio(en.clone(), es.clone(), tr_core::AudioSource::System)
+                .unwrap();
         }
         std::thread::sleep(Duration::from_millis(30));
         engine.stop();
@@ -66,7 +71,9 @@ fn repeated_start_stop_leaves_no_threads_behind() {
 
     // Reemplazo directo sin stop intermedio.
     engine.start_region(region, en.clone(), es.clone()).unwrap();
-    engine.start_audio(en, es).unwrap();
+    engine
+        .start_audio(en, es, tr_core::AudioSource::System)
+        .unwrap();
     engine.stop();
     assert_eq!(settle(baseline), baseline, "hilos colgados tras reemplazar");
 

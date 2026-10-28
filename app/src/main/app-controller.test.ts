@@ -100,7 +100,7 @@ test('un fallo al iniciar deja el estado en reposo y avisa', async () => {
   const { host, controller, notices } = setup()
   host.failWith = 'missing models: translate-en-es'
   assert.equal(await controller.start(REGION), false)
-  assert.deepEqual(controller.state, { running: false, paused: false, mode: null })
+  assert.deepEqual(controller.state, { running: false, paused: false, mode: null, phase: 'error' })
   assert.equal(notices.length, 1)
   assert.equal(notices[0]!.code, 'models-missing')
   assert.match(notices[0]!.message, /No se pudo iniciar/)
@@ -139,12 +139,12 @@ test('el modo automático y el de solo texto piden una región; el de solo audio
   const { host, controller, store, notices } = setup()
   assert.equal(await controller.start(REGION), true)
   assert.equal(host.sent.at(-1)?.type, 'startRegion')
-  assert.deepEqual(controller.state, { running: true, paused: false, mode: 'text' })
+  assert.deepEqual(controller.state, { running: true, paused: false, mode: 'text', phase: 'running' })
 
   store.settings.update({ mode: 'audio' } as never)
   await tick()
   assert.equal(host.sent.at(-1)?.type, 'startAudio', 'cambiar el modo reinicia la sesión en audio')
-  assert.deepEqual(controller.state, { running: true, paused: false, mode: 'audio' })
+  assert.deepEqual(controller.state, { running: true, paused: false, mode: 'audio', phase: 'running' })
 
   // En audio se puede empezar sin región.
   await controller.stop()
@@ -191,9 +191,9 @@ test('en automático el modo activo sigue los eventos del motor; en los forzados
   host.emit('event', { name: 'mode', payload: { mode: 'audio' } })
   assert.equal(controller.state.mode, 'audio')
   host.emit('event', { name: 'mode', payload: { mode: 'paused' } })
-  assert.deepEqual(controller.state, { running: true, paused: true, mode: 'audio' }, 'la pausa conserva el modo')
+  assert.deepEqual(controller.state, { running: true, paused: true, mode: 'audio', phase: 'paused' }, 'la pausa conserva el modo')
   host.emit('event', { name: 'mode', payload: { mode: 'text' } })
-  assert.deepEqual(controller.state, { running: true, paused: false, mode: 'text' })
+  assert.deepEqual(controller.state, { running: true, paused: false, mode: 'text', phase: 'running' })
 
   store.settings.update({ mode: 'text' } as never)
   await tick()

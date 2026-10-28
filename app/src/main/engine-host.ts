@@ -10,6 +10,8 @@ import { utilityProcess } from 'electron'
 import type { UtilityProcess } from 'electron'
 
 import type { Command, CommandResult, EngineEvent, WorkerMessage } from '../shared/protocol.ts'
+import { LevelCoalescer } from './level-coalescer.ts'
+import type { LevelClock } from './level-coalescer.ts'
 
 export interface EngineHostOptions {
   /** Ruta del script del proceso utilitario. */
@@ -21,6 +23,10 @@ export interface EngineHostOptions {
   stableMs?: number
   /** Tiempo máximo para que el motor responda a una orden (las descargas no tienen límite). */
   requestTimeoutMs?: number
+  /** Máximo de niveles de audio reenviados por segundo (por defecto 15). */
+  levelMaxHz?: number
+  /** Reloj de la agrupación de niveles; las pruebas inyectan uno simulado. */
+  levelClock?: LevelClock
 }
 
 export interface CrashInfo {
@@ -63,6 +69,7 @@ export class EngineHost extends EventEmitter<HostEvents> {
   private restartTimer: NodeJS.Timeout | null = null
   private nextId = 1
   private readonly pending = new Map<number, Pending>()
+  private readonly levels: LevelCoalescer
 
   constructor(options: EngineHostOptions) {
     super()
@@ -71,6 +78,7 @@ export class EngineHost extends EventEmitter<HostEvents> {
     this.restartMaxMs = options.restartMaxMs ?? 5000
     this.stableMs = options.stableMs ?? 10_000
     this.requestTimeoutMs = options.requestTimeoutMs ?? 10_000
+    this.levels = new LevelCoalescer((payload) => this.emit('event', { name: 'audioLevel', payload }), options.levelMaxHz ?? 15, options.levelClock)
   }
 
   get pid(): number | undefined {
@@ -160,6 +168,10 @@ export class EngineHost extends EventEmitter<HostEvents> {
       }
       case 'event': {
         const { type: _type, ...event } = message
+        if (event.name === 'audioLevel') {
+          this.levels.push(event.payload)
+          return
+        }
         this.emit('event', event as EngineEvent)
         return
       }
@@ -170,6 +182,7 @@ export class EngineHost extends EventEmitter<HostEvents> {
     if (this.child !== child) return // proceso viejo, ya reemplazado
     this.child = null
     this.ready = false
+    this.levels.reset()
     for (const pending of this.pending.values()) {
       if (pending.timer) clearTimeout(pending.timer)
       pending.reject(new Error('engine process exited'))

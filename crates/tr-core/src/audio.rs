@@ -20,6 +20,9 @@ use crate::types::{AudioChunk, Event, Lang, SAMPLE_RATE, Segment, SegmentKind};
 const QUEUE_CAPACITY: usize = 64;
 /// Palabras máximas que se comparan al quitar el solape entre ventanas.
 const MAX_OVERLAP_WORDS: usize = 8;
+/// Nivel RMS (0..1) por defecto a partir del cual un trozo cuenta como habla. La interfaz lo
+/// dibuja como marca en el medidor.
+pub const DEFAULT_VAD_THRESHOLD: f32 = 0.01;
 
 #[derive(Debug, Clone)]
 pub struct AudioConfig {
@@ -42,7 +45,7 @@ impl AudioConfig {
         Self {
             from,
             to,
-            vad_threshold: 0.01,
+            vad_threshold: DEFAULT_VAD_THRESHOLD,
             hangover: Duration::from_millis(300),
             min_speech: Duration::from_millis(100),
             preroll: Duration::from_millis(200),
@@ -67,6 +70,11 @@ pub fn rms(samples: &[f32]) -> f32 {
     }
     let energy: f32 = samples.iter().map(|s| s * s).sum();
     (energy / samples.len() as f32).sqrt()
+}
+
+/// Pico absoluto de un trozo de audio.
+pub fn peak(samples: &[f32]) -> f32 {
+    samples.iter().fold(0.0, |max, s| max.max(s.abs()))
 }
 
 fn word_key(word: &str) -> String {
@@ -157,7 +165,13 @@ impl AudioProcessor {
     }
 
     pub fn push(&mut self, chunk: AudioChunk) {
-        let speech = rms(&chunk.samples) >= self.config.vad_threshold;
+        let level = rms(&chunk.samples);
+        // El nivel se informa siempre, también el que queda bajo el umbral de voz.
+        self.sink.emit(Event::AudioLevel {
+            rms: level,
+            peak: peak(&chunk.samples),
+        });
+        let speech = level >= self.config.vad_threshold;
 
         if !self.in_speech {
             if !speech {
@@ -474,6 +488,14 @@ mod tests {
         )
     }
 
+    /// Eventos sin los niveles de audio (uno por trozo), que casi ningún test mira.
+    fn events_without_levels(sink: &RecordingSink) -> Vec<Event> {
+        sink.events()
+            .into_iter()
+            .filter(|e| !matches!(e, Event::AudioLevel { .. }))
+            .collect()
+    }
+
     fn subtitles(sink: &RecordingSink) -> Vec<(String, Option<String>, bool)> {
         sink.events()
             .into_iter()
@@ -580,7 +602,29 @@ mod tests {
         let mut rig = rig();
         rig.feed(0.0, 50);
         assert_eq!(rig.stt.pushes(), 0);
-        assert!(rig.sink.is_empty());
+        assert!(events_without_levels(&rig.sink).is_empty());
+    }
+
+    #[test]
+    fn every_chunk_reports_its_level_even_below_the_vad_threshold() {
+        let mut rig = rig();
+        rig.feed(0.004, 3);
+        let levels: Vec<(f32, f32)> = rig
+            .sink
+            .events()
+            .into_iter()
+            .filter_map(|e| match e {
+                Event::AudioLevel { rms, peak } => Some((rms, peak)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(levels.len(), 3);
+        assert!(
+            levels
+                .iter()
+                .all(|(rms, peak)| (rms - 0.004).abs() < 1e-4 && (peak - 0.004).abs() < 1e-4)
+        );
+        assert_eq!(rig.stt.pushes(), 0, "bajo el umbral sigue siendo silencio");
     }
 
     #[test]
@@ -674,7 +718,7 @@ mod tests {
         rig.feed(0.0, 3);
         rig.feed(SPEECH, 4);
         rig.feed(0.0, 3);
-        let events = rig.sink.events();
+        let events = events_without_levels(&rig.sink);
         assert!(matches!(
             events[0],
             Event::Error {
@@ -693,7 +737,7 @@ mod tests {
         rig.stt.push_segments(vec![final_segment("hello")]);
         rig.feed(SPEECH, 4);
         rig.feed(0.0, 3);
-        let events = rig.sink.events();
+        let events = events_without_levels(&rig.sink);
         assert!(matches!(
             events[0],
             Event::Error {

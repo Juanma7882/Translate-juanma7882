@@ -43,6 +43,8 @@ export interface ShellDeps {
   files: FilePrompts
   /** Opciones extra del motor (manifiesto alternativo, carpeta de modelos…). */
   engineOverrides?: () => EngineOptions
+  /** `false` evita abrir la ventana principal al arrancar (pruebas de humo). */
+  openOnStart?: boolean
   /** Cuánto se espera para repetir el mismo aviso. */
   noticeCooldownMs?: number
 }
@@ -137,6 +139,8 @@ export class AppShell {
     this.deps.host.start()
     this.applyShortcuts()
     this.refreshTray()
+    // Ventana visible al arrancar, con o sin modelos: desde ella se descargan los idiomas.
+    if (this.deps.openOnStart !== false) void this.deps.windows.openSettings()
   }
 
   dispose(): void {

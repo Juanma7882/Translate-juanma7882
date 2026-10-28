@@ -81,12 +81,17 @@ fn translator(
 }
 
 #[cfg(feature = "audio-loopback")]
-fn audio() -> Result<Box<dyn AudioCapture>> {
-    Ok(Box::new(tr_adapters::audio::SystemAudio::new()))
+pub(crate) fn audio() -> Result<Box<dyn AudioCapture>> {
+    Ok(Box::new(tr_adapters::audio::PlatformAudioCapture::new()))
 }
 #[cfg(not(feature = "audio-loopback"))]
-fn audio() -> Result<Box<dyn AudioCapture>> {
+pub(crate) fn audio() -> Result<Box<dyn AudioCapture>> {
     Err(not_available("system audio capture"))
+}
+
+/// Lista de aplicaciones con audio de la plataforma (o una que declara "no disponible").
+pub(crate) fn source_lister() -> Box<dyn tr_core::AudioSourceLister> {
+    Box::new(tr_adapters::audio::PlatformSourceLister::default())
 }
 
 #[cfg(feature = "stt-whisper")]

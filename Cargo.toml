@@ -41,6 +41,10 @@ realfft = "=3.5.1"
 # `pulseaudio` (cliente PulseAudio/PipeWire en Rust puro, sin libpulse-dev ni libasound2-dev).
 cpal = "=0.18.2"
 pulseaudio = "=0.3.2"
+# Captura por aplicacion en Windows (ver docs/adr/0008-audio-por-aplicacion.md; verificadas 2026-10-28:
+# wasapi 0.26.0 MIT, mantenida por HEnquist, usa `windows` 0.62.2 ya presente por cpal; sysinfo 0.39.6 MIT, MSRV 1.95).
+wasapi = "=0.26.0"
+sysinfo = { version = "=0.39.6", default-features = false, features = ["system"] }
 
 tr-core = { path = "crates/tr-core" }
 tr-models = { path = "crates/tr-models" }

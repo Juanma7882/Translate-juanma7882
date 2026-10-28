@@ -49,7 +49,7 @@ export class ModelsService {
   }
 
   /** Configura el motor solo si hace falta y no hay una traducción en curso. */
-  private async ensureConfigured(): Promise<void> {
+  async ensureConfigured(): Promise<void> {
     await this.host.whenReady()
     if (this.isRunning()) return
     if (JSON.stringify(this.options()) !== this.configuredKey) await this.configure()

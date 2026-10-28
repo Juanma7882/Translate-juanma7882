@@ -98,7 +98,7 @@ export async function runShellSmoke(host: EngineHost, windows: WindowManager, di
   const tray = new FakeTray()
   const shortcuts = new FakeShortcuts(['Alt+Taken'])
   const notices: Notice[] = []
-  const shell = new AppShell({ host, windows, settings, displays, tray, shortcuts, notify: (n) => notices.push(n), quit: () => notices.push({ level: 'info', message: 'quit' }), files: scriptedFiles() })
+  const shell = new AppShell({ host, windows, settings, displays, tray, shortcuts, notify: (n) => notices.push(n), quit: () => notices.push({ level: 'info', message: 'quit' }), files: scriptedFiles(), openOnStart: false })
   shell.start()
   await host.whenReady()
 
@@ -241,6 +241,7 @@ export async function runShellSmoke(host: EngineHost, windows: WindowManager, di
       notify: (n) => firstNotices.push(n),
       quit: () => {},
       files: scriptedFiles(),
+      openOnStart: false,
       engineOverrides: () => ({ modelsDir, manifestPath: fixture.manifestPath }),
     })
     first.start()

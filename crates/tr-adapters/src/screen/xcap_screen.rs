@@ -74,8 +74,10 @@ fn explain(error: &xcap::XCapError) -> CoreError {
 }
 
 struct Snapshot {
-    /// En el orden de `geometry::order`.
-    monitors: Vec<Monitor>,
+    /// Identificadores de monitor, en el orden de `geometry::order`. No se guarda el `Monitor`
+    /// mismo: en Windows envuelve un `HMONITOR` (`*mut c_void`) y no es `Send`, que `ScreenCapture`
+    /// exige; se vuelve a resolver por id en cada captura.
+    monitors: Vec<u32>,
     geometry: Vec<MonitorGeometry>,
     taken: Instant,
 }
@@ -111,8 +113,12 @@ impl XcapScreen {
             .map_err(|e| explain(&e))?;
         let order = geometry::order(&raw);
         let geometry = order.iter().map(|&i| raw[i]).collect();
-        let mut slots: Vec<Option<Monitor>> = found.into_iter().map(Some).collect();
-        let monitors = order.iter().filter_map(|&i| slots[i].take()).collect();
+        let ids = found
+            .iter()
+            .map(Monitor::id)
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| explain(&e))?;
+        let monitors = order.iter().map(|&i| ids[i]).collect();
         Ok(Snapshot {
             monitors,
             geometry,
@@ -138,9 +144,13 @@ impl ScreenCapture for XcapScreen {
     fn grab(&mut self, region: &Region) -> Result<Frame> {
         let snapshot = self.snapshot()?;
         let plan = geometry::plan(region, &snapshot.geometry)?;
-        let monitor = &snapshot.monitors[plan.monitor];
+        let id = snapshot.monitors[plan.monitor];
         let image = retry_transient(TRANSIENT_RETRIES, TRANSIENT_WAIT, || {
-            monitor.capture_region(plan.x, plan.y, plan.width, plan.height)
+            Monitor::all()?
+                .into_iter()
+                .find(|m| m.id().is_ok_and(|found| found == id))
+                .ok_or_else(|| xcap::XCapError::new("monitor no longer available"))?
+                .capture_region(plan.x, plan.y, plan.width, plan.height)
         })
         .map_err(|e| {
             // La configuración de monitores pudo cambiar: se vuelve a leer en la próxima captura.

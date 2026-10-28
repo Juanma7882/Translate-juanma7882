@@ -23,7 +23,7 @@ export function trayTemplate(state: AppState, hasRegion: boolean, actions: TrayA
     {
       label: 'Traducir la última región',
       // En modo audio no hace falta región.
-      enabled: (hasRegion || !needsRegion(mode)) && !state.running,
+      enabled: (hasRegion || !needsRegion(mode)) && !state.running && state.phase !== 'starting',
       click: () => actions.translateLast(),
     },
     { label: state.paused ? 'Reanudar' : 'Pausar', enabled: state.running, click: () => actions.togglePause() },
@@ -40,6 +40,8 @@ export function trayTemplate(state: AppState, hasRegion: boolean, actions: TrayA
 }
 
 export function trayTooltip(state: AppState): string {
+  if (state.phase === 'starting') return 'Traductor · iniciando'
+  if (state.phase === 'waiting') return 'Traductor · en espera de la aplicación'
   if (!state.running) return 'Traductor · en reposo'
   const active = state.mode ? ` · ${ACTIVE_LABELS[state.mode].toLowerCase()}` : ''
   return state.paused ? `Traductor · en pausa${active}` : `Traductor · traduciendo${active}`

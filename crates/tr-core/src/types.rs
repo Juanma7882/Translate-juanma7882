@@ -198,6 +198,23 @@ pub enum Mode {
     Paused,
 }
 
+/// De dónde se captura el audio: todo el sistema o una aplicación concreta.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum AudioSource {
+    #[default]
+    System,
+    /// Una aplicación, por identificador de proceso (válido solo durante la sesión) y nombre de programa.
+    Process { id: u32, name: String },
+}
+
+/// Aplicación que está reproduciendo audio. Solo metadatos: nunca audio.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppAudio {
+    pub id: u32,
+    /// Nombre del programa (p. ej. `firefox.exe`), estable entre sesiones.
+    pub name: String,
+}
+
 /// Evento emitido hacia el exterior. `timestamp` es el tiempo del [`Clock`](crate::ports::Clock).
 #[derive(Debug, Clone, PartialEq)]
 pub enum Event {
@@ -214,6 +231,11 @@ pub enum Event {
     },
     ModeChanged {
         mode: Mode,
+    },
+    /// Nivel del último trozo de audio (RMS y pico, de 0 a 1). Solo números.
+    AudioLevel {
+        rms: f32,
+        peak: f32,
     },
     ModelProgress {
         model: String,

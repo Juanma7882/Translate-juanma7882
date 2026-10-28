@@ -7,7 +7,9 @@
 //  - la pausa: mientras dura no llegan traducciones ni subtítulos aunque ya estuvieran en cola;
 //  - el progreso de modelos, que es independiente de la sesión (una descarga puede ocurrir sin
 //    traducción en marcha);
-//  - funciones asíncronas que siempre devuelven una promesa (los errores síncronos se rechazan).
+//  - funciones asíncronas que siempre devuelven una promesa (los errores síncronos se rechazan);
+//  - la escucha previa del nivel de audio (`startAudioMonitor`), que no es una sesión: sus niveles
+//    llegan aunque no haya nada en marcha y una sesión la reemplaza.
 
 const native = require('./index.js')
 
@@ -17,11 +19,14 @@ const listeners = {
   error: new Set(),
   modelProgress: new Set(),
   mode: new Set(),
+  audioLevel: new Set(),
 }
 
 let active = false
 let paused = false
 let progressDelivered = 0
+// Escucha previa del nivel activa. Solo afecta a `onAudioLevel`.
+let monitoring = false
 
 const inSession = () => active
 const flowing = () => active && !paused
@@ -41,6 +46,7 @@ native.onModelProgress((event) => {
   dispatchProgress(event)
 })
 native.onModeChanged(dispatch('mode', inSession))
+native.onAudioLevel(dispatch('audioLevel', () => flowing() || monitoring))
 
 // La promesa de una descarga y sus eventos de progreso llegan a JS por canales distintos y sin
 // orden garantizado: antes de resolver o rechazar se espera a haber recibido todos los eventos
@@ -65,14 +71,18 @@ const subscribe = (name) => (listener) => {
 function begin(start) {
   const wasActive = active
   const wasPaused = paused
+  const wasMonitoring = monitoring
   active = true
   paused = false
+  monitoring = false // la sesión reemplaza la escucha previa
   try {
     start()
   } catch (error) {
     const untouched = wasActive && error?.code === 'InvalidArg'
     active = untouched
     paused = untouched && wasPaused
+    // Con argumentos inválidos el motor no se tocó y la escucha sigue; con otro fallo no se sabe.
+    monitoring = wasMonitoring && error?.code === 'InvalidArg'
     throw error
   }
 }
@@ -88,8 +98,31 @@ module.exports = {
   startRegionTranslation(rect, from, to) {
     begin(() => native.startRegionTranslation(rect, from, to))
   },
-  startAudioSubtitles(from, to) {
-    begin(() => native.startAudioSubtitles(from, to))
+  // `source`: `{ kind: 'system' }` (por defecto) o `{ kind: 'app', id, name }`.
+  startAudioSubtitles(from, to, source) {
+    begin(() => native.startAudioSubtitles(from, to, source))
+  },
+  // Síncrona: `{ supported: true, apps: [{ id, name }] }` o `{ supported: false, reason }`.
+  listAudioSources() {
+    const { supported, apps, reason } = native.listAudioSources()
+    return supported ? { supported: true, apps: apps ?? [] } : { supported: false, reason: reason ?? '' }
+  },
+  // Umbral de voz del motor (RMS de 0 a 1), para la marca de la barra de nivel.
+  audioVoiceThreshold() {
+    return native.audioVoiceThreshold()
+  },
+  // Escucha previa: mide el nivel de `source` (por defecto, todo el sistema) sin sesión ni modelos;
+  // los niveles llegan por `onAudioLevel`. Devuelve `false`, sin abrir nada, si hay una sesión en marcha.
+  // Si la fuente no se puede abrir lanza con el motivo.
+  startAudioMonitor(source) {
+    monitoring = false
+    monitoring = native.startAudioMonitor(source)
+    return monitoring
+  },
+  // Detiene la escucha previa. Idempotente.
+  stopAudioMonitor() {
+    monitoring = false // primero, para descartar de inmediato lo que ya estuviera en cola
+    native.stopAudioMonitor()
   },
   stop() {
     active = false
@@ -142,4 +175,6 @@ module.exports = {
   onError: subscribe('error'),
   onModelProgress: subscribe('modelProgress'),
   onModeChanged: subscribe('mode'),
+  // `{ rms, peak }` (0 a 1) por cada trozo de 100 ms mientras haya sesión o escucha previa; solo números.
+  onAudioLevel: subscribe('audioLevel'),
 }

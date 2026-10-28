@@ -835,14 +835,17 @@ function __napiStampBindingTarget(exportsObject, target) {
 // linked import resolves to `undefined`.
 module.exports.__napiBindingTarget = __napiStampBindingTarget(nativeBinding, __napiLoadedBindingTarget)
 module.exports = nativeBinding
+module.exports.audioVoiceThreshold = nativeBinding.audioVoiceThreshold
 module.exports.cacheStats = nativeBinding.cacheStats
 module.exports.cancelModelDownload = nativeBinding.cancelModelDownload
 module.exports.configure = nativeBinding.configure
 module.exports.deleteModel = nativeBinding.deleteModel
 module.exports.downloadModels = nativeBinding.downloadModels
+module.exports.listAudioSources = nativeBinding.listAudioSources
 module.exports.modelCatalog = nativeBinding.modelCatalog
 module.exports.modelInventory = nativeBinding.modelInventory
 module.exports.modelStatus = nativeBinding.modelStatus
+module.exports.onAudioLevel = nativeBinding.onAudioLevel
 module.exports.onError = nativeBinding.onError
 module.exports.onModeChanged = nativeBinding.onModeChanged
 module.exports.onModelProgress = nativeBinding.onModelProgress
@@ -851,7 +854,9 @@ module.exports.onTranslation = nativeBinding.onTranslation
 module.exports.pause = nativeBinding.pause
 module.exports.progressEventsEmitted = nativeBinding.progressEventsEmitted
 module.exports.resume = nativeBinding.resume
+module.exports.startAudioMonitor = nativeBinding.startAudioMonitor
 module.exports.startAudioSubtitles = nativeBinding.startAudioSubtitles
 module.exports.startRegionTranslation = nativeBinding.startRegionTranslation
 module.exports.stop = nativeBinding.stop
+module.exports.stopAudioMonitor = nativeBinding.stopAudioMonitor
 module.exports.validateModelsDir = nativeBinding.validateModelsDir

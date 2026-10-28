@@ -75,7 +75,9 @@ fn region_translation_runs_end_to_end_and_stops() {
 #[test]
 fn audio_subtitles_run_end_to_end_and_stop() {
     let (mut engine, sink) = engine(fast_config());
-    engine.start_audio(lang("en"), lang("es")).unwrap();
+    engine
+        .start_audio(lang("en"), lang("es"), tr_core::AudioSource::System)
+        .unwrap();
     assert!(sink.wait_until(WAIT, |e| e.iter().any(|ev| matches!(
         ev,
         Event::Subtitle { original, translated: Some(t), is_final: true, .. }
@@ -110,7 +112,9 @@ fn starting_again_replaces_the_running_pipeline() {
         .start_region(region(), lang("en"), lang("es"))
         .unwrap();
     assert!(sink.wait_until(WAIT, |e| !translations(e).is_empty()));
-    engine.start_audio(lang("en"), lang("fr")).unwrap();
+    engine
+        .start_audio(lang("en"), lang("fr"), tr_core::AudioSource::System)
+        .unwrap();
     sink.take();
     assert!(sink.wait_until(WAIT, |e| {
         e.iter().any(|ev| matches!(ev, Event::Subtitle { .. }))
@@ -135,7 +139,9 @@ fn stop_returns_quickly_even_with_long_capture_intervals() {
     let (mut engine, _sink) = engine(config);
     for start_audio in [false, true] {
         if start_audio {
-            engine.start_audio(lang("en"), lang("es")).unwrap();
+            engine
+                .start_audio(lang("en"), lang("es"), tr_core::AudioSource::System)
+                .unwrap();
         } else {
             engine
                 .start_region(region(), lang("en"), lang("es"))
@@ -157,7 +163,9 @@ fn pause_and_resume_are_safe_in_every_state() {
     let (mut engine, _sink) = engine(fast_config());
     engine.pause(); // sin nada en marcha
     engine.resume();
-    engine.start_audio(lang("en"), lang("es")).unwrap();
+    engine
+        .start_audio(lang("en"), lang("es"), tr_core::AudioSource::System)
+        .unwrap();
     engine.pause(); // el audio puro ignora pausa
     engine.resume();
     engine.stop();
@@ -202,4 +210,65 @@ fn the_interface_performance_options_override_the_base_tuning() {
         perf.ocr_max_side, 640,
         "lo que la interfaz no pide se conserva"
     );
+}
+
+fn levels(events: &[Event]) -> Vec<(f32, f32)> {
+    events
+        .iter()
+        .filter_map(|e| match e {
+            Event::AudioLevel { rms, peak } => Some((*rms, *peak)),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn audio_from_a_demo_application_emits_levels_and_subtitles() {
+    let (mut engine, sink) = engine(fast_config());
+    let apps = engine.list_audio_sources().unwrap();
+    assert!(!apps.is_empty());
+    let app = apps[0].clone();
+    engine
+        .start_audio(
+            lang("en"),
+            lang("es"),
+            tr_core::AudioSource::Process {
+                id: app.id,
+                name: app.name,
+            },
+        )
+        .unwrap();
+    assert!(sink.wait_until(WAIT, |e| {
+        levels(e)
+            .iter()
+            .any(|&(rms, peak)| rms > 0.0 && peak >= rms)
+            && e.iter().any(|e| matches!(e, Event::Subtitle { .. }))
+    }));
+    engine.stop();
+}
+
+#[test]
+fn audio_from_a_missing_application_fails_without_leaving_threads_running() {
+    let (mut engine, sink) = engine(fast_config());
+    let error = engine
+        .start_audio(
+            lang("en"),
+            lang("es"),
+            tr_core::AudioSource::Process {
+                id: 424_242,
+                name: "ghost.exe".into(),
+            },
+        )
+        .unwrap_err();
+    assert!(matches!(error, tr_core::CoreError::Capture(_)), "{error}");
+    assert!(!engine.is_running());
+    std::thread::sleep(Duration::from_millis(100));
+    assert!(levels(&sink.events()).is_empty());
+}
+
+#[test]
+fn fake_engine_lists_demo_applications() {
+    let (engine, _sink) = engine(fast_config());
+    let apps = engine.list_audio_sources().unwrap();
+    assert!(apps.iter().all(|a| !a.name.is_empty()));
 }

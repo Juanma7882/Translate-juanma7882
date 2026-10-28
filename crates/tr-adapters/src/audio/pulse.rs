@@ -14,9 +14,10 @@ use std::thread::{self, JoinHandle};
 use pulseaudio::protocol::{self, Command};
 use tr_core::ports::ChunkCallback;
 use tr_core::types::SAMPLE_RATE;
-use tr_core::{AudioCapture, CoreError, Result};
+use tr_core::{AppAudio, AudioCapture, AudioSource, AudioSourceLister, CoreError, Result};
 
 use super::chunker::{CHUNK_SAMPLES, Chunker};
+use super::pulse_source::{SinkInputMeta, group_by_program, prop_string, resolve_input};
 
 fn capture_error(message: impl Into<String>) -> CoreError {
     CoreError::Capture(message.into())
@@ -97,10 +98,40 @@ fn default_monitor(sock: &mut BufReader<UnixStream>, version: u16) -> Result<CSt
     CString::new(name).map_err(|_| capture_error("invalid output device name"))
 }
 
-/// Abre el flujo de grabación del monitor y devuelve la conexión lista para leer datos.
-fn open_stream(socket: Option<PathBuf>) -> Result<Connection> {
+/// Sink-inputs (flujos de reproducción de las aplicaciones) que hay ahora en el servidor.
+fn sink_inputs(sock: &mut BufReader<UnixStream>, version: u16) -> Result<Vec<SinkInputMeta>> {
+    let fail = |e: protocol::ProtocolError| {
+        capture_error(format!(
+            "could not list the applications playing audio: {e}"
+        ))
+    };
+    protocol::write_command_message(sock.get_mut(), 4, &Command::GetSinkInputInfoList, version)
+        .map_err(fail)?;
+    let (_, list) =
+        protocol::read_reply_message::<protocol::SinkInputInfoList>(sock, version).map_err(fail)?;
+    Ok(list
+        .iter()
+        .map(|input| SinkInputMeta {
+            index: input.index,
+            binary: prop_string(input.props.get(protocol::Prop::ApplicationProcessBinary)),
+            app_name: prop_string(input.props.get(protocol::Prop::ApplicationName)),
+            stream_name: input.name.to_string_lossy().into_owned(),
+            corked: input.corked,
+        })
+        .collect())
+}
+
+/// Abre el flujo de grabación y devuelve la conexión lista para leer datos. Con `input` graba solo
+/// ese sink-input (`direct_on_input`); sin él, el monitor del dispositivo de salida por defecto.
+fn open_stream(socket: Option<PathBuf>, input: Option<(u32, &str)>) -> Result<Connection> {
     let (mut sock, version) = connect(socket)?;
-    let monitor = default_monitor(&mut sock, version)?;
+    let (monitor, direct_on_input_index) = match input {
+        None => (Some(default_monitor(&mut sock, version)?), None),
+        Some((id, name)) => {
+            let inputs = sink_inputs(&mut sock, version)?;
+            (None, Some(resolve_input(&inputs, id, name)?))
+        }
+    };
     let fail =
         |e: protocol::ProtocolError| capture_error(format!("sound server stream failed: {e}"));
 
@@ -114,7 +145,8 @@ fn open_stream(socket: Option<PathBuf>) -> Result<Connection> {
                 sample_rate: SAMPLE_RATE,
             },
             channel_map: protocol::ChannelMap::mono(),
-            source_name: Some(monitor),
+            source_name: monitor,
+            direct_on_input_index,
             buffer_attr: protocol::stream::BufferAttr {
                 fragment_size: FRAGMENT_BYTES,
                 ..Default::default()
@@ -130,7 +162,7 @@ fn open_stream(socket: Option<PathBuf>) -> Result<Connection> {
     )
     .map_err(fail)?;
     protocol::read_reply_message::<protocol::CreateRecordStreamReply>(&mut sock, version)
-        .map_err(|e| capture_error(format!("could not open the output monitor: {e}")))?;
+        .map_err(|e| capture_error(format!("could not open the audio stream: {e}")))?;
     Ok((sock, version))
 }
 
@@ -193,13 +225,13 @@ impl PulseLoopback {
     }
 }
 
-impl AudioCapture for PulseLoopback {
-    fn start(&mut self, on_chunk: ChunkCallback) -> Result<()> {
+impl PulseLoopback {
+    fn start_input(&mut self, input: Option<(u32, &str)>, on_chunk: ChunkCallback) -> Result<()> {
         if self.worker.is_some() {
             return Err(capture_error("audio capture is already running"));
         }
         // La conexión se abre aquí para que un servidor ausente se informe al arrancar.
-        let (sock, version) = open_stream(self.socket.clone())?;
+        let (sock, version) = open_stream(self.socket.clone(), input)?;
         let socket = sock
             .get_ref()
             .try_clone()
@@ -207,6 +239,21 @@ impl AudioCapture for PulseLoopback {
         let handle = thread::spawn(move || read_loop(sock, version, Chunker::new(on_chunk)));
         self.worker = Some(Worker { socket, handle });
         Ok(())
+    }
+}
+
+impl AudioCapture for PulseLoopback {
+    fn start(&mut self, on_chunk: ChunkCallback) -> Result<()> {
+        self.start_input(None, on_chunk)
+    }
+
+    fn start_source(&mut self, source: &AudioSource, on_chunk: ChunkCallback) -> Result<()> {
+        match source {
+            AudioSource::System => self.start_input(None, on_chunk),
+            AudioSource::Process { id, name } => {
+                self.start_input(Some((*id, name.as_str())), on_chunk)
+            }
+        }
     }
 
     fn stop(&mut self) {
@@ -221,5 +268,33 @@ impl AudioCapture for PulseLoopback {
 impl Drop for PulseLoopback {
     fn drop(&mut self) {
         self.stop();
+    }
+}
+
+/// Lista las aplicaciones que reproducen audio (sink-inputs de PulseAudio/PipeWire), agrupadas por
+/// programa. Abre una conexión corta por consulta; solo lee metadatos.
+#[derive(Default)]
+pub struct PulseSourceLister {
+    socket: Option<PathBuf>,
+}
+
+impl PulseSourceLister {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Con el socket de un servidor concreto (pruebas, o un servidor no estándar).
+    pub fn with_socket(socket: impl Into<PathBuf>) -> Self {
+        Self {
+            socket: Some(socket.into()),
+        }
+    }
+}
+
+impl AudioSourceLister for PulseSourceLister {
+    fn list(&self) -> Result<Vec<AppAudio>> {
+        let (mut sock, version) = connect(self.socket.clone())?;
+        let inputs = sink_inputs(&mut sock, version)?;
+        Ok(group_by_program(&inputs))
     }
 }
