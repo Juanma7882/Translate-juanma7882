@@ -77,7 +77,12 @@ describe('cancelar y reutilizar', () => {
   })
 
   test('otras teclas no hacen nada', () => {
-    assert.deepEqual(run([{ type: 'key', key: 'a' }, { type: 'key', key: 'Tab' }]).effects, [])
+    assert.deepEqual(run([{ type: 'key', key: 'a' }, { type: 'key', key: 'F5' }]).effects, [])
+  })
+
+  test('Tab pasa el selector a la pantalla siguiente, salvo en pleno arrastre', () => {
+    assert.deepEqual(run([{ type: 'key', key: 'Tab' }]).effects, [{ type: 'nextDisplay' }])
+    assert.deepEqual(run([{ type: 'down', point: p(1, 1) }, { type: 'key', key: 'Tab' }]).effects, [])
   })
 
   test('la región anterior se muestra como punto de partida', () => {

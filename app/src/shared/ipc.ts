@@ -21,6 +21,7 @@ export const Channel = {
   selectorInit: 'selector:init',
   selectorConfirm: 'selector:confirm',
   selectorCancel: 'selector:cancel',
+  selectorNextDisplay: 'selector:next-display',
   overlayShow: 'overlay:show',
   overlayStyle: 'overlay:style',
   overlayClear: 'overlay:clear',
@@ -54,6 +55,7 @@ export const Channel = {
   sessionRestart: 'session:restart',
   sessionStop: 'session:stop',
   sessionChooseRegion: 'session:choose-region',
+  sessionShowRegion: 'session:show-region',
   sessionState: 'session:state',
   audioSources: 'audio:sources',
   audioLevel: 'audio:level',
@@ -67,12 +69,18 @@ export const Channel = {
 export interface SelectorInit {
   /** Última región elegida, ya convertida a píxeles de interfaz de este monitor. */
   lastRegion: DipRect | null
+  /** Pantalla donde se abre el selector (1 = primera) y cuántas hay: con más de una se puede saltar de una a otra. */
+  screen: { index: number; total: number }
+  /** `true` solo enseña `lastRegion` unos segundos, sin aceptar ratón ni teclado. */
+  preview?: boolean
 }
 
 export interface SelectorApi {
   onInit(listener: (init: SelectorInit) => void): void
   confirm(rect: DipRect): void
   cancel(): void
+  /** Pasa el selector a la pantalla siguiente (la última da la vuelta a la primera). */
+  nextDisplay(): void
 }
 
 // ---------------------------------------------------------------------------------- overlay
@@ -217,6 +225,8 @@ export interface SettingsApi {
   stopSession(): Promise<void>
   /** Abre el selector de región; si se elige una, se guarda y se empieza a traducir. Devuelve si se eligió. */
   chooseRegion(): Promise<boolean>
+  /** Marca unos segundos sobre la pantalla la región guardada. Devuelve `false` si no hay región o no se pudo mostrar. */
+  showRegion(): Promise<boolean>
   /** Estado actual de la sesión: al abrir la ventana con una sesión en marcha no hay que esperar a un cambio. */
   getAppState(): Promise<AppState>
   /** Aplicaciones con audio activo en este momento. */

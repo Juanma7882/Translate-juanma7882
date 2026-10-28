@@ -18,6 +18,8 @@ import type { AudioSourceRequest, EngineEvent } from '../shared/protocol.ts'
 import type { SavedRegion } from '../shared/settings.ts'
 import type { EngineHost } from './engine-host.ts'
 import { noticeForCrash, noticeForEngineError, noticeForStartFailure } from './notices.ts'
+import type { DisplaySource } from './overlay-picker.ts'
+import { OverlayPicker } from './overlay-picker.ts'
 import type { RegionPicker } from './region-picker.ts'
 import type { SettingsStore } from './settings-store.ts'
 import type { WindowManager } from './windows.ts'
@@ -41,6 +43,7 @@ export interface ControllerDeps {
   windows: WindowManager
   settings: SettingsStore
   picker: RegionPicker
+  displays: DisplaySource
   /** Configura el motor con los ajustes actuales (lo hace al arrancar una traducción). */
   configure: () => Promise<void>
   timers?: ControllerTimers
@@ -53,6 +56,8 @@ interface ControllerEvents {
   notice: [Notice]
   /** Texto de una traducción o subtítulo ya preparado para mostrar. */
   text: [OverlayText]
+  /** La región se quedó sin texto: el overlay puede retirar la traducción. */
+  clearText: []
 }
 
 const IDLE: AppState = { running: false, paused: false, mode: null, phase: 'idle' }
@@ -121,7 +126,7 @@ export class AppController extends EventEmitter<ControllerEvents> {
     return { ...this.current }
   }
 
-  /** Abre el selector y, si el usuario elige una región, la guarda y empieza a traducirla. */
+  /** Abre el selector de región y, si el usuario elige una, abre el selector de overlay para elegir dónde mostrar la traducción. */
   async chooseRegion(): Promise<boolean> {
     const region = await this.deps.picker.pick()
     if (!region) return false
@@ -130,7 +135,27 @@ export class AppController extends EventEmitter<ControllerEvents> {
       this.emit('notice', { level: 'error', message: 'No se pudo guardar la región elegida' })
       return false
     }
+
+    // Abrir selector de overlay para elegir dónde mostrar la traducción
+    const overlayPicker = new OverlayPicker(this.deps.windows, this.deps.displays, region)
+    const position = await overlayPicker.pick()
+    if (position) {
+      const overlaySettings = this.deps.settings.get().overlay
+      const positionSaved = this.deps.settings.update({
+        overlay: { ...overlaySettings, placement: 'manual', x: position.x, y: position.y },
+      })
+      if (!positionSaved.ok) {
+        this.emit('notice', { level: 'error', message: 'No se pudo guardar la posición del overlay' })
+      }
+    }
+
     return this.start(region)
+  }
+
+  /** Marca unos segundos la región guardada sobre la pantalla; `false` si no hay ninguna o hay un selector abierto. */
+  async showRegion(): Promise<boolean> {
+    const { lastRegion } = this.deps.settings.get()
+    return lastRegion ? this.deps.picker.preview(lastRegion) : false
   }
 
   /** Traduce la última región usada; si no hay ninguna, pide elegirla (salvo en modo audio, que no la necesita). */
@@ -426,6 +451,9 @@ export class AppController extends EventEmitter<ControllerEvents> {
         this.emit('text', { original, lang: this.deps.settings.get().from, translations, final: isFinal })
         return
       }
+      case 'textCleared':
+        this.emit('clearText')
+        return
       case 'error':
         this.emit('notice', noticeForEngineError(event.payload.category, event.payload.message))
         if (event.payload.category === 'capture') this.checkSourceLost()

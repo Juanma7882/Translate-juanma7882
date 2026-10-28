@@ -13,6 +13,7 @@ import type {
   ModelsDirCheck,
   Rect,
   SubtitleEvent,
+  TextClearedEvent,
   TranslationEvent,
 } from 'tr-bindings'
 
@@ -25,6 +26,7 @@ export interface EngineEventMap {
   modelProgress: ModelProgressEvent
   mode: ModeEvent
   audioLevel: AudioLevel
+  textCleared: TextClearedEvent
 }
 
 export type EngineEventName = keyof EngineEventMap

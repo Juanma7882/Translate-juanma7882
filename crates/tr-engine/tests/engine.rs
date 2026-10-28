@@ -107,6 +107,31 @@ fn region_with_fallback_starts_in_text_mode() {
 }
 
 #[test]
+fn keep_translation_still_translates_after_pause_and_resume_with_fallback() {
+    let config = EngineConfig {
+        fallback: Some(FallbackConfig::default()),
+        keep_translation: true,
+        ..fast_config()
+    };
+    let (mut engine, sink) = engine(config);
+    engine
+        .start_region(region(), lang("en"), vec![lang("es")])
+        .unwrap();
+    assert!(sink.wait_until(WAIT, |e| !translations(e).is_empty()));
+
+    engine.pause();
+    assert!(sink.wait_until(WAIT, |e| {
+        e.iter()
+            .any(|ev| matches!(ev, Event::ModeChanged { mode: Mode::Paused }))
+    }));
+    sink.take();
+    engine.resume();
+    // Los textos de demostración cambian solos: tras reanudar siguen llegando traducciones.
+    assert!(sink.wait_until(WAIT, |e| !translations(e).is_empty()));
+    engine.stop();
+}
+
+#[test]
 fn starting_again_replaces_the_running_pipeline() {
     let (mut engine, sink) = engine(fast_config());
     engine

@@ -13,8 +13,8 @@ import type { SavedRegion } from '../shared/settings.ts'
 import { AppController } from './app-controller.ts'
 import type { EngineHost } from './engine-host.ts'
 import { ModelsService } from './models-service.ts'
+import type { DisplaySource } from './overlay-picker.ts'
 import { RegionPicker } from './region-picker.ts'
-import type { DisplaySource } from './region-picker.ts'
 import { SettingsStore } from './settings-store.ts'
 import type { WindowManager } from './windows.ts'
 
@@ -55,7 +55,7 @@ export async function runFlowSmoke(host: EngineHost, windows: WindowManager, dis
   expect(settings.update({ engines: 'fake' }).ok, 'se pueden guardar los ajustes')
   let controller: AppController
   const models = new ModelsService(host, settings, () => controller.state.running)
-  controller = new AppController({ host, windows, settings, picker: new RegionPicker(windows, displays, () => settings.get().lastRegion), configure: () => models.configure() })
+  controller = new AppController({ host, windows, settings, picker: new RegionPicker(windows, displays, () => settings.get().lastRegion), displays, configure: () => models.configure() })
   host.start()
   await host.whenReady()
 
@@ -103,6 +103,7 @@ export async function runFlowSmoke(host: EngineHost, windows: WindowManager, dis
     windows,
     settings: restartedSettings,
     picker: new RegionPicker(windows, displays, () => restartedSettings.get().lastRegion),
+    displays,
     configure: () => restartedModels.configure(),
   })
   let again = 0

@@ -850,6 +850,7 @@ module.exports.onError = nativeBinding.onError
 module.exports.onModeChanged = nativeBinding.onModeChanged
 module.exports.onModelProgress = nativeBinding.onModelProgress
 module.exports.onSubtitle = nativeBinding.onSubtitle
+module.exports.onTextCleared = nativeBinding.onTextCleared
 module.exports.onTranslation = nativeBinding.onTranslation
 module.exports.pause = nativeBinding.pause
 module.exports.progressEventsEmitted = nativeBinding.progressEventsEmitted

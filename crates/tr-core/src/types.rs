@@ -242,6 +242,9 @@ pub enum Event {
     ModeChanged {
         mode: Mode,
     },
+    /// La región tenía un texto ya traducido y dejó de tener texto. Se emite una vez por cada paso
+    /// y no lleva contenido.
+    TextCleared,
     /// Nivel del último trozo de audio (RMS y pico, de 0 a 1). Solo números.
     AudioLevel {
         rms: f32,

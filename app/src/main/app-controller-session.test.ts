@@ -8,6 +8,7 @@ import type { Command } from '../shared/protocol.ts'
 import { defaultSettings } from '../shared/settings.ts'
 import { AppController } from './app-controller.ts'
 import type { EngineHost } from './engine-host.ts'
+import type { DisplaySource } from './overlay-picker.ts'
 import type { RegionPicker } from './region-picker.ts'
 import type { SettingsStore } from './settings-store.ts'
 import type { WindowManager } from './windows.ts'
@@ -71,11 +72,16 @@ function setup() {
   const host = new FakeHost()
   const settings = fakeSettings()
   const timers = manualTimers()
+  const displays: DisplaySource = {
+    all: () => [{ id: 0, bounds: { x: 0, y: 0, width: 1920, height: 1080 }, workArea: { x: 0, y: 0, width: 1920, height: 1050 }, scaleFactor: 1, isPrimary: true }],
+    underCursor: () => ({ id: 0, bounds: { x: 0, y: 0, width: 1920, height: 1080 }, workArea: { x: 0, y: 0, width: 1920, height: 1050 }, scaleFactor: 1, isPrimary: true }),
+  }
   const controller = new AppController({
     host: host as unknown as EngineHost,
     windows: { get: () => undefined } as unknown as WindowManager,
     settings,
     picker: {} as RegionPicker,
+    displays,
     configure: () => Promise.resolve(),
     timers,
   })

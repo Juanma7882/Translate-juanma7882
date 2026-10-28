@@ -306,6 +306,14 @@ function App({ api }: { api: SettingsApi }) {
               />
               <FieldError id="hideAfter" issues={fieldIssues} />
             </label>
+            <label class="inline" for="keepWhileUnchanged">
+              <input id="keepWhileUnchanged" type="checkbox" checked={overlay.keepWhileUnchanged} onChange={(e) => void save({ overlay: { keepWhileUnchanged: e.currentTarget.checked } })} />
+              Mantener la traducción mientras el texto no cambie
+            </label>
+            <p class="hint">
+              En modo texto, la traducción se queda en pantalla hasta que el texto cambie o desaparezca, sin ocultarse por tiempo, y al reanudar tras una pausa no se vuelve a traducir un texto que
+              sigue igual. En modo audio se sigue usando «Ocultar tras». Lo de reanudar se aplica en la próxima sesión.
+            </p>
           </fieldset>
 
           <fieldset id="colors">

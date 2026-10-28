@@ -23,7 +23,7 @@ export type SelectionInput =
   | { type: 'key'; key: string }
   | { type: 'context' }
 
-export type SelectionEffect = { type: 'confirm'; rect: DipRect } | { type: 'cancel' } | null
+export type SelectionEffect = { type: 'confirm'; rect: DipRect } | { type: 'cancel' } | { type: 'nextDisplay' } | null
 
 export interface SelectionStep {
   state: SelectionState
@@ -66,6 +66,7 @@ export function reduce(state: SelectionState, input: SelectionInput): SelectionS
     }
     case 'key':
       if (input.key === 'Escape') return { state, effect: { type: 'cancel' } }
+      if (input.key === 'Tab' && !state.start) return { state, effect: { type: 'nextDisplay' } }
       if (input.key === 'Enter' && !state.start && state.previous && big(state.previous)) {
         return { state, effect: { type: 'confirm', rect: state.previous } }
       }

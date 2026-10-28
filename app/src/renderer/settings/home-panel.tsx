@@ -53,7 +53,7 @@ interface Props {
   goToLanguages: () => void
 }
 
-type Action = 'start' | 'pause' | 'resume' | 'restart' | 'stop' | 'region'
+type Action = 'start' | 'pause' | 'resume' | 'restart' | 'stop' | 'region' | 'show'
 
 export function HomePanel({ api, settings, appState, notice, levels, catalog, progress, active, save, goToLanguages }: Props) {
   const phase = phaseOf(appState)
@@ -75,6 +75,7 @@ export function HomePanel({ api, settings, appState, notice, levels, catalog, pr
       else if (action === 'resume') await api.resumeSession()
       else if (action === 'restart') await api.restartSession()
       else if (action === 'region') await api.chooseRegion()
+      else if (action === 'show') await api.showRegion()
       else await api.stopSession()
     } catch (e) {
       setFailure(e instanceof Error ? e.message : String(e))
@@ -129,7 +130,7 @@ export function HomePanel({ api, settings, appState, notice, levels, catalog, pr
 
       <fieldset id="what-to-translate">
         <legend>Qué se traduce</legend>
-        <RegionRow settings={settings} busy={pending !== null} onChoose={() => void run('region')} />
+        <RegionRow settings={settings} busy={pending !== null} onChoose={() => void run('region')} onShow={() => void run('show')} />
         <PairMenu api={api} settings={settings} catalog={catalog} running={running} active={active} progress={progress} save={save} goToLanguages={goToLanguages} />
         <ModeRow settings={settings} save={save} />
       </fieldset>

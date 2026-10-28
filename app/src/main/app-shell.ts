@@ -72,12 +72,17 @@ export class AppShell {
       windows,
       settings,
       picker: new RegionPicker(windows, displays, () => settings.get().lastRegion),
+      displays,
       configure: () => this.models.configure(),
     })
     this.overlay = new OverlayController(windows, settings, displays)
     this.shortcutManager = new ShortcutManager(deps.shortcuts, (notice) => this.announce(notice))
 
     this.controller.on('text', (text) => this.overlay.show(text))
+    // La región se quedó sin texto: solo con «mantener la traducción» el overlay espera este aviso para retirarla.
+    this.controller.on('clearText', () => {
+      if (settings.get().overlay.keepWhileUnchanged) this.overlay.clear()
+    })
     this.controller.on('state', (state) => {
       this.syncMode(state)
       void this.syncOverlay(state.running)
@@ -113,6 +118,7 @@ export class AppShell {
   private shownMode: AppState['mode'] = null
 
   private syncMode(state: AppState): void {
+    this.overlay.setTextMode(state.running && state.mode === 'text')
     if (!state.running) {
       this.shownMode = null
       return

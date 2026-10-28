@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 
-import { linesPerTrack, overlayHeight, trackPlan } from './overlay-layout.ts'
+import { effectiveHideAfterMs, linesPerTrack, overlayHeight, trackPlan } from './overlay-layout.ts'
 
 describe('trackPlan', () => {
   test('sin destinos el original es el único subtítulo y es principal', () => {
@@ -55,5 +55,21 @@ describe('linesPerTrack', () => {
       assert.ok(lines >= last, `${height}: ${lines} < ${last}`)
       last = lines
     }
+  })
+})
+
+describe('effectiveHideAfterMs', () => {
+  test('sin el ajuste vale siempre el tiempo configurado', () => {
+    assert.equal(effectiveHideAfterMs(4000, false, true), 4000)
+    assert.equal(effectiveHideAfterMs(4000, false, false), 4000)
+  })
+  test('con el ajuste y en modo texto no se oculta por tiempo', () => {
+    assert.equal(effectiveHideAfterMs(4000, true, true), 0)
+  })
+  test('con el ajuste pero en audio o sin sesión vale el tiempo configurado', () => {
+    assert.equal(effectiveHideAfterMs(4000, true, false), 4000)
+  })
+  test('0 sigue significando no ocultar', () => {
+    assert.equal(effectiveHideAfterMs(0, false, true), 0)
   })
 })

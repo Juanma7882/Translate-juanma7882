@@ -104,6 +104,8 @@ export interface EngineOptions {
   performance?: PerformanceOptions
   /** Nivel RMS (0,001 a 0,5) a partir del cual el audio cuenta como voz. Por defecto, 0,01. */
   voiceThreshold?: number
+  /** Al reanudar tras una pausa, un texto de pantalla que no cambió no se vuelve a traducir. */
+  keepTranslation?: boolean
 }
 
 export interface ErrorEvent {
@@ -207,6 +209,9 @@ export declare function onModelProgress(callback: (event: ModelProgressEvent) =>
 
 export declare function onSubtitle(callback: (event: SubtitleEvent) => void): void
 
+/** La región tenía un texto traducido y se quedó sin texto. El evento no lleva contenido. */
+export declare function onTextCleared(callback: (event: TextClearedEvent) => void): void
+
 export declare function onTranslation(callback: (event: TranslationEvent) => void): void
 
 /** Pausa la captura (y el audio, si lo hay). No hace nada si no hay una traducción de región en marcha. */
@@ -274,6 +279,11 @@ export interface SubtitleEvent {
   translations: Array<TranslationText>
   isFinal: boolean
   timestampMs: number
+}
+
+/** Aviso de que la región se quedó sin texto. `cleared` es siempre `true`; no hay contenido. */
+export interface TextClearedEvent {
+  cleared: boolean
 }
 
 export interface TranslationEvent {

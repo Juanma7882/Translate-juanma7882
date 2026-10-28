@@ -20,6 +20,7 @@ function setup(windowSender: unknown = 'win') {
     restart: () => Promise.resolve(void calls.push('restart')),
     stop: () => Promise.resolve(void calls.push('stop')),
     chooseRegion: () => Promise.resolve(void calls.push('region')).then(() => chosen),
+    showRegion: () => Promise.resolve(void calls.push('show')).then(() => chosen),
   } as SessionControls
   const emitter = new EventEmitter()
   let reply: unknown = { supported: true, apps: [{ id: 1, name: 'a.exe' }] }

@@ -224,6 +224,25 @@ export async function runOverlaySmoke(windows: WindowManager, settings: Settings
   await waitFor(async () => (await dom(window)).hidden, 'the text to hide itself', 3000)
   ok('se oculta solo pasado el tiempo configurado')
 
+  // Mantener la traducción: en modo texto no se oculta por tiempo; en audio sí.
+  settings.update({ overlay: { hideAfterMs: 300, keepWhileUnchanged: true } })
+  controller.setTextMode(true)
+  await sleep(100)
+  controller.show(text('Stay', 'Quédate', true))
+  await waitFor(async () => !(await dom(window)).hidden, 'the kept text to appear')
+  await sleep(900)
+  expect(!(await dom(window)).hidden, 'con el ajuste, en modo texto, la traducción sigue visible pasado el tiempo')
+  controller.clear()
+  await waitFor(async () => (await dom(window)).hidden, 'the kept text to be cleared')
+  ok('con «mantener la traducción» el texto sigue visible hasta que se retira')
+  controller.setTextMode(false)
+  await sleep(100)
+  controller.show(text('Audio', 'Audio', true))
+  await waitFor(async () => !(await dom(window)).hidden, 'the audio text to appear')
+  await waitFor(async () => (await dom(window)).hidden, 'the audio text to hide itself', 3000)
+  settings.update({ overlay: { keepWhileUnchanged: false } })
+  ok('en modo audio sigue valiendo el tiempo de ocultado')
+
   // Colores y límite de líneas.
   expect(settings.update({ overlay: { textColor: '#ffee00', backgroundColor: '#102030', opacity: 1, maxLines: 1, fontSize: 30, width: 400, hideAfterMs: 0 } }).ok, 'cambiar colores y líneas')
   controller.show(text('Hello', 'Esta es una traducción muy larga que no cabe en una sola línea de la ventana del overlay y debe cortarse', true))

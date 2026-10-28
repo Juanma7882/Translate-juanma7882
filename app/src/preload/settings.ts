@@ -31,6 +31,7 @@ const SESSION_RESUME = 'session:resume' satisfies typeof Channel.sessionResume
 const SESSION_RESTART = 'session:restart' satisfies typeof Channel.sessionRestart
 const SESSION_STOP = 'session:stop' satisfies typeof Channel.sessionStop
 const SESSION_CHOOSE_REGION = 'session:choose-region' satisfies typeof Channel.sessionChooseRegion
+const SESSION_SHOW_REGION = 'session:show-region' satisfies typeof Channel.sessionShowRegion
 const SESSION_STATE = 'session:state' satisfies typeof Channel.sessionState
 const AUDIO_SOURCES = 'audio:sources' satisfies typeof Channel.audioSources
 const AUDIO_LEVEL = 'audio:level' satisfies typeof Channel.audioLevel
@@ -74,6 +75,7 @@ const api: SettingsApi = {
   restartSession: () => ipcRenderer.invoke(SESSION_RESTART),
   stopSession: () => ipcRenderer.invoke(SESSION_STOP),
   chooseRegion: () => ipcRenderer.invoke(SESSION_CHOOSE_REGION),
+  showRegion: () => ipcRenderer.invoke(SESSION_SHOW_REGION),
   getAppState: () => ipcRenderer.invoke(SESSION_STATE),
   listAudioSources: () => ipcRenderer.invoke(AUDIO_SOURCES),
   onAudioLevel(listener) {

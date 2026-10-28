@@ -13,7 +13,7 @@ import { installedPairs, modeSentence, pairKey, regionSummary } from './home.ts'
 
 // ------------------------------------------------------------------------------------ región
 
-export function RegionRow({ settings, busy, onChoose }: { settings: Settings; busy: boolean; onChoose: () => void }) {
+export function RegionRow({ settings, busy, onChoose, onShow }: { settings: Settings; busy: boolean; onChoose: () => void; onShow: () => void }) {
   const summary = regionSummary(settings.lastRegion, settings.mode)
   return (
     <div id="region-row" class="setup-row">
@@ -23,6 +23,11 @@ export function RegionRow({ settings, busy, onChoose }: { settings: Settings; bu
       <span class="setup-value" id="region-text" aria-labelledby="region-label">
         {summary.text}
       </span>
+      {summary.canChange && settings.lastRegion && (
+        <button type="button" id="show-region" disabled={busy} onClick={onShow} title="Marca unos segundos la región elegida sobre la pantalla">
+          Ver región
+        </button>
+      )}
       {summary.canChange && (
         <button type="button" id="choose-region" disabled={busy} onClick={onChoose}>
           {summary.buttonLabel}

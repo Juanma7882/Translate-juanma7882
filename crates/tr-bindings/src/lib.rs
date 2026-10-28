@@ -4,7 +4,7 @@
 //! `modelStatus`, `downloadModels`, `modelInventory`, `deleteModel`, `cancelModelDownload`,
 //! `validateModelsDir`, `cacheStats`, `listAudioSources`, `audioVoiceThreshold`,
 //! `startAudioMonitor`, `stopAudioMonitor` y los registros
-//! `onTranslation`, `onSubtitle`, `onError`, `onModelProgress`, `onModeChanged`, `onAudioLevel`. Capturas y audio nunca cruzan hacia JS.
+//! `onTranslation`, `onSubtitle`, `onError`, `onModelProgress`, `onModeChanged`, `onAudioLevel`, `onTextCleared`. Capturas y audio nunca cruzan hacia JS.
 //!
 //! Modos: `startRegionTranslation` con `autoFallback: true` es el modo automático (texto con paso
 //! a audio) y es el único que emite `onModeChanged`; sin fallback es "solo texto" y
@@ -30,7 +30,7 @@ use tr_engine::{
 
 use events::{
     AudioLevelEvent, BindingSink, Callback, Callbacks, ErrorEvent, ModeEvent, ModelProgressEvent,
-    SubtitleEvent, TranslationEvent,
+    SubtitleEvent, TextClearedEvent, TranslationEvent,
 };
 use models::{DeleteTask, DownloadTask, InventoryTask, ModelCatalog, ModelsDirCheck, StatusTask};
 
@@ -127,6 +127,8 @@ pub struct EngineOptions {
     pub performance: Option<PerformanceOptions>,
     /// Nivel RMS (0,001 a 0,5) a partir del cual el audio cuenta como voz. Por defecto, 0,01.
     pub voice_threshold: Option<f64>,
+    /// Al reanudar tras una pausa, un texto de pantalla que no cambió no se vuelve a traducir.
+    pub keep_translation: Option<bool>,
 }
 
 /// Convierte un error del núcleo: los argumentos inválidos se distinguen del resto de fallos.
@@ -270,6 +272,9 @@ fn build_config(options: &EngineOptions) -> napi::Result<EngineConfig> {
             return Err(invalid_arg("voiceThreshold must be between 0.001 and 0.5"));
         }
         config.vad_threshold = threshold as f32;
+    }
+    if let Some(keep) = options.keep_translation {
+        config.keep_translation = keep;
     }
     Ok(config)
 }
@@ -562,4 +567,10 @@ pub fn on_mode_changed(callback: Callback<ModeEvent>) {
 #[napi(ts_args_type = "callback: (event: AudioLevelEvent) => void")]
 pub fn on_audio_level(callback: Callback<AudioLevelEvent>) {
     CALLBACKS.level.set(callback);
+}
+
+/// La región tenía un texto traducido y se quedó sin texto. El evento no lleva contenido.
+#[napi(ts_args_type = "callback: (event: TextClearedEvent) => void")]
+pub fn on_text_cleared(callback: Callback<TextClearedEvent>) {
+    CALLBACKS.text_cleared.set(callback);
 }

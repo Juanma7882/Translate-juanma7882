@@ -75,6 +75,8 @@ pub struct EngineConfig {
     pub cache_capacity: usize,
     /// Nivel RMS (0..1) a partir del cual el audio cuenta como voz.
     pub vad_threshold: f32,
+    /// Al reanudar tras una pausa no se vuelve a emitir un texto de pantalla que no cambió.
+    pub keep_translation: bool,
     /// Parámetros de rendimiento opcionales (hilos, haz) que llegan desde la interfaz.
     pub performance: PerformanceConfig,
     /// Afinación base de los motores (lado de detección del OCR, modo de poca memoria...);
@@ -98,6 +100,7 @@ impl Default for EngineConfig {
             fallback: None,
             cache_capacity: DEFAULT_CAPACITY,
             vad_threshold: DEFAULT_VAD_THRESHOLD,
+            keep_translation: false,
             performance: PerformanceConfig::default(),
             perf: PerfConfig::default(),
             models_dir: None,
@@ -324,8 +327,10 @@ impl Engine {
         self.stop();
 
         let cache = Arc::clone(&self.cache);
+        let mut region_config = RegionConfig::new(from.clone());
+        region_config.keep_translation = self.config.keep_translation;
         let processor = RegionProcessor::new(
-            RegionConfig::new(from.clone()),
+            region_config,
             parts.ocr,
             with_translators(&targets, parts.translators),
             cache.clone(),

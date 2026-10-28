@@ -11,7 +11,7 @@ import type { BrowserWindow } from 'electron'
 import { toDesktopDip } from '../shared/geometry.ts'
 import type { DipRect, OverlayMode, OverlayStyle, OverlayText } from '../shared/ipc.ts'
 import { Channel } from '../shared/ipc.ts'
-import { linesPerTrack, overlayHeight, trackPlan } from '../shared/overlay-layout.ts'
+import { effectiveHideAfterMs, linesPerTrack, overlayHeight, trackPlan } from '../shared/overlay-layout.ts'
 import { clampToAreas, placeOutside } from '../shared/overlay-placement.ts'
 import type { SavedRegion } from '../shared/settings.ts'
 import type { DisplaySource } from './region-picker.ts'
@@ -49,6 +49,8 @@ export class OverlayController extends EventEmitter<OverlayEvents> {
   /** Posición durante un arrastre (fracciones acumuladas; la ventana usa enteros). */
   private dragAt: { x: number; y: number } | null = null
   private openedForMove = false
+  /** La sesión está en modo texto (no audio ni reposo): ahí rige «mantener la traducción». */
+  private textMode = false
 
   constructor(windows: WindowManager, settings: SettingsStore, displays: DisplaySource) {
     super()
@@ -74,11 +76,14 @@ export class OverlayController extends EventEmitter<OverlayEvents> {
   async open(region: SavedRegion | null): Promise<BrowserWindow> {
     this.region = region
     const window = await this.windows.openOverlay({ show: false })
+    // En Windows, la exclusión de las capturas y el modo «atravesable» no surten efecto si se aplican
+    // con la ventana oculta: el overlay saldría en la captura y el OCR leería su propio texto. Se muestra
+    // primero (la página está vacía y transparente) y se endurece después.
+    if (!window.isVisible()) window.showInactive()
     hardenOverlay(window)
     if (this.moveMode) window.setIgnoreMouseEvents(false)
     this.applyStyle()
     this.place()
-    if (!window.isVisible()) window.showInactive()
     return window
   }
 
@@ -99,6 +104,13 @@ export class OverlayController extends EventEmitter<OverlayEvents> {
 
   clear(): void {
     this.window?.webContents.send(Channel.overlayClear)
+  }
+
+  /** Indica si la sesión está en modo texto; el tiempo de ocultado depende de ello (ver `effectiveHideAfterMs`). */
+  setTextMode(active: boolean): void {
+    if (this.textMode === active) return
+    this.textMode = active
+    this.applyStyle()
   }
 
   close(): void {
@@ -178,10 +190,19 @@ export class OverlayController extends EventEmitter<OverlayEvents> {
   }
 
   private applyStyle(): void {
-    const { opacity, fontSize, fontFamily, showOriginal, hideAfterMs, textColor, backgroundColor, maxLines } = this.settings.get().overlay
+    const { opacity, fontSize, fontFamily, showOriginal, hideAfterMs, keepWhileUnchanged, textColor, backgroundColor, maxLines } = this.settings.get().overlay
     const lines = this.workHeight === null ? maxLines : this.effectiveLines(this.workHeight)
     this.sentLines = lines
-    const style: OverlayStyle = { opacity, fontSize, fontFamily, showOriginal, hideAfterMs, textColor, backgroundColor, maxLines: lines }
+    const style: OverlayStyle = {
+      opacity,
+      fontSize,
+      fontFamily,
+      showOriginal,
+      hideAfterMs: effectiveHideAfterMs(hideAfterMs, keepWhileUnchanged, this.textMode),
+      textColor,
+      backgroundColor,
+      maxLines: lines,
+    }
     this.window?.webContents.send(Channel.overlayStyle, style)
   }
 

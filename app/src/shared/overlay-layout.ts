@@ -34,6 +34,15 @@ export function trackPlan(targets: readonly string[], showOriginal: boolean): Tr
 }
 
 /** Alto de la ventana para `lines` líneas en cada subtítulo principal, en píxeles. */
+/**
+ * Milisegundos tras los que el overlay oculta el texto (0 = no ocultar). Con «mantener la traducción»
+ * y en modo texto no se oculta por tiempo: la retiran el aviso de región sin texto o la traducción
+ * siguiente. En audio (y fuera de sesión) vale el tiempo configurado.
+ */
+export function effectiveHideAfterMs(hideAfterMs: number, keepWhileUnchanged: boolean, textMode: boolean): number {
+  return keepWhileUnchanged && textMode ? 0 : hideAfterMs
+}
+
 export function overlayHeight(fontSize: number, lines: number, plan: TrackPlan): number {
   const secondary = plan.secondary ? fontSize * SECONDARY_SCALE * LINE_HEIGHT * SECONDARY_LINES : 0
   const primary = fontSize * LINE_HEIGHT * lines * plan.primary

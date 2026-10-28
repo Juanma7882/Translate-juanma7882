@@ -37,6 +37,7 @@ engine.onError(forward<Extract<EngineEvent, { name: 'error' }>>('error'))
 engine.onModelProgress(forward<Extract<EngineEvent, { name: 'modelProgress' }>>('modelProgress'))
 engine.onModeChanged(forward<Extract<EngineEvent, { name: 'mode' }>>('mode'))
 engine.onAudioLevel?.(forward<Extract<EngineEvent, { name: 'audioLevel' }>>('audioLevel'))
+engine.onTextCleared?.(forward<Extract<EngineEvent, { name: 'textCleared' }>>('textCleared'))
 
 port.on('message', ({ data }) => {
   const request = data as Request

@@ -95,3 +95,31 @@ describe('voiceThreshold', () => {
     for (const value of [-0.1, 0.0005, 0.51, 'x']) assert.deepEqual(applyPatch(base, { voiceThreshold: value }), { ok: false, errors: ['invalid voiceThreshold'] })
   })
 })
+
+describe('keepWhileUnchanged', () => {
+  const base = defaultSettings()
+  test('por defecto está desactivado', () => {
+    assert.equal(base.overlay.keepWhileUnchanged, false)
+  })
+  test('un archivo sin el campo se completa con false y sin avisos', () => {
+    const { keepWhileUnchanged: _k, ...legacyOverlay } = base.overlay
+    const { settings, warnings } = parseSettings({ ...base, overlay: legacyOverlay })
+    assert.deepEqual(warnings, [])
+    assert.equal(settings.overlay.keepWhileUnchanged, false)
+  })
+  test('se puede activar y desactivar', () => {
+    const on = applyPatch(base, { overlay: { keepWhileUnchanged: true } })
+    assert.ok(on.ok)
+    if (on.ok) {
+      assert.equal(on.settings.overlay.keepWhileUnchanged, true)
+      const off = applyPatch(on.settings, { overlay: { keepWhileUnchanged: false } })
+      assert.ok(off.ok)
+      if (off.ok) assert.equal(off.settings.overlay.keepWhileUnchanged, false)
+    }
+  })
+  test('un valor que no es booleano se rechaza nombrando el campo', () => {
+    for (const value of ['yes', 1, null]) {
+      assert.deepEqual(applyPatch(base, { overlay: { keepWhileUnchanged: value } }), { ok: false, errors: ['invalid overlay.keepWhileUnchanged'] }, String(value))
+    }
+  })
+})

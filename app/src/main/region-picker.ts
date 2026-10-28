@@ -42,11 +42,18 @@ export function electronDisplays(): DisplaySource {
   }
 }
 
+/** Cuánto se enseña la región guardada al pedir verla. */
+const PREVIEW_MS = 2500
+
+/** Marca interna: el usuario pidió el selector en la pantalla siguiente. */
+const NEXT_DISPLAY = Symbol('next-display')
+
 export class RegionPicker {
   private readonly windows: WindowManager
   private readonly displays: DisplaySource
   private readonly lastRegion: () => SavedRegion | null
   private pending: Promise<SavedRegion | null> | null = null
+  private previewing = false
 
   constructor(windows: WindowManager, displays: DisplaySource, lastRegion: () => SavedRegion | null) {
     this.windows = windows
@@ -58,15 +65,67 @@ export class RegionPicker {
     return this.pending !== null
   }
 
-  /** Abre el selector sobre `display` (por defecto, la pantalla del puntero). Resuelve `null` si se cancela. */
+  /**
+   * Abre el selector sobre `display` (por defecto, la pantalla del puntero). Con Tab el usuario lo pasa a la
+   * pantalla siguiente, así puede elegir una región en cualquier monitor. Resuelve `null` si se cancela.
+   */
   pick(display: DisplayInfo = this.displays.underCursor()): Promise<SavedRegion | null> {
-    this.pending ??= this.run(display).finally(() => {
+    this.cancelPreview()
+    this.pending ??= this.loop(display).finally(() => {
       this.pending = null
     })
     return this.pending
   }
 
-  private async run(display: DisplayInfo): Promise<SavedRegion | null> {
+  /**
+   * Marca `region` sobre su pantalla durante `ms` milisegundos, sin aceptar ratón ni teclado.
+   * Devuelve `false` si hay un selector abierto o la región ya no cae en ningún monitor.
+   */
+  async preview(region: SavedRegion, ms = PREVIEW_MS): Promise<boolean> {
+    if (this.pending) return false
+    this.cancelPreview()
+    const all = this.displays.all()
+    const located = toDipRect(region, all)
+    const electronDisplay = located && screen.getAllDisplays().find((d) => d.id === located.display.id)
+    if (!located || !electronDisplay) return false
+
+    const window = await this.windows.openSelector(electronDisplay)
+    // El usuario puede haber abierto el selector mientras cargaba la vista previa: gana el selector.
+    if (this.pending) {
+      this.windows.close('selector')
+      return false
+    }
+    window.setIgnoreMouseEvents(true)
+    window.setAlwaysOnTop(true, 'screen-saver')
+    const init: SelectorInit = { lastRegion: located.rect, screen: { index: monitorIndex(all, located.display) + 1, total: all.length }, preview: true }
+    window.webContents.send(Channel.selectorInit, init)
+    const timer = setTimeout(() => this.cancelPreview(), ms)
+    window.once('closed', () => {
+      clearTimeout(timer)
+      this.previewing = false
+    })
+    this.previewing = true
+    return true
+  }
+
+  private cancelPreview(): void {
+    if (!this.previewing) return
+    this.previewing = false
+    this.windows.close('selector')
+  }
+
+  private async loop(first: DisplayInfo): Promise<SavedRegion | null> {
+    let display = first
+    for (;;) {
+      const result = await this.run(display)
+      if (result !== NEXT_DISPLAY) return result
+      const all = this.displays.all()
+      const at = all.findIndex((d) => d.id === display.id)
+      display = all[(at + 1) % all.length] ?? first
+    }
+  }
+
+  private async run(display: DisplayInfo): Promise<SavedRegion | null | typeof NEXT_DISPLAY> {
     const all = this.displays.all()
     const electronDisplay = screen.getAllDisplays().find((d) => d.id === display.id)
     if (!electronDisplay) return null
@@ -82,13 +141,14 @@ export class RegionPicker {
     window.setAlwaysOnTop(true, 'screen-saver')
     window.focus()
 
-    return new Promise<SavedRegion | null>((resolve) => {
+    return new Promise<SavedRegion | null | typeof NEXT_DISPLAY>((resolve) => {
       let settled = false
-      const finish = (region: SavedRegion | null): void => {
+      const finish = (region: SavedRegion | null | typeof NEXT_DISPLAY): void => {
         if (settled) return
         settled = true
         ipcMain.removeListener(Channel.selectorConfirm, onConfirm)
         ipcMain.removeListener(Channel.selectorCancel, onCancel)
+        ipcMain.removeListener(Channel.selectorNextDisplay, onNext)
         this.windows.close('selector')
         resolve(region)
       }
@@ -102,14 +162,18 @@ export class RegionPicker {
       const onCancel = (event: IpcMainEvent): void => {
         if (fromThisWindow(event, window)) finish(null)
       }
+      const onNext = (event: IpcMainEvent): void => {
+        if (fromThisWindow(event, window) && all.length > 1) finish(NEXT_DISPLAY)
+      }
       ipcMain.on(Channel.selectorConfirm, onConfirm)
       ipcMain.on(Channel.selectorCancel, onCancel)
+      ipcMain.on(Channel.selectorNextDisplay, onNext)
       window.once('closed', () => finish(null))
 
       const saved = this.lastRegion()
       const sameMonitor = saved !== null && saved.monitor === monitorIndex(all, display)
       const lastRegion = saved && sameMonitor ? (toDipRect(saved, all)?.rect ?? null) : null
-      const init: SelectorInit = { lastRegion }
+      const init: SelectorInit = { lastRegion, screen: { index: monitorIndex(all, display) + 1, total: all.length } }
       window.webContents.send(Channel.selectorInit, init)
     })
   }

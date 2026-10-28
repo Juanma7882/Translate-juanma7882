@@ -33,6 +33,11 @@ export interface OverlaySettings {
   y: number
   /** Milisegundos sin traducciones nuevas antes de ocultar el texto (0 = no ocultar). */
   hideAfterMs: number
+  /**
+   * En modo texto, mantiene la traducción mientras el texto de la región no cambie (no la oculta por
+   * `hideAfterMs`) y al reanudar tras una pausa no vuelve a traducir un texto que no cambió.
+   */
+  keepWhileUnchanged: boolean
   showOriginal: boolean
   /** Color del texto, `#rrggbb`. */
   textColor: string
@@ -112,6 +117,7 @@ export function defaultSettings(): Settings {
       x: 0,
       y: 0,
       hideAfterMs: 4000,
+      keepWhileUnchanged: false,
       showOriginal: true,
       textColor: '#ffffff',
       backgroundColor: '#0c0c10',
@@ -304,6 +310,7 @@ export function parseSettings(raw: unknown): ParseResult {
       x: reader.number(overlaySource, 'x', 'overlay.x', d.x, -100_000, 100_000, true),
       y: reader.number(overlaySource, 'y', 'overlay.y', d.y, -100_000, 100_000, true),
       hideAfterMs: reader.number(overlaySource, 'hideAfterMs', 'overlay.hideAfterMs', d.hideAfterMs, 0, 600_000, true),
+      keepWhileUnchanged: reader.boolean(overlaySource, 'keepWhileUnchanged', 'overlay.keepWhileUnchanged', d.keepWhileUnchanged),
       showOriginal: reader.boolean(overlaySource, 'showOriginal', 'overlay.showOriginal', d.showOriginal),
       textColor: reader.pattern(overlaySource, 'textColor', 'overlay.textColor', d.textColor, COLOR_PATTERN).toLowerCase(),
       backgroundColor: reader.pattern(overlaySource, 'backgroundColor', 'overlay.backgroundColor', d.backgroundColor, COLOR_PATTERN).toLowerCase(),

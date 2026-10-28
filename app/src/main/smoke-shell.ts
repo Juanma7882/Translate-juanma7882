@@ -136,6 +136,13 @@ export async function runShellSmoke(host: EngineHost, windows: WindowManager, di
   await waitFor(() => texts > whilePaused, 'translations after resume')
   ok('pausar desde el menú detiene el motor y el atajo lo reanuda')
 
+  // Región sin texto: el aviso del motor llega como `clearText`; con «mantener la traducción» el overlay se vacía.
+  let clears = 0
+  shell.controller.on('clearText', () => clears++)
+  ;(host as unknown as { emit(name: string, event: unknown): boolean }).emit('event', { name: 'textCleared', payload: { cleared: true } })
+  expect(clears === 1, `el aviso de región sin texto llega al controlador: ${clears}`)
+  ok('el aviso de región sin texto del motor llega como clearText')
+
   // ---- Modos: el menú y el atajo alternan entre automático, solo audio y solo texto en caliente.
   const originals: string[] = []
   shell.controller.on('text', (t) => originals.push(t.original))

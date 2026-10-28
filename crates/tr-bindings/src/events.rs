@@ -68,6 +68,12 @@ pub struct AudioLevelEvent {
     pub peak: f64,
 }
 
+/// Aviso de que la región se quedó sin texto. `cleared` es siempre `true`; no hay contenido.
+#[napi(object)]
+pub struct TextClearedEvent {
+    pub cleared: bool,
+}
+
 /// Un callback por tipo de evento; registrar otro reemplaza al anterior.
 #[derive(Default)]
 pub struct Callbacks {
@@ -77,6 +83,7 @@ pub struct Callbacks {
     pub model_progress: Slot<ModelProgressEvent>,
     pub mode: Slot<ModeEvent>,
     pub level: Slot<AudioLevelEvent>,
+    pub text_cleared: Slot<TextClearedEvent>,
 }
 
 pub struct Slot<T: 'static + JsValuesTupleIntoVec>(Mutex<Option<Callback<T>>>);
@@ -181,6 +188,9 @@ impl EventSink for BindingSink {
             Event::ModeChanged { mode } => callbacks.mode.deliver(ModeEvent {
                 mode: mode_name(mode).to_owned(),
             }),
+            Event::TextCleared => callbacks
+                .text_cleared
+                .deliver(TextClearedEvent { cleared: true }),
             Event::AudioLevel { rms, peak } => callbacks.level.deliver(AudioLevelEvent {
                 rms: f64::from(rms),
                 peak: f64::from(peak),

@@ -25,6 +25,10 @@ struct Fixture {
 }
 
 fn start() -> Fixture {
+    start_with(false)
+}
+
+fn start_with(keep_translation: bool) -> Fixture {
     let (screen, ocr, audio, stt) = (
         FakeScreen::new(),
         FakeOcr::new(),
@@ -36,8 +40,10 @@ fn start() -> Fixture {
     let clock = Arc::new(SystemClock::new());
     let cache = Arc::new(TranslationCache::default());
 
+    let mut region_config = RegionConfig::new(from.clone());
+    region_config.keep_translation = keep_translation;
     let region_processor = RegionProcessor::new(
-        RegionConfig::new(from.clone()),
+        region_config,
         Box::new(ocr.clone()),
         vec![Target::new(to.clone(), Arc::new(translator.clone()))],
         cache.clone(),
@@ -207,6 +213,36 @@ fn pause_stops_screen_and_audio_and_resume_restores_the_mode() {
     assert!(fx.audio.is_running());
     fx.pipeline.stop();
     assert!(!fx.audio.is_running());
+}
+
+fn paused_and_resumed_in_text_mode(keep_translation: bool) -> usize {
+    let mut fx = start_with(keep_translation);
+    fx.ocr.push_text("hello");
+    assert!(fx.sink.wait_until(WAIT, |e| translations(e) == 1));
+
+    fx.pipeline.pause();
+    assert!(
+        fx.sink
+            .wait_until(WAIT, |e| mode_changes(e).last() == Some(&Mode::Paused))
+    );
+    fx.pipeline.resume();
+    assert!(fx.sink.wait_until(WAIT, |e| {
+        mode_changes(e).ends_with(&[Mode::Paused, Mode::Text])
+    }));
+    // Pantalla sin cambios: se deja correr la captura un rato tras reanudar.
+    std::thread::sleep(Duration::from_millis(100));
+    fx.pipeline.stop();
+    translations(&fx.sink.events())
+}
+
+#[test]
+fn resume_keeps_an_unchanged_translation_when_asked() {
+    assert_eq!(paused_and_resumed_in_text_mode(true), 1);
+}
+
+#[test]
+fn resume_regenerates_the_translation_by_default() {
+    assert_eq!(paused_and_resumed_in_text_mode(false), 2);
 }
 
 #[test]

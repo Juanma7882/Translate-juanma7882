@@ -15,6 +15,7 @@ import type {
   PerformanceOptions,
   Rect,
   SubtitleEvent,
+  TextClearedEvent,
   TranslationEvent,
 } from './index'
 
@@ -35,6 +36,7 @@ export type {
   PerformanceOptions,
   Rect,
   SubtitleEvent,
+  TextClearedEvent,
   TranslationEvent,
 }
 
@@ -154,3 +156,5 @@ export function onModelProgress(listener: (event: ModelProgressEvent) => void): 
 export function onModeChanged(listener: (event: ModeEvent) => void): Unsubscribe
 /** Nivel `{ rms, peak }` (0 a 1) de cada trozo de 100 ms de audio capturado, también en silencio, en una sesión o en la escucha previa. Solo números. */
 export function onAudioLevel(listener: (event: AudioLevelEvent) => void): Unsubscribe
+/** La región tenía un texto traducido y se quedó sin texto (una vez por cada paso). No lleva contenido. */
+export function onTextCleared(listener: (event: TextClearedEvent) => void): Unsubscribe

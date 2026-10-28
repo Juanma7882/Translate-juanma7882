@@ -20,6 +20,8 @@ pub struct RegionConfig {
     pub stable_frames: usize,
     /// Los bloques de OCR por debajo de esta confianza se descartan.
     pub min_confidence: f32,
+    /// Al reanudar tras una pausa no se vuelve a emitir un texto que no cambió.
+    pub keep_translation: bool,
 }
 
 impl RegionConfig {
@@ -29,6 +31,7 @@ impl RegionConfig {
             change: ChangeConfig::default(),
             stable_frames: 2,
             min_confidence: 0.3,
+            keep_translation: false,
         }
     }
 }
@@ -47,6 +50,8 @@ pub struct RegionProcessor {
     stabilizer: Stabilizer,
     last_text: String,
     translating: bool,
+    /// Hay una traducción emitida que todavía no se avisó como retirada (`TextCleared`).
+    shown: bool,
 }
 
 impl RegionProcessor {
@@ -69,6 +74,7 @@ impl RegionProcessor {
             clock,
             last_text: String::new(),
             translating: true,
+            shown: false,
         }
     }
 
@@ -79,6 +85,17 @@ impl RegionProcessor {
             self.stabilizer.reset();
         }
         self.translating = translating;
+    }
+
+    /// Reanuda la traducción tras una pausa. Con `keep_translation` no olvida lo emitido: si el
+    /// texto no cambió no se vuelve a emitir (el overlay sigue mostrándolo); si cambió o
+    /// desapareció, se traduce el nuevo o se avisa con `TextCleared`.
+    pub fn resume_after_pause(&mut self) {
+        if self.config.keep_translation {
+            self.translating = true;
+        } else {
+            self.set_translating(true);
+        }
     }
 
     /// Procesa un frame y devuelve si hay texto en la región.
@@ -101,10 +118,14 @@ impl RegionProcessor {
         }
 
         let has_text = !self.last_text.is_empty();
-        if self.translating
-            && let Some(stable) = self.stabilizer.observe(&self.last_text)
-        {
-            self.translate_and_emit(stable);
+        if self.translating {
+            if let Some(stable) = self.stabilizer.observe(&self.last_text) {
+                self.translate_and_emit(stable);
+            }
+            if !has_text && self.shown {
+                self.shown = false;
+                self.sink.emit(Event::TextCleared);
+            }
         }
         has_text
     }
@@ -122,6 +143,7 @@ impl RegionProcessor {
             self.detector.reset();
             return;
         }
+        self.shown = true;
         self.sink.emit(Event::Translation {
             original,
             translations: outcome.translations,
@@ -188,8 +210,13 @@ mod tests {
     }
 
     fn rig() -> Rig {
+        rig_with(false)
+    }
+
+    fn rig_with(keep_translation: bool) -> Rig {
         let (ocr, translator, sink) = (FakeOcr::new(), FakeTranslator::new(), RecordingSink::new());
-        let config = RegionConfig::new(Lang::new("en").unwrap());
+        let mut config = RegionConfig::new(Lang::new("en").unwrap());
+        config.keep_translation = keep_translation;
         let targets = vec![Target::new(
             Lang::new("es").unwrap(),
             Arc::new(translator.clone()),
@@ -498,6 +525,139 @@ mod tests {
             1,
             "el texto visible se emite al reactivar"
         );
+    }
+
+    fn cleared(sink: &RecordingSink) -> usize {
+        sink.events()
+            .iter()
+            .filter(|e| matches!(e, Event::TextCleared))
+            .count()
+    }
+
+    /// Procesa dos frames distintos para que el texto se estabilice y se emita.
+    fn settle(rig: &mut Rig) {
+        rig.processor.process(&frame(10));
+        rig.processor.process(&frame(10));
+    }
+
+    #[test]
+    fn text_cleared_is_emitted_once_when_the_text_disappears() {
+        let mut rig = rig();
+        rig.ocr.push_text("hello");
+        settle(&mut rig);
+        assert_eq!(translations(&rig.sink).len(), 1);
+        assert_eq!(cleared(&rig.sink), 0);
+        rig.ocr.push_empty();
+        assert!(!rig.processor.process(&frame(200)));
+        assert_eq!(cleared(&rig.sink), 1);
+        // La región sigue vacía: no se repite.
+        for value in [50, 120, 250] {
+            rig.processor.process(&frame(value));
+        }
+        assert_eq!(cleared(&rig.sink), 1);
+    }
+
+    #[test]
+    fn text_cleared_needs_a_previous_translation() {
+        let mut rig = rig();
+        rig.ocr.push_empty();
+        for value in [10, 100, 200] {
+            rig.processor.process(&frame(value));
+        }
+        assert_eq!(cleared(&rig.sink), 0);
+    }
+
+    #[test]
+    fn text_cleared_is_emitted_again_for_each_new_text() {
+        let mut rig = rig();
+        for text in ["one", "two"] {
+            rig.ocr.push_text(text);
+            settle(&mut rig);
+            rig.ocr.push_empty();
+            rig.processor.process(&frame(250));
+            rig.processor.process(&frame(5));
+        }
+        assert_eq!(translations(&rig.sink).len(), 2);
+        assert_eq!(cleared(&rig.sink), 2);
+    }
+
+    #[test]
+    fn text_cleared_is_not_emitted_while_translation_is_off() {
+        let mut rig = rig();
+        rig.ocr.push_text("hello");
+        settle(&mut rig);
+        rig.processor.set_translating(false);
+        rig.ocr.push_empty();
+        rig.processor.process(&frame(250));
+        assert_eq!(cleared(&rig.sink), 0, "el audio no debe borrar el overlay");
+    }
+
+    #[test]
+    fn resume_after_pause_without_the_option_emits_the_text_again() {
+        let mut rig = rig_with(false);
+        rig.ocr.push_text("hello");
+        settle(&mut rig);
+        rig.processor.set_translating(false);
+        rig.processor.resume_after_pause();
+        settle(&mut rig);
+        assert_eq!(translations(&rig.sink).len(), 2);
+    }
+
+    #[test]
+    fn resume_after_pause_keeps_an_unchanged_text() {
+        let mut rig = rig_with(true);
+        rig.ocr.push_text("hello");
+        settle(&mut rig);
+        let calls = rig.translator.call_count();
+        rig.processor.set_translating(false);
+        rig.processor.process(&frame(10));
+        rig.processor.resume_after_pause();
+        for _ in 0..3 {
+            rig.processor.process(&frame(10));
+        }
+        assert_eq!(translations(&rig.sink).len(), 1, "sin traducción nueva");
+        assert_eq!(rig.translator.call_count(), calls);
+        assert_eq!(cleared(&rig.sink), 0);
+    }
+
+    #[test]
+    fn resume_after_pause_translates_a_text_that_changed() {
+        let mut rig = rig_with(true);
+        rig.ocr.push_text("hello");
+        settle(&mut rig);
+        rig.processor.set_translating(false);
+        rig.processor.resume_after_pause();
+        rig.ocr.push_text("goodbye");
+        rig.processor.process(&frame(200));
+        rig.processor.process(&frame(200));
+        let sent = translations(&rig.sink);
+        assert_eq!(sent.len(), 2);
+        assert_eq!(sent[1].0, "goodbye");
+    }
+
+    #[test]
+    fn resume_after_pause_reports_a_text_that_disappeared() {
+        let mut rig = rig_with(true);
+        rig.ocr.push_text("hello");
+        settle(&mut rig);
+        rig.processor.set_translating(false);
+        rig.ocr.push_empty();
+        rig.processor.resume_after_pause();
+        rig.processor.process(&frame(250));
+        assert_eq!(cleared(&rig.sink), 1);
+        assert_eq!(translations(&rig.sink).len(), 1);
+    }
+
+    #[test]
+    fn set_translating_still_forgets_the_text_with_the_option_on() {
+        // Volver de audio a texto: el overlay se borró al cambiar de modo, así que se re-emite.
+        let mut rig = rig_with(true);
+        rig.ocr.push_text("hello");
+        settle(&mut rig);
+        rig.processor.set_translating(false);
+        rig.processor.set_translating(true);
+        settle(&mut rig);
+        assert_eq!(translations(&rig.sink).len(), 2);
     }
 
     fn start_pipeline(

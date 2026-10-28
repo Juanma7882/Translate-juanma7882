@@ -11,6 +11,8 @@ const INIT = 'selector:init' satisfies typeof Channel.selectorInit
 const CONFIRM = 'selector:confirm' satisfies typeof Channel.selectorConfirm
 const CANCEL = 'selector:cancel' satisfies typeof Channel.selectorCancel
 
+const NEXT_DISPLAY = 'selector:next-display' satisfies typeof Channel.selectorNextDisplay
+
 const api: SelectorApi = {
   onInit(listener) {
     ipcRenderer.on(INIT, (_event, init: SelectorInit) => listener(init))
@@ -20,6 +22,9 @@ const api: SelectorApi = {
   },
   cancel() {
     ipcRenderer.send(CANCEL)
+  },
+  nextDisplay() {
+    ipcRenderer.send(NEXT_DISPLAY)
   },
 }
 

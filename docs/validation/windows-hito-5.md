@@ -54,6 +54,7 @@ anota el resultado.
 | 3.6 | Mover con una aplicación a pantalla completa debajo (juego en ventana sin bordes, vídeo) | El overlay sigue encima y recibe el ratón en el modo mover |
 | 3.7 | Terminar el modo mover y hacer clic donde está el overlay | El clic atraviesa el overlay (vuelve a ser transparente al ratón) |
 | 3.8 | macOS: el overlay en modo mover sobre un Space a pantalla completa | Visible y arrastrable |
+| 3.9 | Windows: poner el overlay encima de la región traducida (posición manual) con un vídeo en pausa y texto fijo | El subtítulo del overlay se queda quieto: no cambia ni se rellena de texto raro (el overlay no sale en la captura que lee el OCR) |
 
 ## 4. Rendimiento (puente con 5A)
 
@@ -61,6 +62,19 @@ anota el resultado.
 |---|---|---|
 | 4.1 | Avanzado > Rendimiento: hilos 4, haz 3, caché 512, y luego 0 en todo | Se guardan; los valores fuera de rango se rechazan junto al campo |
 | 4.2 | Iniciar una traducción tras cambiarlos | Sin errores; si 5A ya consume los valores, comprobar el efecto en la latencia |
+
+## 5. Mantener la traducción (cambio mantener-traduccion-estable)
+
+| # | Qué comprobar | Resultado esperado |
+|---|---|---|
+| 5.1 | Ajustes > Overlay: casilla «Mantener la traducción mientras el texto no cambie» | Desactivada por defecto; se guarda al marcarla |
+| 5.2 | Con la casilla activa, traducir una región con texto fijo y esperar más que «Ocultar tras» | La traducción sigue visible |
+| 5.3 | Quitar el texto de la región (cerrar la ventana o cambiar de página) | El overlay oculta la traducción |
+| 5.4 | Cambiar el texto de la región | La traducción nueva reemplaza a la anterior |
+| 5.5 | Pausar y reanudar con la pantalla sin cambios (modo automático), tras reiniciar la sesión con la casilla activa | La traducción no desaparece ni parpadea y no se regenera |
+| 5.6 | Pausar, cambiar el texto, reanudar | Se traduce el texto nuevo |
+| 5.7 | Pasar a modo audio con la casilla activa | Los subtítulos de audio se ocultan por «Ocultar tras» |
+| 5.8 | Casilla desactivada | La traducción se oculta por tiempo como siempre |
 
 ## Resultados
 

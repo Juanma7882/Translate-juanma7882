@@ -20,6 +20,7 @@ const listeners = {
   modelProgress: new Set(),
   mode: new Set(),
   audioLevel: new Set(),
+  textCleared: new Set(),
 }
 
 let active = false
@@ -47,6 +48,7 @@ native.onModelProgress((event) => {
 })
 native.onModeChanged(dispatch('mode', inSession))
 native.onAudioLevel(dispatch('audioLevel', () => flowing() || monitoring))
+native.onTextCleared(dispatch('textCleared', flowing))
 
 // La promesa de una descarga y sus eventos de progreso llegan a JS por canales distintos y sin
 // orden garantizado: antes de resolver o rechazar se espera a haber recibido todos los eventos
@@ -177,4 +179,6 @@ module.exports = {
   onModeChanged: subscribe('mode'),
   // `{ rms, peak }` (0 a 1) por cada trozo de 100 ms mientras haya sesión o escucha previa; solo números.
   onAudioLevel: subscribe('audioLevel'),
+  // La región tenía un texto traducido y se quedó sin texto; el evento no lleva contenido.
+  onTextCleared: subscribe('textCleared'),
 }

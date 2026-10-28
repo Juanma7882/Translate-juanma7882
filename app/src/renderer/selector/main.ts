@@ -8,6 +8,8 @@ const api = window.trSelector
 const box = document.getElementById('rect')
 
 let state: SelectionState = initialState(null)
+/** En la vista previa solo se mira: ni ratón ni teclado hacen nada. */
+let preview = false
 
 function draw(): void {
   if (!box) return
@@ -18,7 +20,7 @@ function draw(): void {
   }
   const { rect, previous } = visible
   box.hidden = false
-  box.classList.toggle('previous', previous)
+  box.classList.toggle('previous', previous && !preview)
   box.style.left = `${rect.x}px`
   box.style.top = `${rect.y}px`
   box.style.width = `${rect.width}px`
@@ -26,17 +28,26 @@ function draw(): void {
 }
 
 function dispatch(input: SelectionInput): void {
+  if (preview) return
   const step = reduce(state, input)
   state = step.state
   draw()
   if (!api) return
   if (step.effect?.type === 'confirm') api.confirm(step.effect.rect)
   else if (step.effect?.type === 'cancel') api.cancel()
+  else if (step.effect?.type === 'nextDisplay') api.nextDisplay()
 }
 
 if (api) {
   api.onInit((init) => {
+    preview = init.preview === true
     state = initialState(init.lastRegion)
+    const hint = document.getElementById('hint')
+    if (hint) {
+      const { index, total } = init.screen
+      if (preview) hint.textContent = 'Región seleccionada'
+      else if (total > 1) hint.textContent = `Pantalla ${index} de ${total} · Tab para cambiar de pantalla · Arrastra para elegir la región · Esc para cancelar`
+    }
     draw()
   })
 
@@ -48,7 +59,10 @@ if (api) {
   window.addEventListener('mouseup', (event) => {
     if (event.button === 0) dispatch({ type: 'up', point: point(event) })
   })
-  window.addEventListener('keydown', (event) => dispatch({ type: 'key', key: event.key }))
+  window.addEventListener('keydown', (event) => {
+    if (event.key === 'Tab') event.preventDefault()
+    dispatch({ type: 'key', key: event.key })
+  })
   window.addEventListener('contextmenu', (event) => {
     event.preventDefault()
     dispatch({ type: 'context' })

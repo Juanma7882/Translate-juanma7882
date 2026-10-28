@@ -142,6 +142,7 @@ struct FallbackHandler {
 
 impl FallbackHandler {
     fn apply(&mut self, input: Input) {
+        let before = self.state.mode;
         let (state, actions) = step(self.state, input, &self.config);
         self.state = state;
         for action in actions {
@@ -152,7 +153,12 @@ impl FallbackHandler {
                 }
                 Action::StopAudio => self.audio.stop(),
                 Action::ModeChanged(mode) => {
-                    self.region.set_translating(mode == Mode::Text);
+                    // De pausa a texto el overlay no se borró (no hubo cambio de modo visible).
+                    if mode == Mode::Text && before == Mode::Paused {
+                        self.region.resume_after_pause();
+                    } else {
+                        self.region.set_translating(mode == Mode::Text);
+                    }
                     self.sink.emit(Event::ModeChanged { mode });
                 }
             }

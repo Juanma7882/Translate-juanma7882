@@ -26,3 +26,9 @@ test('el umbral de voz solo se envía si el usuario lo fijó', () => {
   assert.equal(engineOptionsFrom(defaultSettings()).voiceThreshold, undefined)
   assert.equal(engineOptionsFrom({ ...defaultSettings(), voiceThreshold: 0.02 }).voiceThreshold, 0.02)
 })
+
+test('mantener la traducción solo se envía si el usuario lo activó', () => {
+  assert.equal(engineOptionsFrom(defaultSettings()).keepTranslation, undefined)
+  const on = { ...defaultSettings(), overlay: { ...defaultSettings().overlay, keepWhileUnchanged: true } }
+  assert.equal(engineOptionsFrom(on).keepTranslation, true)
+})
