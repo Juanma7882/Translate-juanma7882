@@ -10,7 +10,7 @@ anota el resultado.
 ## Preparación
 
 1. Construir como en `windows-hito-2.md`; modelos de texto y de audio: botón "Descargar modelos" de Ajustes en modo automático (≈ 220 MB en total) o `cargo run --release -p tr-models --example fetch -- <carpeta> en es all`.
-2. Pruebas automáticas que deberían pasar: `cargo test --workspace` y `cd app && npm test`.
+2. Pruebas automáticas que deberían pasar: `cargo test --workspace` y `cd app && pnpm test`.
 3. Material: un vídeo en inglés con subtítulos incrustados en una zona fija y escenas sin texto; una página con texto.
 
 ## 1. Modo automático (fallback)

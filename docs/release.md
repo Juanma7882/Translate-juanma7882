@@ -25,10 +25,11 @@ revisar la versión de pipewire disponible).
 ## Local (sin publicar)
 
 ```bash
-cd crates/tr-bindings && npm ci && npm run build      # el .node de esta plataforma
-cd ../../app && npm ci
-npm run pack:dir        # build + stage + electron-builder --dir (dist/<plataforma>-unpacked)
-npm run dist            # instaladores de la plataforma actual
+pnpm install --frozen-lockfile        # una vez, en la raíz (workspace)
+cd crates/tr-bindings && pnpm run build      # el .node de esta plataforma
+cd ../../app
+pnpm run pack:dir        # build + stage + electron-builder --dir (dist/<plataforma>-unpacked)
+pnpm run dist            # instaladores de la plataforma actual
 scripts/verify-package.sh   # Linux: genera el directorio y arranca el binario con TR_SMOKE=1
 ```
 

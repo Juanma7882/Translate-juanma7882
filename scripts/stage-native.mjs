@@ -27,7 +27,7 @@ function files(dir, accept) {
 
 const nodes = files(bindings, isNode)
 if (nodes.length === 0) {
-  console.error(`stage-native: no hay ningún .node en ${bindings}. Compílalo antes: (cd crates/tr-bindings && npm run build)`)
+  console.error(`stage-native: no hay ningún .node en ${bindings}. Compílalo antes: (cd crates/tr-bindings && pnpm run build)`)
   process.exit(1)
 }
 

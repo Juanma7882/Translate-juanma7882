@@ -1,7 +1,7 @@
 # Empaquetado con electron-builder (26.x). Ver docs/release.md.
 #
-# Local, sin publicar:   npm run pack:dir   (directorio, solo la plataforma actual)
-#                        npm run dist       (instaladores de la plataforma actual)
+# Local, sin publicar:   pnpm run pack:dir   (directorio, solo la plataforma actual)
+#                        pnpm run dist       (instaladores de la plataforma actual)
 # Nunca se publica desde aquí (`--publish never`): publica el workflow release.yml.
 appId: io.github.juan.translate
 productName: Translate
@@ -18,7 +18,7 @@ files:
   - package.json
   - '!**/*.map'
 
-# El módulo nativo va FUERA del asar (dlopen no carga desde un asar). `npm run stage:native` lo deja
+# El módulo nativo va FUERA del asar (dlopen no carga desde un asar). `pnpm run stage:native` lo deja
 # en build/native: api.js, index.js, *.node y las librerías dinámicas que lo acompañan. El proceso
 # utilitario lo encuentra en `process.resourcesPath/native` (app/src/engine/native-path.ts).
 extraResources:

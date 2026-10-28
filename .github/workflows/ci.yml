@@ -49,13 +49,12 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v7
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: |
-            crates/tr-bindings/package-lock.json
-            app/package-lock.json
+          cache: pnpm
 
       - name: Formato, lints y pruebas de Rust
         run: |
@@ -63,20 +62,21 @@ jobs:
           cargo clippy --workspace --all-targets -- -D warnings
           cargo test --workspace
 
+      - name: Instalar dependencias de Node
+        run: pnpm install --frozen-lockfile
+
       - name: Módulo nativo y pruebas de Node
         working-directory: crates/tr-bindings
         run: |
-          npm ci
-          npm run build:debug
-          npm test
+          pnpm run build:debug
+          pnpm test
 
       - name: App (typecheck, pruebas y build)
         working-directory: app
         run: |
-          npm ci
-          npm run typecheck
-          npm test
-          npm run build
+          pnpm run typecheck
+          pnpm test
+          pnpm run build
 
       - name: Pruebas de humo (Linux, bajo xvfb)
         if: runner.os == 'Linux'
@@ -84,7 +84,7 @@ jobs:
         run: |
           for smoke in 1 windows selector settings shell; do
             echo "::group::TR_SMOKE=$smoke"
-            TR_SMOKE=$smoke ../scripts/with-xvfb.sh npx electron . --no-sandbox
+            TR_SMOKE=$smoke ../scripts/with-xvfb.sh pnpm exec electron . --no-sandbox
             echo "::endgroup::"
           done
 

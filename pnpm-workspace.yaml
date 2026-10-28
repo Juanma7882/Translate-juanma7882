@@ -1,0 +1,9 @@
+packages:
+  - app
+  - crates/tr-bindings
+
+# Scripts de instalación permitidos (pnpm bloquea el resto por seguridad).
+allowBuilds:
+  electron: true
+  esbuild: true
+  electron-winstaller: true

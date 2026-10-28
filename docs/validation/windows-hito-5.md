@@ -10,7 +10,7 @@ anota el resultado.
 ## Preparación
 
 1. Construir como en `windows-hito-2.md`.
-2. Pruebas automáticas que deberían pasar: `cargo test --workspace` y `cd app && npm test`.
+2. Pruebas automáticas que deberían pasar: `cargo test --workspace` y `cd app && pnpm test`.
 3. Conexión a internet para descargar (≈ 115 MB por par de traducción nuevo).
 
 ## 1. Modelos

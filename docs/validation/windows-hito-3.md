@@ -7,9 +7,9 @@ loopback) y en macOS (tap de CoreAudio). Marca cada punto y anota el resultado.
 
 ## Preparación
 
-1. Construir como en `windows-hito-2.md` (Rust MSVC, Node 22, `npm run build` en `crates/tr-bindings`, `npm run build` en `app`).
+1. Construir como en `windows-hito-2.md` (Rust MSVC, Node 22, `pnpm run build` en `crates/tr-bindings`, `pnpm run build` en `app`).
 2. Modelos de audio: `cargo run --release -p tr-models --example fetch -- <carpeta> en es audio` (≈193 MB entre voz y traducción) o el botón "Descargar modelos de audio" de Ajustes.
-3. Pruebas automáticas que deberían pasar: `cargo test --workspace` y `cd app && npm test`. Con modelos: `TR_MODELS_DIR=<carpeta> cargo test --release -p tr-adapters --test stt_real -- --ignored --test-threads=1`.
+3. Pruebas automáticas que deberían pasar: `cargo test --workspace` y `cd app && pnpm test`. Con modelos: `TR_MODELS_DIR=<carpeta> cargo test --release -p tr-adapters --test stt_real -- --ignored --test-threads=1`.
 4. Fuente de audio: un vídeo o podcast en inglés con voz clara, reproducido por los altavoces o auriculares por defecto.
 
 ## 1. Captura loopback (Windows, WASAPI)

@@ -8,13 +8,13 @@ anota el resultado; cualquier fallo se registra como incidencia antes de dar por
 
 1. Clonar el repositorio en Windows (no dentro de WSL) con Rust (`rustup`, MSVC), Node 22 y las
    herramientas de compilación de Visual Studio.
-2. `cd crates/tr-bindings && npm install && npm run build` (genera el `.node` de Windows).
-3. `cd app && npm install && npm run build && npx electron .`
+2. `cd crates/tr-bindings && pnpm run build` (genera el `.node` de Windows).
+3. `cd app && pnpm run build && pnpm exec electron .`
 4. Para tener los modelos sin esperar a la primera descarga:
    `cargo run --release -p tr-models --example fetch -- <carpeta> en es`.
 
 Pruebas automáticas que ya deberían pasar en Windows: `cargo test --workspace`,
-`cd app && npm test`, `TR_SMOKE=windows|selector|flow|overlay|settings|shell` con `electron .`.
+`cd app && pnpm test`, `TR_SMOKE=windows|selector|flow|overlay|settings|shell` con `electron .`.
 
 ## 1. Captura real
 

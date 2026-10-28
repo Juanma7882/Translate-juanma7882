@@ -5,3 +5,7 @@ out
 *.node
 /app/build/native
 models/
+
+# Salida de `pnpm dev` redirigida a archivos
+/dev.out.txt
+/dev.err.txt

@@ -11,9 +11,9 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root/app"
 
 if [ "${1:-}" != "--skip-build" ]; then
-  npm run build
-  npm run stage:native
-  npx electron-builder --linux dir --x64 --publish never
+  pnpm run build
+  pnpm run stage:native
+  pnpm exec electron-builder --linux dir --x64 --publish never
 fi
 
 unpacked="dist/linux-unpacked"

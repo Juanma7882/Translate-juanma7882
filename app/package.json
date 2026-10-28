@@ -11,14 +11,14 @@
     "typecheck": "tsc --noEmit",
     "test": "node --test \"src/**/*.test.ts\"",
     "stage:native": "node ../scripts/stage-native.mjs",
-    "pack:dir": "npm run build && npm run stage:native && electron-builder --dir --publish never",
-    "dist": "npm run build && npm run stage:native && electron-builder --publish never",
-    "smoke": "npm run build && TR_SMOKE=1 electron . --no-sandbox",
-    "smoke:windows": "npm run build && TR_SMOKE=windows electron . --no-sandbox",
-    "smoke:selector": "npm run build && TR_SMOKE=selector electron . --no-sandbox",
-    "smoke:settings": "npm run build && TR_SMOKE=settings electron . --no-sandbox",
-    "smoke:shell": "npm run build && TR_SMOKE=shell electron . --no-sandbox",
-    "smoke:e2e": "npm run build && TR_SMOKE=e2e ../scripts/with-xvfb.sh electron . --no-sandbox"
+    "pack:dir": "pnpm run build && pnpm run stage:native && electron-builder --dir --publish never",
+    "dist": "pnpm run build && pnpm run stage:native && electron-builder --publish never",
+    "smoke": "pnpm run build && TR_SMOKE=1 electron . --no-sandbox",
+    "smoke:windows": "pnpm run build && TR_SMOKE=windows electron . --no-sandbox",
+    "smoke:selector": "pnpm run build && TR_SMOKE=selector electron . --no-sandbox",
+    "smoke:settings": "pnpm run build && TR_SMOKE=settings electron . --no-sandbox",
+    "smoke:shell": "pnpm run build && TR_SMOKE=shell electron . --no-sandbox",
+    "smoke:e2e": "pnpm run build && TR_SMOKE=e2e ../scripts/with-xvfb.sh electron . --no-sandbox"
   },
   "dependencies": {},
   "devDependencies": {
@@ -28,7 +28,7 @@
     "electron": "44.9.3",
     "electron-builder": "26.18.0",
     "preact": "10.29.8",
-    "tr-bindings": "file:../crates/tr-bindings",
+    "tr-bindings": "workspace:*",
     "electron-vite": "5.0.0",
     "typescript": "5.9.3",
     "vite": "7.3.7"

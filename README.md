@@ -77,11 +77,12 @@ Detalle en [docs/adr/0002-architecture.md](docs/adr/0002-architecture.md).
 
 ```bash
 # 1. Módulo nativo (napi-rs)
-cd crates/tr-bindings && npm ci && npm run build
+pnpm install --frozen-lockfile        # una vez, en la raíz (workspace)
+cd crates/tr-bindings && pnpm run build
 
 # 2. App
-cd ../../app && npm ci
-npm run dev
+cd ../../app
+pnpm run dev
 ```
 
 Los modelos no vienen empaquetados: se descargan en el primer uso desde Ajustes. Para descargarlos a mano, por ejemplo para pruebas:
@@ -99,15 +100,15 @@ y se indican con `TR_MODELS_DIR=<carpeta>`.
 cargo fmt --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace
 
 # Módulo nativo y app
-cd crates/tr-bindings && npm run build:debug && npm test
-cd app && npm run typecheck && npm test
+cd crates/tr-bindings && pnpm run build:debug && pnpm test
+cd app && pnpm run typecheck && pnpm test
 
 # Pruebas con motores y modelos reales
 TR_MODELS_DIR=~/.cache/translate-test-models scripts/with-xvfb.sh \
   cargo test --release --workspace -- --include-ignored
 
 # Prueba E2E: ventana → selector → OCR → traducción → overlay
-cd app && TR_MODELS_DIR=~/.cache/translate-test-models npm run smoke:e2e
+cd app && TR_MODELS_DIR=~/.cache/translate-test-models pnpm run smoke:e2e
 ```
 
 Mediciones de rendimiento y presupuestos: [docs/perf/hito-5.md](docs/perf/hito-5.md).

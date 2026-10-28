@@ -53,12 +53,12 @@ Desarrollo en WSL (Ubuntu); el repo vive en `~/proyectos/translate`. Se corre to
 cargo fmt --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace
 # con motores y modelos reales (captura sobre Xvfb):
 TR_MODELS_DIR=~/.cache/translate-test-models scripts/with-xvfb.sh cargo test --release --workspace -- --include-ignored
-cd crates/tr-bindings && npm run build:debug && npm test      # módulo nativo + tests de Node (npm run build = release)
-cd app && npm run typecheck && npm test                        # tipos + tests unitarios (node --test sobre TS)
-cd app && npm run build && TR_SMOKE=<1|windows|selector|flow|overlay|settings|shell> electron . --no-sandbox   # pruebas de humo
+cd crates/tr-bindings && pnpm run build:debug && pnpm test      # módulo nativo + tests de Node (pnpm run build = release)
+cd app && pnpm run typecheck && pnpm test                        # tipos + tests unitarios (node --test sobre TS)
+cd app && pnpm run build && TR_SMOKE=<1|windows|selector|flow|overlay|settings|shell> electron . --no-sandbox   # pruebas de humo
 cargo run --release -p tr-adapters --example perf -- <mt|ocr|stt|audio|frame|capture>   # mediciones (solo números); método y presupuestos en docs/perf/hito-5.md
 scripts/verify-package.sh   # empaquetado linux-x64 (dir) + TR_SMOKE=1 con el .node empaquetado; ver docs/release.md
-cd app && TR_MODELS_DIR=~/.cache/translate-test-models npm run smoke:e2e   # E2E real: ventana -> selector -> OCR -> traducción -> overlay
+cd app && TR_MODELS_DIR=~/.cache/translate-test-models pnpm run smoke:e2e   # E2E real: ventana -> selector -> OCR -> traducción -> overlay
 ```
 
 ## Convenciones

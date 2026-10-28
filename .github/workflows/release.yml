@@ -55,29 +55,29 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v7
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: |
-            crates/tr-bindings/package-lock.json
-            app/package-lock.json
+          cache: pnpm
+
+      - name: Instalar dependencias de Node
+        run: pnpm install --frozen-lockfile
 
       - name: Módulo nativo (release)
         working-directory: crates/tr-bindings
         run: |
-          npm ci
-          npm run build
-          npm test
+          pnpm run build
+          pnpm test
 
       - name: App (instalar, comprobar, compilar, preparar el nativo)
         working-directory: app
         run: |
-          npm ci
-          npm run typecheck
-          npm test
-          npm run build
-          npm run stage:native
+          pnpm run typecheck
+          pnpm test
+          pnpm run build
+          pnpm run stage:native
 
       # Los secretos no se pueden evaluar en `if:` de un paso; se vuelcan a variables de este paso.
       - name: Decidir firma y notarización
@@ -119,7 +119,7 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: npx electron-builder ${{ matrix.builder }} --publish never $EB_EXTRA
+        run: pnpm exec electron-builder ${{ matrix.builder }} --publish never $EB_EXTRA
 
       - name: Prueba de humo del paquete (Linux)
         if: matrix.platform == 'linux'
