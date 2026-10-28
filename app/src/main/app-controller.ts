@@ -193,13 +193,19 @@ export class AppController extends EventEmitter<ControllerEvents> {
 
   /** Abre el selector de overlay en modo preview (sin permitir cambios). */
   async showOverlayPosition(): Promise<boolean> {
-    const { lastRegion } = this.deps.settings.get()
+    const { lastRegion, overlay } = this.deps.settings.get()
     if (!lastRegion) {
       this.emit('notice', { level: 'error', message: 'Primero elige una región a traducir' })
       return false
     }
+    if (overlay.placement !== 'manual') {
+      this.emit('notice', { level: 'info', message: 'Los subtítulos se colocan solos junto a la región: usa «Cambiar posición» para fijarlos' })
+      return false
+    }
+    // El alto real depende del texto; se marca el de las líneas configuradas.
+    const height = Math.round(overlay.fontSize * 1.4 * overlay.maxLines + 24)
     const overlayPicker = new OverlayPicker(this.deps.windows, this.deps.displays, lastRegion)
-    return overlayPicker.preview()
+    return overlayPicker.preview({ x: overlay.x, y: overlay.y, width: overlay.width, height })
   }
 
   /** Traduce la última región usada; si no hay ninguna, pide elegirla (salvo en modo audio, que no la necesita). */

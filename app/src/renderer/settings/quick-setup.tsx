@@ -128,18 +128,21 @@ export function PairMenu({ api, settings, catalog, running, active, progress, sa
 
 // ---------------------------------------------------------------------------- posición overlay
 
-export function OverlayPositionRow({ busy, onChoose, onShow }: { busy: boolean; onChoose: () => void; onShow: () => void }) {
+export function OverlayPositionRow({ settings, busy, onChoose, onShow }: { settings: Settings; busy: boolean; onChoose: () => void; onShow: () => void }) {
+  const manual = settings.overlay.placement === 'manual'
   return (
     <div id="overlay-position-row" class="setup-row">
       <span class="setup-label" id="overlay-label">
-        Posición del overlay
+        Posición
       </span>
       <span class="setup-value" id="overlay-text" aria-labelledby="overlay-label">
-        Manual
+        {manual ? `en (${settings.overlay.x}, ${settings.overlay.y})` : 'Automática, junto a la región'}
       </span>
-      <button type="button" id="show-overlay-position" disabled={busy} onClick={onShow} title="Muestra dónde aparecerá la traducción">
-        Ver posición
-      </button>
+      {manual && (
+        <button type="button" id="show-overlay-position" disabled={busy} onClick={onShow} title="Marca unos segundos dónde aparecen los subtítulos">
+          Ver posición
+        </button>
+      )}
       <button type="button" id="choose-overlay-position" disabled={busy} onClick={onChoose}>
         Cambiar posición
       </button>

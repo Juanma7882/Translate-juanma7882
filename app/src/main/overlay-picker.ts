@@ -60,12 +60,13 @@ export class OverlayPicker {
    * Muestra el selector en modo preview durante unos segundos sin permitir cambios.
    * Devuelve `false` si hay un selector abierto o la región no se puede ubicar.
    */
-  async preview(): Promise<boolean> {
+  async preview(overlay: DipRect): Promise<boolean> {
     if (this.pending) return false
     const all = this.displays.all()
-    const located = toDipRect(this.region, all)
-    const electronDisplay = located && screen.getAllDisplays().find((d) => d.id === located.display.id)
-    if (!located || !electronDisplay) return false
+    const center = { x: overlay.x + overlay.width / 2, y: overlay.y + overlay.height / 2 }
+    const display = all.find((d) => center.x >= d.bounds.x && center.x < d.bounds.x + d.bounds.width && center.y >= d.bounds.y && center.y < d.bounds.y + d.bounds.height)
+    const electronDisplay = display && screen.getAllDisplays().find((d) => d.id === display.id)
+    if (!display || !electronDisplay) return false
 
     const window = await this.windows.openSelector(electronDisplay)
     if (this.pending) {
@@ -74,7 +75,8 @@ export class OverlayPicker {
     }
     window.setIgnoreMouseEvents(true)
     window.setAlwaysOnTop(true, 'screen-saver')
-    const init: SelectorInit = { lastRegion: located.rect, screen: { index: monitorIndex(all, located.display) + 1, total: all.length }, preview: true }
+    const rect = { x: overlay.x - display.bounds.x, y: overlay.y - display.bounds.y, width: overlay.width, height: overlay.height }
+    const init: SelectorInit = { lastRegion: rect, screen: { index: monitorIndex(all, display) + 1, total: all.length }, preview: true }
     window.webContents.send(Channel.selectorInit, init)
     const timer = setTimeout(() => this.windows.close('selector'), 2500)
     window.once('closed', () => clearTimeout(timer))
@@ -129,7 +131,7 @@ export class OverlayPicker {
       const onConfirm = (event: IpcMainEvent, rect: DipRect): void => {
         if (!fromThisWindow(event, window)) return
         // El usuario selecciona un área; usamos su esquina superior izquierda como posición del overlay
-        finish({ x: Math.round(rect.x), y: Math.round(rect.y) })
+        finish({ x: Math.round(display.bounds.x + rect.x), y: Math.round(display.bounds.y + rect.y) })
       }
       const onCancel = (event: IpcMainEvent): void => {
         if (fromThisWindow(event, window)) finish(null)

@@ -134,9 +134,14 @@ export function HomePanel({ api, settings, appState, notice, levels, catalog, pr
       <fieldset id="what-to-translate">
         <legend>Qué se traduce</legend>
         <RegionRow settings={settings} busy={pending !== null} onChoose={() => void run('pickRegion')} onShow={() => void run('show')} />
-        <OverlayPositionRow busy={pending !== null} onChoose={() => void run('pickOverlayPosition')} onShow={() => void run('showOverlayPosition')} />
         <PairMenu api={api} settings={settings} catalog={catalog} running={running} active={active} progress={progress} save={save} goToLanguages={goToLanguages} />
         <ModeRow settings={settings} save={save} />
+      </fieldset>
+
+      <fieldset id="where-to-show">
+        <legend>Dónde aparecen los subtítulos</legend>
+        <p class="hint">Dónde se muestra el texto traducido. No debe tapar la región a traducir.</p>
+        <OverlayPositionRow settings={settings} busy={pending !== null} onChoose={() => void run('pickOverlayPosition')} onShow={() => void run('showOverlayPosition')} />
       </fieldset>
 
       <fieldset id="audio-source">
