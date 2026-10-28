@@ -36,8 +36,16 @@ El overlay SHALL mostrar a la vez los subtítulos elegidos (uno o dos), cada uno
 ## ADDED Requirements
 
 ### Requirement: Límite de líneas por subtítulo
-El límite de líneas configurado SHALL aplicarse a cada subtítulo por separado, y la altura de la ventana SHALL ajustarse al total de líneas mostradas.
+El límite de líneas configurado SHALL aplicarse a cada subtítulo por separado, y la altura de la ventana SHALL ajustarse al total de líneas mostradas. Si con dos subtítulos el total de líneas no cabe en el alto disponible de la pantalla, el overlay SHALL reducir automáticamente las líneas de cada subtítulo, sin bajar de una, de modo que ambos subtítulos permanezcan visibles dentro de la pantalla; el ajuste guardado por el usuario no se modifica.
 
 #### Scenario: Dos subtítulos con límite de una línea
 - **WHEN** el límite es 1 y hay dos subtítulos con textos de tres líneas cada uno
 - **THEN** cada subtítulo muestra una línea truncada con puntos suspensivos y la ventana ocupa la altura de los dos
+
+#### Scenario: Dos subtítulos de dos líneas caben por defecto
+- **WHEN** la fuente es de 28 píxeles, el límite es de 2 líneas y hay dos subtítulos de varias líneas en una pantalla de 1080 píxeles de alto
+- **THEN** se ven las cuatro líneas completas, sin cortes, dentro de la pantalla
+
+#### Scenario: No caben las líneas pedidas
+- **WHEN** la fuente es de 96 píxeles, el límite es de 6 líneas, hay dos subtítulos largos y la pantalla es de 768 píxeles de alto
+- **THEN** cada subtítulo muestra menos líneas (al menos una), ambos permanecen visibles dentro de la pantalla y el ajuste guardado sigue siendo 6
