@@ -56,6 +56,8 @@ export const Channel = {
   sessionStop: 'session:stop',
   sessionChooseRegion: 'session:choose-region',
   sessionShowRegion: 'session:show-region',
+  sessionPickRegion: 'session:pick-region',
+  sessionPickOverlayPosition: 'session:pick-overlay-position',
   sessionState: 'session:state',
   audioSources: 'audio:sources',
   audioLevel: 'audio:level',
@@ -225,6 +227,10 @@ export interface SettingsApi {
   stopSession(): Promise<void>
   /** Abre el selector de región; si se elige una, se guarda y se empieza a traducir. Devuelve si se eligió. */
   chooseRegion(): Promise<boolean>
+  /** Abre solo el selector de región (sin pasar a overlay). Devuelve si se eligió. */
+  pickRegion(): Promise<boolean>
+  /** Abre solo el selector de posición del overlay. Devuelve si se eligió. */
+  pickOverlayPosition(): Promise<boolean>
   /** Marca unos segundos sobre la pantalla la región guardada. Devuelve `false` si no hay región o no se pudo mostrar. */
   showRegion(): Promise<boolean>
   /** Estado actual de la sesión: al abrir la ventana con una sesión en marcha no hay que esperar a un cambio. */

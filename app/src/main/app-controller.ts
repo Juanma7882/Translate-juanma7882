@@ -152,6 +152,39 @@ export class AppController extends EventEmitter<ControllerEvents> {
     return this.start(region)
   }
 
+  /** Abre solo el selector de región (sin pasar a overlay); se guarda y comienza si se elige. */
+  async pickRegion(): Promise<boolean> {
+    const region = await this.deps.picker.pick()
+    if (!region) return false
+    const saved = this.deps.settings.update({ lastRegion: region })
+    if (!saved.ok) {
+      this.emit('notice', { level: 'error', message: 'No se pudo guardar la región elegida' })
+      return false
+    }
+    return this.start(region)
+  }
+
+  /** Abre solo el selector de posición del overlay (sin cambiar la región). */
+  async pickOverlayPosition(): Promise<boolean> {
+    const { lastRegion } = this.deps.settings.get()
+    if (!lastRegion) {
+      this.emit('notice', { level: 'error', message: 'Primero elige una región a traducir' })
+      return false
+    }
+    const overlayPicker = new OverlayPicker(this.deps.windows, this.deps.displays, lastRegion)
+    const position = await overlayPicker.pick()
+    if (!position) return false
+    const overlaySettings = this.deps.settings.get().overlay
+    const saved = this.deps.settings.update({
+      overlay: { ...overlaySettings, placement: 'manual', x: position.x, y: position.y },
+    })
+    if (!saved.ok) {
+      this.emit('notice', { level: 'error', message: 'No se pudo guardar la posición del overlay' })
+      return false
+    }
+    return true
+  }
+
   /** Marca unos segundos la región guardada sobre la pantalla; `false` si no hay ninguna o hay un selector abierto. */
   async showRegion(): Promise<boolean> {
     const { lastRegion } = this.deps.settings.get()

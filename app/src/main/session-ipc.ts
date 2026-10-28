@@ -35,6 +35,8 @@ export interface SessionControls {
   restart(): Promise<void>
   stop(): Promise<void>
   chooseRegion(): Promise<boolean>
+  pickRegion(): Promise<boolean>
+  pickOverlayPosition(): Promise<boolean>
   showRegion(): Promise<boolean>
 }
 
@@ -51,6 +53,8 @@ export const SESSION_CHANNELS = [
   Channel.sessionRestart,
   Channel.sessionStop,
   Channel.sessionChooseRegion,
+  Channel.sessionPickRegion,
+  Channel.sessionPickOverlayPosition,
   Channel.sessionShowRegion,
   Channel.sessionState,
   Channel.audioSources,
@@ -72,6 +76,8 @@ export function registerSessionIpc({ handle, controller, host, toWindow }: Sessi
   handle(Channel.sessionRestart, () => controller.restart())
   handle(Channel.sessionStop, () => controller.stop())
   handle(Channel.sessionChooseRegion, () => controller.chooseRegion())
+  handle(Channel.sessionPickRegion, () => controller.pickRegion())
+  handle(Channel.sessionPickOverlayPosition, () => controller.pickOverlayPosition())
   handle(Channel.sessionShowRegion, () => controller.showRegion())
   handle(Channel.sessionState, () => controller.state)
   handle(Channel.audioSources, async (): Promise<AudioSourcesInfo> => {
