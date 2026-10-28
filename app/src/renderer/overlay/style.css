@@ -38,17 +38,19 @@ body {
   margin: 0;
 }
 
-#original {
-  font-size: 0.7em;
-  opacity: 0.75;
+/* Un párrafo por subtítulo: el original (si se muestra) y cada traducción, de arriba abajo. */
+#tracks {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
-#original:empty {
+#tracks:empty {
   display: none;
 }
 
-/* Límite de líneas de la traducción: el resto se corta con puntos suspensivos. */
-#translated {
+/* Límite de líneas por subtítulo: el resto se corta con puntos suspensivos. */
+.track {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: var(--max-lines);
@@ -56,16 +58,39 @@ body {
   overflow: hidden;
 }
 
+/* El original que acompaña a una traducción: más pequeño y apagado, con su propio límite. */
+.track.secondary {
+  font-size: 0.7em;
+  opacity: 0.75;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+/* Etiqueta corta del idioma, solo cuando hay más de un subtítulo. */
+.lang-tag {
+  display: inline-block;
+  margin-right: 0.5em;
+  padding: 0 0.35em;
+  border-radius: 4px;
+  font-size: 0.55em;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  vertical-align: 0.15em;
+  background: color-mix(in srgb, var(--text-color) 22%, transparent);
+}
+
 /* Subtítulo provisional (audio): se distingue del final hasta que llega el definitivo. */
-#box.provisional #translated {
+#box.provisional .track {
   opacity: 0.7;
   font-style: italic;
 }
 
 /* Indicador del modo activo: una etiqueta pequeña, nunca contenido capturado. */
+/* En bloque (y centrada) para que ocupe su propio alto y no una línea entera del tamaño de la fuente. */
 #mode {
-  display: inline-block;
-  margin: 0 0 4px;
+  display: block;
+  width: fit-content;
+  margin: 0 auto 4px;
   padding: 1px 8px;
   border-radius: 999px;
   font-size: 0.45em;

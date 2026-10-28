@@ -7,7 +7,7 @@ pub mod fake;
 mod models;
 mod real;
 
-pub use engine::{Engine, EngineConfig, EngineKind, PerformanceConfig};
+pub use engine::{Engine, EngineConfig, EngineKind, PerformanceConfig, validate_targets};
 pub use models::{
     Catalog, DirProblem, Inventory, ModelInfo, ModelRole, ModelScope, ModelStatus, Models,
 };

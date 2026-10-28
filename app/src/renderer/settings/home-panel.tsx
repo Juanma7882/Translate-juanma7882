@@ -7,7 +7,7 @@ import type { ModelCatalog } from 'tr-bindings'
 
 import type { AppState, AudioSourcesInfo, Notice, SettingsApi } from '../../shared/ipc.ts'
 import type { Settings, SettingsPatch } from '../../shared/settings.ts'
-import { formatBytes, summarize } from './form.ts'
+import { formatBytes, languagesSummary, summarize } from './form.ts'
 import type { DownloadProgress } from './form.ts'
 import {
   ADVICE_TEXT,
@@ -164,7 +164,7 @@ function MissingModels({
     if (!shown) return
     let alive = true
     api
-      .modelStatus(settings.from, settings.to, scopeForMode(settings.mode))
+      .modelStatus(settings.from, settings.targets, scopeForMode(settings.mode))
       .then((list) => {
         const { missing, missingBytes } = summarize(list)
         if (alive) setSize(missing.length > 0 ? formatBytes(missingBytes) : null)
@@ -173,13 +173,14 @@ function MissingModels({
     return () => {
       alive = false
     }
-  }, [api, shown, notice, settings.from, settings.to, settings.mode])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `targets.join` resume `settings.targets`
+  }, [api, shown, notice, settings.from, settings.targets.join('+'), settings.mode])
   if (!shown || !notice) return null
   return (
     <div class="notice warning" id="models-missing" role="alert">
       <p>{notice.message}</p>
       <p>
-        Faltan modelos para {settings.from} → {settings.to}
+        Faltan modelos para {languagesSummary(settings)}
         {size ? ` (${size} por descargar)` : ''}.
       </p>
       <button type="button" id="go-languages" onClick={goToLanguages}>

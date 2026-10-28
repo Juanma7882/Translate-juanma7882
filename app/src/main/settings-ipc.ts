@@ -23,6 +23,12 @@ function parseScope(value: unknown): ModelScope | undefined {
   return value === 'audio' || value === 'all' || value === 'text' ? value : undefined
 }
 
+/** Los destinos llegan del renderer: solo se aceptan listas cortas de textos. */
+function parseTargets(value: unknown): string[] {
+  if (!Array.isArray(value) || value.length > 2 || !value.every((code) => typeof code === 'string')) throw new Error('invalid targets')
+  return value as string[]
+}
+
 /** Diálogos del sistema para elegir carpetas y archivos; las pruebas los sustituyen por rutas fijas. */
 export interface FilePrompts {
   pickFolder(): Promise<string | null>
@@ -94,8 +100,8 @@ export function registerSettingsIpc({ windows, settings, models, host, controlle
   handle(Channel.modelsValidateDir, (path: unknown) => models.validateDir(String(path)))
   handle(Channel.modelsPickDir, () => files.pickFolder())
   handle(Channel.modelsCatalog, () => models.catalog())
-  handle(Channel.modelsStatus, (from: string, to: string, scope?: unknown) => models.status(String(from), String(to), parseScope(scope)))
-  handle(Channel.modelsDownload, (from: string, to: string, scope?: unknown) => models.download(String(from), String(to), parseScope(scope)))
+  handle(Channel.modelsStatus, (from: string, to: unknown, scope?: unknown) => models.status(String(from), parseTargets(to), parseScope(scope)))
+  handle(Channel.modelsDownload, (from: string, to: unknown, scope?: unknown) => models.download(String(from), parseTargets(to), parseScope(scope)))
 
   const disposeSession = registerSessionIpc({ handle, controller, host, toWindow })
 

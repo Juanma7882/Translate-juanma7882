@@ -53,9 +53,9 @@ function ok(step: string): void {
 async function startRegion(host: EngineHost): Promise<void> {
   await host.send({ type: 'configure', options: { frameIntervalMs: 5 } })
   const translation = waitForEvent(host, 'translation')
-  await host.send({ type: 'startRegion', rect: REGION, from: 'en', to: 'es' })
+  await host.send({ type: 'startRegion', rect: REGION, from: 'en', to: ['es'] })
   const event = await translation
-  if (event.name !== 'translation' || event.payload.translated.length === 0) {
+  if (event.name !== 'translation' || event.payload.translations.length === 0) {
     throw new Error('malformed translation event')
   }
 }
@@ -73,7 +73,7 @@ export async function runSmoke(host: EngineHost): Promise<void> {
 
   // Argumentos inválidos: el error vuelve como rechazo, el motor sigue vivo.
   await host
-    .send({ type: 'startRegion', rect: { ...REGION, width: 0 }, from: 'en', to: 'es' })
+    .send({ type: 'startRegion', rect: { ...REGION, width: 0 }, from: 'en', to: ['es'] })
     .then(
       () => {
         throw new Error('an invalid region should be rejected')

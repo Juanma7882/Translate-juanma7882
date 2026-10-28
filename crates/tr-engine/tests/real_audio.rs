@@ -157,7 +157,7 @@ fn a_phrase_played_on_the_speakers_becomes_a_translated_subtitle() {
     engine
         .start_audio(
             Lang::new("en").unwrap(),
-            Lang::new("es").unwrap(),
+            vec![Lang::new("es").unwrap()],
             tr_core::AudioSource::System,
         )
         .expect("arrancar los motores reales de audio");
@@ -170,7 +170,7 @@ fn a_phrase_played_on_the_speakers_becomes_a_translated_subtitle() {
 
     let done = sink.wait_until(Duration::from_secs(30), |events| {
         events.iter().any(|e| {
-            matches!(e, Event::Subtitle { is_final: true, translated: Some(t), .. } if !t.is_empty())
+            matches!(e, Event::Subtitle { is_final: true, translations, .. } if translations.first().is_some_and(|t| !t.text.is_empty()))
         })
     });
     engine.stop();

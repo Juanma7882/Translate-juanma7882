@@ -7,7 +7,7 @@ import type { ModelCatalog, ModelStatusInfo } from 'tr-bindings'
 import type { SettingsApi } from '../../shared/ipc.ts'
 import { MODE_LABELS, MODES, scopeForMode } from '../../shared/mode.ts'
 import type { Settings, SettingsPatch } from '../../shared/settings.ts'
-import { languageName } from './form.ts'
+import { languageName, languagesSummary } from './form.ts'
 import type { DownloadProgress } from './form.ts'
 import { installedPairs, modeSentence, pairKey, regionSummary } from './home.ts'
 
@@ -55,7 +55,7 @@ export function PairMenu({ api, settings, catalog, running, active, progress, sa
   useEffect(() => {
     if (!real || !active || !pairs) return
     let alive = true
-    void Promise.all(pairs.map(async (p) => [pairKey(p.from, p.to), await api.modelStatus(p.from, p.to, scope).catch(() => [] as ModelStatusInfo[])] as const)).then((entries) => {
+    void Promise.all(pairs.map(async (p) => [pairKey(p.from, p.to), await api.modelStatus(p.from, [p.to], scope).catch(() => [] as ModelStatusInfo[])] as const)).then((entries) => {
       if (alive) setStatuses(Object.fromEntries(entries))
     })
     return () => {
@@ -64,15 +64,18 @@ export function PairMenu({ api, settings, catalog, running, active, progress, sa
   }, [api, real, active, pairs, scope, progress])
 
   const installed = useMemo(() => installedPairs(catalog, statuses), [catalog, statuses])
-  const current = pairKey(settings.from, settings.to)
-  const currentInstalled = installed.some((p) => pairKey(p.from, p.to) === current)
+  // Un solo destino es un par de la lista; con varios (o ninguno) la elección se hizo en Idiomas y no es un par.
+  const single = settings.targets.length === 1 ? settings.targets[0] : undefined
+  const custom = single === undefined
+  const current = custom ? 'custom' : pairKey(settings.from, single)
+  const currentInstalled = custom || installed.some((p) => pairKey(p.from, p.to) === current)
   const label = (from: string, to: string) => `${languageName(from)} → ${languageName(to)}`
 
   if (!real) {
     return (
       <div id="pair-row" class="setup-row">
         <span class="setup-label">Idiomas</span>
-        <span class="setup-value">{label(settings.from, settings.to)} (motores de demostración)</span>
+        <span class="setup-value">{languagesSummary(settings)} (motores de demostración)</span>
       </div>
     )
   }
@@ -89,10 +92,12 @@ export function PairMenu({ api, settings, catalog, running, active, progress, sa
         value={current}
         onChange={(e) => {
           const [from, to] = (e.currentTarget as HTMLSelectElement).value.split('>')
-          if (from && to) void save({ from, to })
+          // Elegir un par fija el origen y un único destino; el subtítulo original sigue como estaba.
+          if (from && to) void save({ from, targets: [to], overlay: { showOriginal: settings.overlay.showOriginal } })
         }}
       >
-        {!currentInstalled && <option value={current}>{label(settings.from, settings.to)} (sin instalar)</option>}
+        {custom && <option value="custom">{languagesSummary(settings)} (elegido en Idiomas)</option>}
+        {!currentInstalled && single !== undefined && <option value={current}>{label(settings.from, single)} (sin instalar)</option>}
         {installed.map((p) => (
           <option key={pairKey(p.from, p.to)} value={pairKey(p.from, p.to)}>
             {label(p.from, p.to)}

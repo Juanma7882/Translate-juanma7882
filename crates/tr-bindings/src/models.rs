@@ -61,7 +61,7 @@ fn state_name(state: ModelState) -> &'static str {
 pub struct StatusTask {
     pub models: Models,
     pub from: Lang,
-    pub to: Lang,
+    pub to: Vec<Lang>,
     pub scope: ModelScope,
 }
 
@@ -90,7 +90,7 @@ impl Task for StatusTask {
 pub struct DownloadTask {
     pub models: Models,
     pub from: Lang,
-    pub to: Lang,
+    pub to: Vec<Lang>,
     pub scope: ModelScope,
 }
 

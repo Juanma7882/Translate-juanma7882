@@ -10,16 +10,24 @@ use napi::Status;
 use napi::bindgen_prelude::JsValuesTupleIntoVec;
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi_derive::napi;
-use tr_engine::tr_core::{Event, EventSink, Mode};
+use tr_engine::tr_core::{Event, EventSink, Mode, Translated};
 
 /// Callback de JS con argumentos directos (sin convención `(err, valor)`) y referencia débil:
 /// no mantiene vivo el bucle de eventos de Node.
 pub type Callback<T> = ThreadsafeFunction<T, (), T, Status, false, true>;
 
+/// La traducción de un texto a un idioma de destino.
+#[napi(object)]
+pub struct TranslationText {
+    pub lang: String,
+    pub text: String,
+}
+
 #[napi(object)]
 pub struct TranslationEvent {
     pub original: String,
-    pub translated: String,
+    /// Una entrada por destino traducido, en el orden de los destinos (vacía sin destinos).
+    pub translations: Vec<TranslationText>,
     /// Milisegundos desde el inicio del motor.
     pub timestamp_ms: f64,
 }
@@ -27,8 +35,8 @@ pub struct TranslationEvent {
 #[napi(object)]
 pub struct SubtitleEvent {
     pub original: String,
-    /// `undefined` en parciales y cuando la traducción falló.
-    pub translated: Option<String>,
+    /// Vacía en parciales, sin destinos y cuando fallaron todas las traducciones.
+    pub translations: Vec<TranslationText>,
     pub is_final: bool,
     pub timestamp_ms: f64,
 }
@@ -96,6 +104,16 @@ impl<T: 'static + JsValuesTupleIntoVec> Slot<T> {
     }
 }
 
+fn texts(translations: Vec<Translated>) -> Vec<TranslationText> {
+    translations
+        .into_iter()
+        .map(|t| TranslationText {
+            lang: t.lang.to_string(),
+            text: t.text,
+        })
+        .collect()
+}
+
 fn millis(timestamp: Duration) -> f64 {
     timestamp.as_secs_f64() * 1000.0
 }
@@ -129,21 +147,21 @@ impl EventSink for BindingSink {
         match event {
             Event::Translation {
                 original,
-                translated,
+                translations,
                 timestamp,
             } => callbacks.translation.deliver(TranslationEvent {
                 original,
-                translated,
+                translations: texts(translations),
                 timestamp_ms: millis(timestamp),
             }),
             Event::Subtitle {
                 original,
-                translated,
+                translations,
                 is_final,
                 timestamp,
             } => callbacks.subtitle.deliver(SubtitleEvent {
                 original,
-                translated,
+                translations: texts(translations),
                 is_final,
                 timestamp_ms: millis(timestamp),
             }),

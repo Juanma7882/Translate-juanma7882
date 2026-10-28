@@ -19,6 +19,7 @@ pub mod runner;
 pub mod slot;
 pub mod testing;
 pub mod text;
+pub mod translate;
 pub mod types;
 
 pub use error::{CoreError, ErrorCategory, Result};
@@ -28,5 +29,5 @@ pub use ports::{
 };
 pub use types::{
     AppAudio, AudioChunk, AudioSource, BBox, Event, Frame, Lang, Mode, Region, SAMPLE_RATE,
-    Segment, SegmentKind, TextBlock,
+    Segment, SegmentKind, TextBlock, Translated,
 };

@@ -11,16 +11,12 @@ import type { BrowserWindow } from 'electron'
 import { toDesktopDip } from '../shared/geometry.ts'
 import type { DipRect, OverlayMode, OverlayStyle, OverlayText } from '../shared/ipc.ts'
 import { Channel } from '../shared/ipc.ts'
+import { linesPerTrack, overlayHeight, trackPlan } from '../shared/overlay-layout.ts'
 import { clampToAreas, placeOutside } from '../shared/overlay-placement.ts'
 import type { SavedRegion } from '../shared/settings.ts'
 import type { DisplaySource } from './region-picker.ts'
 import type { SettingsStore } from './settings-store.ts'
 import type { WindowManager } from './windows.ts'
-
-/** Alto de la ventana: espacio para el original y hasta `maxLines` líneas de traducción. */
-export function overlayHeight(fontSize: number, maxLines = 2): number {
-  return Math.ceil(fontSize * 1.35 * (maxLines + 1) + 36)
-}
 
 /** Propiedades que hacen del overlay una capa que no se interpone: encima, sin foco, atravesable. */
 export function hardenOverlay(window: BrowserWindow): void {
@@ -45,6 +41,9 @@ export class OverlayController extends EventEmitter<OverlayEvents> {
   private readonly settings: SettingsStore
   private readonly displays: DisplaySource
   private region: SavedRegion | null = null
+  /** Alto útil de la pantalla del overlay (para reducir las líneas si dos subtítulos no caben) y líneas enviadas al renderer. */
+  private workHeight: number | null = null
+  private sentLines = -1
   private overlapping = false
   private moveMode = false
   /** Posición durante un arrastre (fracciones acumuladas; la ventana usa enteros). */
@@ -169,9 +168,20 @@ export class OverlayController extends EventEmitter<OverlayEvents> {
     return value
   }
 
+  /**
+   * Líneas con que se dibuja cada subtítulo: las del ajuste, o menos si con dos subtítulos no caben en
+   * la pantalla (ver `linesPerTrack`). El ajuste guardado no cambia.
+   */
+  private effectiveLines(workHeight: number): number {
+    const { overlay, targets } = this.settings.get()
+    return linesPerTrack(overlay.fontSize, overlay.maxLines, trackPlan(targets, overlay.showOriginal), workHeight)
+  }
+
   private applyStyle(): void {
     const { opacity, fontSize, fontFamily, showOriginal, hideAfterMs, textColor, backgroundColor, maxLines } = this.settings.get().overlay
-    const style: OverlayStyle = { opacity, fontSize, fontFamily, showOriginal, hideAfterMs, textColor, backgroundColor, maxLines }
+    const lines = this.workHeight === null ? maxLines : this.effectiveLines(this.workHeight)
+    this.sentLines = lines
+    const style: OverlayStyle = { opacity, fontSize, fontFamily, showOriginal, hideAfterMs, textColor, backgroundColor, maxLines: lines }
     this.window?.webContents.send(Channel.overlayStyle, style)
   }
 
@@ -186,7 +196,11 @@ export class OverlayController extends EventEmitter<OverlayEvents> {
 
     const work = display.workArea
     const width = Math.min(overlay.width, work.width)
-    const height = Math.min(overlayHeight(overlay.fontSize, overlay.maxLines), work.height)
+    this.workHeight = work.height
+    const lines = this.effectiveLines(work.height)
+    const { targets } = this.settings.get()
+    const height = Math.min(overlayHeight(overlay.fontSize, lines, trackPlan(targets, overlay.showOriginal)), work.height)
+    if (lines !== this.sentLines) this.applyStyle()
     let x: number
     let y: number
     let overlaps = false

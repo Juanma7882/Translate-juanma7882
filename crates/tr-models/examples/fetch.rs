@@ -30,9 +30,9 @@ fn main() {
     );
     let manifest = Manifest::embedded();
     let specs = match scope {
-        "text" => manifest.required_for(&from, &to),
-        "audio" => manifest.required_for_audio(&from, &to),
-        "all" => manifest.required_for_all(&from, &to),
+        "text" => manifest.required_for(&from, std::slice::from_ref(&to)),
+        "audio" => manifest.required_for_audio(&from, std::slice::from_ref(&to)),
+        "all" => manifest.required_for_all(&from, std::slice::from_ref(&to)),
         other => {
             eprintln!("ámbito desconocido `{other}` (usa text, audio o all)");
             std::process::exit(2);

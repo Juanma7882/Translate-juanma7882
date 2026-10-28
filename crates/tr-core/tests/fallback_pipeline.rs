@@ -10,6 +10,7 @@ use tr_core::fallback::{FallbackConfig, FallbackSetup, TextOrAudioPipeline};
 use tr_core::region::{RegionConfig, RegionProcessor};
 use tr_core::runner::LoopTiming;
 use tr_core::testing::{FakeAudio, FakeOcr, FakeScreen, FakeStt, FakeTranslator, RecordingSink};
+use tr_core::translate::Target;
 use tr_core::{AudioChunk, Event, Frame, Lang, Mode, Region, SAMPLE_RATE, Segment, SegmentKind};
 
 const WAIT: Duration = Duration::from_secs(3);
@@ -36,17 +37,17 @@ fn start() -> Fixture {
     let cache = Arc::new(TranslationCache::default());
 
     let region_processor = RegionProcessor::new(
-        RegionConfig::new(from.clone(), to.clone()),
+        RegionConfig::new(from.clone()),
         Box::new(ocr.clone()),
-        Arc::new(translator.clone()),
+        vec![Target::new(to.clone(), Arc::new(translator.clone()))],
         cache.clone(),
         Arc::new(sink.clone()),
         clock.clone(),
     );
     let audio_processor = AudioProcessor::new(
-        AudioConfig::new(from, to),
+        AudioConfig::new(from),
         Box::new(stt.clone()),
-        Arc::new(translator),
+        vec![Target::new(to, Arc::new(translator))],
         cache,
         Arc::new(sink.clone()),
         clock.clone(),
@@ -146,9 +147,9 @@ fn audio_is_captured_only_while_in_audio_mode() {
         ev,
         Event::Subtitle {
             is_final: true,
-            translated: Some(_),
+            translations,
             ..
-        }
+        } if !translations.is_empty()
     ))));
     assert_eq!(
         translations(&fx.sink.events()),

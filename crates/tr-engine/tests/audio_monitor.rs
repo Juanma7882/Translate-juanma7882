@@ -126,11 +126,11 @@ fn a_session_replaces_the_preview_and_blocks_a_new_one_until_it_ends() {
 
         if text {
             engine
-                .start_region(region(), lang("en"), lang("es"))
+                .start_region(region(), lang("en"), vec![lang("es")])
                 .unwrap();
         } else {
             engine
-                .start_audio(lang("en"), lang("es"), AudioSource::System)
+                .start_audio(lang("en"), vec![lang("es")], AudioSource::System)
                 .unwrap();
         }
         assert!(!engine.is_monitoring(), "la escucha cede (texto: {text})");
@@ -228,7 +228,7 @@ fn a_session_that_fails_on_missing_models_leaves_the_real_preview_running() {
     assert!(engine.start_audio_monitor(AudioSource::System).unwrap());
 
     let error = engine
-        .start_audio(lang("en"), lang("es"), AudioSource::System)
+        .start_audio(lang("en"), vec![lang("es")], AudioSource::System)
         .unwrap_err();
     assert!(matches!(error, CoreError::Model(_)), "{error}");
     assert!(engine.is_monitoring(), "faltaban modelos: la escucha sigue");

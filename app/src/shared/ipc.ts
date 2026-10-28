@@ -80,7 +80,10 @@ export interface SelectorApi {
 /** Texto a mostrar. `final: false` marca un subtítulo provisional. */
 export interface OverlayText {
   original: string
-  translated: string | null
+  /** Idioma del original (el de origen de la sesión). */
+  lang: string
+  /** Una entrada por destino traducido, en el orden de los destinos (vacía si no hay traducciones). */
+  translations: { lang: string; text: string }[]
   final: boolean
 }
 
@@ -189,8 +192,8 @@ export interface SettingsApi {
   /** Lee unas preferencias de un archivo elegido por el usuario; todo o nada. */
   importSettings(): Promise<TransferResult>
   modelCatalog(): Promise<ModelCatalog>
-  modelStatus(from: string, to: string, scope?: ModelScope): Promise<ModelStatusInfo[]>
-  downloadModels(from: string, to: string, scope?: ModelScope): Promise<void>
+  modelStatus(from: string, to: string[], scope?: ModelScope): Promise<ModelStatusInfo[]>
+  downloadModels(from: string, to: string[], scope?: ModelScope): Promise<void>
   /** Todos los modelos con su espacio en disco. */
   modelInventory(): Promise<ModelInventory>
   deleteModel(id: string): Promise<DeleteResult>

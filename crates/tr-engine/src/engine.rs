@@ -20,6 +20,7 @@ use tr_core::monitor::LevelMonitor;
 use tr_core::region::{RegionConfig, RegionPipeline, RegionProcessor};
 use tr_core::runner::LoopTiming;
 use tr_core::testing::FakeTranslator;
+use tr_core::translate::{MAX_TARGETS, Target};
 use tr_core::{
     AppAudio, AudioCapture, AudioSource, AudioSourceLister, ChunkCallback, CoreError, EventSink,
     Lang, Region, Result, Translator,
@@ -128,42 +129,80 @@ impl EngineConfig {
     }
 }
 
-fn region_parts(config: &EngineConfig, from: &Lang, to: &Lang) -> Result<RegionParts> {
+/// Comprueba la lista de destinos: como mucho [`MAX_TARGETS`], sin repetidos y distintos del origen.
+pub fn validate_targets(from: &Lang, targets: &[Lang]) -> Result<()> {
+    if targets.len() > MAX_TARGETS {
+        return Err(CoreError::InvalidArgument(format!(
+            "at most {MAX_TARGETS} target languages are supported"
+        )));
+    }
+    for (i, to) in targets.iter().enumerate() {
+        if to == from {
+            return Err(CoreError::InvalidArgument(
+                "a target language must differ from the source language".into(),
+            ));
+        }
+        if targets[..i].contains(to) {
+            return Err(CoreError::InvalidArgument(
+                "target languages must be different from each other".into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Une cada destino con su traductor (misma posición en ambas listas).
+fn with_translators(targets: &[Lang], translators: Vec<Arc<dyn Translator>>) -> Vec<Target> {
+    targets
+        .iter()
+        .cloned()
+        .zip(translators)
+        .map(|(lang, translator)| Target::new(lang, translator))
+        .collect()
+}
+
+fn demo_translators(count: usize) -> Vec<Arc<dyn Translator>> {
+    (0..count)
+        .map(|_| Arc::new(FakeTranslator::new()) as Arc<dyn Translator>)
+        .collect()
+}
+
+fn region_parts(config: &EngineConfig, from: &Lang, targets: &[Lang]) -> Result<RegionParts> {
     match config.engines {
         EngineKind::Fake => Ok(RegionParts {
             screen: Box::new(DemoScreen::default()),
             ocr: Box::new(DemoOcr::new(config.fake_latency)),
-            translator: Arc::new(FakeTranslator::new()),
+            translators: demo_translators(targets.len()),
         }),
         EngineKind::Real => real::region_parts(
             config.models_dir.clone(),
             config.manifest(),
             from,
-            to,
+            targets,
             &config.perf_config(),
         ),
     }
 }
 
-/// `shared_translator` (el del fallback) evita cargar dos veces el modelo de traducción.
+/// `shared_translators` (los del fallback) evitan cargar dos veces los modelos de traducción.
 fn audio_parts(
     config: &EngineConfig,
     from: &Lang,
-    to: &Lang,
-    shared_translator: Option<Arc<dyn Translator>>,
+    targets: &[Lang],
+    shared_translators: Option<Vec<Arc<dyn Translator>>>,
 ) -> Result<AudioParts> {
     match config.engines {
         EngineKind::Fake => Ok(AudioParts {
             audio: Box::new(DemoAudio::new(config.fake_audio_pace)),
             stt: Box::new(DemoStt::new(config.fake_latency)),
-            translator: shared_translator.unwrap_or_else(|| Arc::new(FakeTranslator::new())),
+            translators: shared_translators.unwrap_or_else(|| demo_translators(targets.len())),
         }),
         EngineKind::Real => real::audio_parts(
             config.models_dir.clone(),
             config.manifest(),
             from,
-            to,
-            shared_translator,
+            targets,
+            shared_translators,
             &config.perf_config(),
         ),
     }
@@ -256,25 +295,27 @@ impl Engine {
         Models::with_manifest(self.config.models_dir.clone(), manifest, self.sink.clone())
     }
 
-    /// Traduce el texto de una región. Si ya había algo en marcha, lo reemplaza; si el arranque
+    /// Traduce el texto de una región a cada idioma de `targets` (0 a [`MAX_TARGETS`]; sin
+    /// destinos solo se lee el texto). Si ya había algo en marcha, lo reemplaza; si el arranque
     /// falla (modelos ausentes, motor no compilado...) lo anterior sigue funcionando.
-    pub fn start_region(&mut self, region: Region, from: Lang, to: Lang) -> Result<()> {
+    pub fn start_region(&mut self, region: Region, from: Lang, targets: Vec<Lang>) -> Result<()> {
+        validate_targets(&from, &targets)?;
         // Con fallback real, todo lo que falte (texto y audio) se informa de una vez.
         if self.config.fallback.is_some() && self.config.engines == EngineKind::Real {
             real::ensure_fallback_ready(
                 self.config.models_dir.clone(),
                 self.config.manifest(),
                 &from,
-                &to,
+                &targets,
             )?;
         }
-        let parts = region_parts(&self.config, &from, &to)?;
+        let parts = region_parts(&self.config, &from, &targets)?;
         let audio = match self.config.fallback {
             Some(_) => Some(audio_parts(
                 &self.config,
                 &from,
-                &to,
-                Some(parts.translator.clone()),
+                &targets,
+                Some(parts.translators.clone()),
             )?),
             None => None,
         };
@@ -284,9 +325,9 @@ impl Engine {
 
         let cache = Arc::clone(&self.cache);
         let processor = RegionProcessor::new(
-            RegionConfig::new(from.clone(), to.clone()),
+            RegionConfig::new(from.clone()),
             parts.ocr,
-            parts.translator.clone(),
+            with_translators(&targets, parts.translators),
             cache.clone(),
             self.sink.clone(),
             self.clock.clone(),
@@ -295,9 +336,9 @@ impl Engine {
         self.active = Some(match (self.config.fallback, audio) {
             (Some(fallback), Some(audio)) => {
                 let audio_processor = AudioProcessor::new(
-                    self.audio_config(from, to),
+                    self.audio_config(from),
                     audio.stt,
-                    audio.translator,
+                    with_translators(&targets, audio.translators),
                     cache,
                     self.sink.clone(),
                     self.clock.clone(),
@@ -332,8 +373,8 @@ impl Engine {
         self.config.vad_threshold
     }
 
-    fn audio_config(&self, from: Lang, to: Lang) -> AudioConfig {
-        let mut config = AudioConfig::new(from, to);
+    fn audio_config(&self, from: Lang) -> AudioConfig {
+        let mut config = AudioConfig::new(from);
         config.vad_threshold = self.config.vad_threshold;
         config
     }
@@ -347,8 +388,14 @@ impl Engine {
     /// Subtitula el audio de `source` (todo el sistema o una aplicación). Si ya había algo en
     /// marcha, lo reemplaza. Si faltan modelos lo anterior sigue; si la captura de la fuente
     /// falla (p. ej. la aplicación ya no suena) lo anterior ya se detuvo.
-    pub fn start_audio(&mut self, from: Lang, to: Lang, source: AudioSource) -> Result<()> {
-        let mut parts = audio_parts(&self.config, &from, &to, None)?;
+    pub fn start_audio(
+        &mut self,
+        from: Lang,
+        targets: Vec<Lang>,
+        source: AudioSource,
+    ) -> Result<()> {
+        validate_targets(&from, &targets)?;
+        let mut parts = audio_parts(&self.config, &from, &targets, None)?;
         parts.audio = Box::new(SourcedCapture {
             inner: parts.audio,
             source,
@@ -357,9 +404,9 @@ impl Engine {
         self.stop_audio_monitor();
         self.stop();
         let processor = AudioProcessor::new(
-            self.audio_config(from, to),
+            self.audio_config(from),
             parts.stt,
-            parts.translator,
+            with_translators(&targets, parts.translators),
             Arc::clone(&self.cache),
             self.sink.clone(),
             self.clock.clone(),

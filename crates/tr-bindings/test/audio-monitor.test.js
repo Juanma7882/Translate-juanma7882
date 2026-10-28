@@ -105,7 +105,7 @@ describe('escucha previa del nivel', () => {
     assert.equal(api.startAudioMonitor(), true)
     assert.ok(await waitFor(() => levels.length >= 2))
 
-    api.startAudioSubtitles('en', 'es')
+    api.startAudioSubtitles('en', ['es'])
     assert.equal(api.startAudioMonitor(), false, 'con una sesión en marcha la escucha cede')
     // Los niveles siguen llegando, ahora de la sesión.
     const before = levels.length
@@ -137,7 +137,7 @@ describe('escucha previa del nivel', () => {
     api.configure(FAST)
     const levels = []
     const off = api.onAudioLevel((e) => levels.push(e))
-    api.startRegionTranslation({ x: 0, y: 0, width: 32, height: 32 }, 'en', 'es')
+    api.startRegionTranslation({ x: 0, y: 0, width: 32, height: 32 }, 'en', ['es'])
     api.pause()
     await sleep(100)
     const before = levels.length

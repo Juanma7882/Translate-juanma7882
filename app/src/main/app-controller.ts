@@ -58,8 +58,8 @@ interface ControllerEvents {
 const IDLE: AppState = { running: false, paused: false, mode: null, phase: 'idle' }
 
 /** Lo de los ajustes que obliga a reiniciar una sesión en marcha. La fuente de audio solo cuenta si hay audio. */
-const sessionKey = (mode: Mode, fallbackSeconds: number, source: AudioSourceChoice): string =>
-  `${mode}|${fallbackSeconds}|${mode === 'text' ? '' : source.kind === 'app' ? `app:${source.program}` : 'system'}`
+const sessionKey = (mode: Mode, fallbackSeconds: number, source: AudioSourceChoice, from: string, targets: readonly string[]): string =>
+  `${mode}|${fallbackSeconds}|${mode === 'text' ? '' : source.kind === 'app' ? `app:${source.program}` : 'system'}|${from}>${targets.join('+')}`
 
 /** Resultado de buscar la aplicación elegida entre las que suenan. */
 type Resolved = { ok: true; source: AudioSourceRequest } | { ok: false; waiting: true } | { ok: false; waiting: false; notice: Notice }
@@ -113,7 +113,7 @@ export class AppController extends EventEmitter<ControllerEvents> {
     })
     // Cambiar el modo, la espera del fallback o la fuente con una sesión en marcha la reinicia con lo nuevo.
     deps.settings.onChange((s) => {
-      if (this.current.running && sessionKey(s.mode, s.fallbackSeconds, s.audioSource) !== this.appliedKey) void this.queueRestart()
+      if (this.current.running && sessionKey(s.mode, s.fallbackSeconds, s.audioSource, s.from, s.targets) !== this.appliedKey) void this.queueRestart()
     })
   }
 
@@ -190,8 +190,8 @@ export class AppController extends EventEmitter<ControllerEvents> {
           else this.emit('notice', resolved.notice)
           return
         }
-        const { from, to } = this.deps.settings.get()
-        await this.deps.host.send({ type: 'startAudio', from, to, source: resolved.source }).catch(() => undefined)
+        const { from, targets } = this.deps.settings.get()
+        await this.deps.host.send({ type: 'startAudio', from, to: targets, source: resolved.source }).catch(() => undefined)
       } else {
         await this.deps.host.send({ type: 'resume' }).catch(() => undefined)
       }
@@ -265,7 +265,7 @@ export class AppController extends EventEmitter<ControllerEvents> {
     }
     this.cancelWait()
     this.starting = true
-    this.appliedKey = sessionKey(mode, current.fallbackSeconds, current.audioSource)
+    this.appliedKey = sessionKey(mode, current.fallbackSeconds, current.audioSource, current.from, current.targets)
     this.setState({ running: true, paused: false, mode: initialActive(mode), phase: 'starting' })
     let resolved: Resolved | null = null
     try {
@@ -273,10 +273,10 @@ export class AppController extends EventEmitter<ControllerEvents> {
       await this.deps.configure()
       if (mode === 'audio') {
         resolved = await this.resolveSource()
-        if (resolved.ok) await host.send({ type: 'startAudio', from: current.from, to: current.to, source: resolved.source })
+        if (resolved.ok) await host.send({ type: 'startAudio', from: current.from, to: current.targets, source: resolved.source })
         else if (!resolved.waiting) throw new SourceError(resolved.notice)
       } else {
-        await host.send({ type: 'startRegion', rect: region as SavedRegion, from: current.from, to: current.to })
+        await host.send({ type: 'startRegion', rect: region as SavedRegion, from: current.from, to: current.targets })
       }
     } catch (error) {
       this.starting = false
@@ -379,9 +379,9 @@ export class AppController extends EventEmitter<ControllerEvents> {
       }
       return
     }
-    const { from, to } = this.deps.settings.get()
+    const { from, targets } = this.deps.settings.get()
     try {
-      await this.deps.host.send({ type: 'startAudio', from, to, source: resolved.source })
+      await this.deps.host.send({ type: 'startAudio', from, to: targets, source: resolved.source })
     } catch {
       this.scheduleRetry()
       return
@@ -417,13 +417,13 @@ export class AppController extends EventEmitter<ControllerEvents> {
   private onEngineEvent(event: EngineEvent): void {
     switch (event.name) {
       case 'translation': {
-        const text: OverlayText = { original: event.payload.original, translated: event.payload.translated, final: true }
+        const text: OverlayText = { original: event.payload.original, lang: this.deps.settings.get().from, translations: event.payload.translations, final: true }
         this.emit('text', text)
         return
       }
       case 'subtitle': {
-        const { original, translated, isFinal } = event.payload
-        this.emit('text', { original, translated: translated ?? null, final: isFinal })
+        const { original, translations, isFinal } = event.payload
+        this.emit('text', { original, lang: this.deps.settings.get().from, translations, final: isFinal })
         return
       }
       case 'error':

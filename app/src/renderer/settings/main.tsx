@@ -19,6 +19,7 @@ import { HomePanel } from './home-panel.tsx'
 import { createLevelStore } from './home.ts'
 import { LanguagesPanel } from './languages-panel.tsx'
 import { ModelsPanel } from './models-panel.tsx'
+import { PreviewLines } from './preview.tsx'
 import { FieldError, fieldProps, TabPanel, Tabs } from './ui.tsx'
 
 const api = window.trSettings
@@ -33,8 +34,6 @@ const TABS: readonly TabSpec[] = [
   { id: 'advanced', label: 'Avanzado' },
 ]
 
-const SAMPLE_ORIGINAL = 'Hello, world. This is a preview of how the translation will look.'
-const SAMPLE_TRANSLATED = 'Hola, mundo. Esta es una vista previa de cómo se verá la traducción en pantalla, con el límite de líneas elegido.'
 
 function rgba(color: string, alpha: number): string {
   const [r, g, b] = parseHex(color)
@@ -82,7 +81,7 @@ function App({ api }: { api: SettingsApi }) {
         setIssues(toIssues(check.errors))
         return false
       }
-      const problem = current.engines === 'real' && catalog ? languageError(catalog, check.settings.from, check.settings.to) : null
+      const problem = current.engines === 'real' && catalog ? languageError(catalog, check.settings.from, check.settings.targets) : null
       if (problem) {
         setIssues([{ field: null, message: problem }])
         return false
@@ -250,10 +249,7 @@ function App({ api }: { api: SettingsApi }) {
               aria-label="Vista previa del overlay"
               style={{ fontSize: `${overlay.fontSize}px`, fontFamily: overlay.fontFamily, color: overlay.textColor, background: rgba(overlay.backgroundColor, overlay.opacity) }}
             >
-              {overlay.showOriginal && <div class="original">{SAMPLE_ORIGINAL}</div>}
-              <div class="translated" style={{ WebkitLineClamp: String(overlay.maxLines) }}>
-                {SAMPLE_TRANSLATED}
-              </div>
+              <PreviewLines settings={settings} />
             </div>
           </div>
 
@@ -309,10 +305,6 @@ function App({ api }: { api: SettingsApi }) {
                 onChange={(e) => void save({ overlay: { hideAfterMs: Math.round(num(e) * 1000) } })}
               />
               <FieldError id="hideAfter" issues={fieldIssues} />
-            </label>
-            <label class="inline">
-              <input id="showOriginal" type="checkbox" checked={overlay.showOriginal} onChange={(e) => void save({ overlay: { showOriginal: e.currentTarget.checked } })} />
-              Mostrar también el texto original
             </label>
           </fieldset>
 

@@ -137,15 +137,16 @@ impl Models {
         }
     }
 
-    /// Estado de los modelos que hacen falta para reconocer `from` y traducir `from` -> `to`.
-    pub fn status(&self, from: &Lang, to: &Lang) -> Result<Vec<ModelStatus>> {
+    /// Estado de los modelos que hacen falta para reconocer `from` y traducir `from` -> cada
+    /// destino de `to` (con `to` vacío, solo el reconocimiento).
+    pub fn status(&self, from: &Lang, to: &[Lang]) -> Result<Vec<ModelStatus>> {
         self.status_for(from, to, ModelScope::Text)
     }
 
     fn specs(
         &self,
         from: &Lang,
-        to: &Lang,
+        to: &[Lang],
         scope: ModelScope,
     ) -> Result<Vec<&tr_models::ModelSpec>> {
         let manifest = &self.inner.manifest;
@@ -156,11 +157,11 @@ impl Models {
         }
     }
 
-    /// Estado de los modelos del par según `scope`.
+    /// Estado de los modelos de los destinos según `scope`.
     pub fn status_for(
         &self,
         from: &Lang,
-        to: &Lang,
+        to: &[Lang],
         scope: ModelScope,
     ) -> Result<Vec<ModelStatus>> {
         let specs = self.specs(from, to, scope)?;
@@ -174,14 +175,14 @@ impl Models {
             .collect())
     }
 
-    /// Descarga lo que falte para el par (bloquea hasta terminar) y emite `Event::ModelProgress`.
-    /// Con todo listo no toca la red.
-    pub fn download(&self, from: &Lang, to: &Lang) -> Result<()> {
+    /// Descarga lo que falte para los destinos (bloquea hasta terminar) y emite
+    /// `Event::ModelProgress`. Con todo listo no toca la red.
+    pub fn download(&self, from: &Lang, to: &[Lang]) -> Result<()> {
         self.download_for(from, to, ModelScope::Text)
     }
 
     /// Como [`download`](Self::download), para los modelos de `scope`.
-    pub fn download_for(&self, from: &Lang, to: &Lang, scope: ModelScope) -> Result<()> {
+    pub fn download_for(&self, from: &Lang, to: &[Lang], scope: ModelScope) -> Result<()> {
         let inner = &self.inner;
         let specs = self.specs(from, to, scope)?;
         inner.cancel.store(false, Ordering::Release);

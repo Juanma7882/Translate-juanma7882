@@ -119,7 +119,7 @@ export async function runShellSmoke(host: EngineHost, windows: WindowManager, di
   await waitFor(() => shell.controller.state.running && texts > 0, 'the first translation')
   const overlay = windows.get('overlay')
   expect(overlay !== undefined && overlay.isVisible(), 'el overlay se abre al traducir')
-  await waitFor(async () => ((await overlay!.webContents.executeJavaScript(`document.getElementById('translated').textContent`)) as string).length > 0, 'the overlay text')
+  await waitFor(async () => ((await overlay!.webContents.executeJavaScript(`[...document.querySelectorAll('#tracks .track')].map((p) => p.textContent).join(' ')`)) as string).length > 0, 'the overlay text')
   expect(tray.has('Pausar') && tray.has('Detener') && !tray.has('Traducir'), 'en marcha se puede pausar y detener')
   ok('"Traducir la última región" inicia la traducción y el overlay muestra el texto')
 
@@ -229,7 +229,7 @@ export async function runShellSmoke(host: EngineHost, windows: WindowManager, di
     const firstSettings = new SettingsStore(join(mkdtempSync(join(tmpdir(), 'tr-shell-first-')), 'settings.json'))
     firstSettings.load()
     const modelsDir = mkdtempSync(join(tmpdir(), 'tr-shell-models-'))
-    expect(firstSettings.update({ engines: 'real', from: 'en', to: 'es', lastRegion: region(displays) }).ok, 'ajustes de primer uso')
+    expect(firstSettings.update({ engines: 'real', from: 'en', targets: ['es'], lastRegion: region(displays) }).ok, 'ajustes de primer uso')
     const firstNotices: Notice[] = []
     const first = new AppShell({
       host,

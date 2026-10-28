@@ -80,7 +80,7 @@ export declare function deleteModel(id: string): Promise<number>
  * Descarga los modelos que falten para el par (`scope`: `text`, `audio` o `all`); el avance llega
  * por `onModelProgress`.
  */
-export declare function downloadModels(from: string, to: string, scopeName?: string | undefined | null): Promise<void>
+export declare function downloadModels(from: string, to: Array<string>, scopeName?: string | undefined | null): Promise<void>
 
 /** Opciones del motor; todas opcionales. Se aplican en el próximo arranque. */
 export interface EngineOptions {
@@ -187,7 +187,7 @@ export interface ModelsDirCheck {
 }
 
 /** Estado de los modelos necesarios para `from` -> `to` (`scope`: `text`, `audio` o `all`). */
-export declare function modelStatus(from: string, to: string, scopeName?: string | undefined | null): Promise<Array<ModelStatusInfo>>
+export declare function modelStatus(from: string, to: Array<string>, scopeName?: string | undefined | null): Promise<Array<ModelStatusInfo>>
 
 export interface ModelStatusInfo {
   id: string
@@ -254,10 +254,10 @@ export declare function resume(): void
 export declare function startAudioMonitor(source?: AudioSourceInput | undefined | null): boolean
 
 /** Subtitula el audio de `source` (por defecto, todo el sistema). Reemplaza lo que estuviera en marcha. */
-export declare function startAudioSubtitles(from: string, to: string, source?: AudioSourceInput | undefined | null): void
+export declare function startAudioSubtitles(from: string, to: Array<string>, source?: AudioSourceInput | undefined | null): void
 
 /** Traduce el texto de una región de la pantalla. Reemplaza lo que estuviera en marcha. */
-export declare function startRegionTranslation(rect: Rect, from: string, to: string): void
+export declare function startRegionTranslation(rect: Rect, from: string, to: Array<string>): void
 
 /**
  * Detiene el motor y espera a que terminen sus hilos: no se producen más eventos. Los que ya
@@ -270,17 +270,24 @@ export declare function stopAudioMonitor(): void
 
 export interface SubtitleEvent {
   original: string
-  /** `undefined` en parciales y cuando la traducción falló. */
-  translated?: string
+  /** Vacía en parciales, sin destinos y cuando fallaron todas las traducciones. */
+  translations: Array<TranslationText>
   isFinal: boolean
   timestampMs: number
 }
 
 export interface TranslationEvent {
   original: string
-  translated: string
+  /** Una entrada por destino traducido, en el orden de los destinos (vacía sin destinos). */
+  translations: Array<TranslationText>
   /** Milisegundos desde el inicio del motor. */
   timestampMs: number
+}
+
+/** La traducción de un texto a un idioma de destino. */
+export interface TranslationText {
+  lang: string
+  text: string
 }
 
 /** Comprueba si `path` sirve como carpeta de modelos (absoluta, escribible...). */

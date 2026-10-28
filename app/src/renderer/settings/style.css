@@ -264,15 +264,45 @@ progress {
   line-height: 1.3;
 }
 
-#preview .original {
-  opacity: 0.8;
-  font-size: 0.7em;
-}
-
-#preview .translated {
+#preview .track {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+#preview .track.secondary {
+  opacity: 0.8;
+  font-size: 0.7em;
+  -webkit-line-clamp: 2;
+}
+
+#preview .lang-tag {
+  display: inline-block;
+  margin-right: 0.5em;
+  padding: 0 0.35em;
+  border-radius: 4px;
+  font-size: 0.55em;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  vertical-align: 0.15em;
+  background: color-mix(in srgb, currentColor 22%, transparent);
+}
+
+/* Pestaña Idiomas: subtítulos y estado de sus modelos */
+.subtitles .field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.selection-models {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 @media (prefers-reduced-motion: no-preference) {

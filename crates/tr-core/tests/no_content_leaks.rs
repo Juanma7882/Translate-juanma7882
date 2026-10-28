@@ -8,6 +8,7 @@ use std::time::Duration;
 use tr_core::cache::TranslationCache;
 use tr_core::region::{RegionConfig, RegionProcessor};
 use tr_core::testing::{FakeClock, FakeOcr, FakeTranslator, RecordingSink};
+use tr_core::translate::Target;
 use tr_core::{AudioChunk, CoreError, Event, Frame, Lang};
 
 const SECRET: &str = "SECRET-CONTENT-7f3a91";
@@ -29,9 +30,9 @@ fn a_full_run_creates_no_files() {
     let (ocr, translator, sink) = (FakeOcr::new(), FakeTranslator::new(), RecordingSink::new());
     ocr.push_text(SECRET);
     let mut processor = RegionProcessor::new(
-        RegionConfig::new(Lang::new("en").unwrap(), Lang::new("es").unwrap()),
+        RegionConfig::new(Lang::new("en").unwrap()),
         Box::new(ocr),
-        Arc::new(translator),
+        vec![Target::new(Lang::new("es").unwrap(), Arc::new(translator))],
         Arc::new(TranslationCache::default()),
         Arc::new(sink.clone()),
         Arc::new(FakeClock::new()),
@@ -63,9 +64,12 @@ fn error_events_carry_the_engine_message_not_the_processed_text() {
     ocr.push_error(CoreError::Ocr("engine unavailable".into()));
     let sink = RecordingSink::new();
     let mut processor = RegionProcessor::new(
-        RegionConfig::new(Lang::new("en").unwrap(), Lang::new("es").unwrap()),
+        RegionConfig::new(Lang::new("en").unwrap()),
         Box::new(ocr),
-        Arc::new(FakeTranslator::new()),
+        vec![Target::new(
+            Lang::new("es").unwrap(),
+            Arc::new(FakeTranslator::new()),
+        )],
         Arc::new(TranslationCache::default()),
         Arc::new(sink.clone()),
         Arc::new(FakeClock::new()),

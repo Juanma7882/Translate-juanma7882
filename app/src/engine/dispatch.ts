@@ -10,7 +10,7 @@ import type { AudioSourceRequest, Request } from '../shared/protocol.ts'
 // declare se tipan aquí; si un módulo antiguo no las trae, se degrada sin fallar.
 // TODO: quitar este tipo cuando `tr-bindings` exporte los símbolos.
 interface NativeAudioExtras {
-  startAudioSubtitles(from: string, to: string, source?: AudioSourceRequest): void
+  startAudioSubtitles(from: string, to: string[], source?: AudioSourceRequest): void
   listAudioSources?: () => AudioSourcesInfo
   onAudioLevel?: (callback: (level: AudioLevel) => void) => void
   audioVoiceThreshold?: () => number

@@ -7,8 +7,10 @@ import { join } from 'node:path'
 import { app } from 'electron'
 
 import { toDesktopDip } from '../shared/geometry.ts'
+import type { OverlayText } from '../shared/ipc.ts'
+import { overlayHeight, trackPlan } from '../shared/overlay-layout.ts'
 import type { SavedRegion } from '../shared/settings.ts'
-import { OverlayController, overlayHeight } from './overlay-controller.ts'
+import { OverlayController } from './overlay-controller.ts'
 import { registerOverlayIpc } from './overlay-ipc.ts'
 import type { DisplaySource } from './region-picker.ts'
 import type { SettingsStore } from './settings-store.ts'
@@ -33,8 +35,18 @@ async function waitFor(condition: () => boolean | Promise<boolean>, what: string
   throw new Error(`timed out waiting for ${what}`)
 }
 
+/** Texto del overlay con un original (`lang: 'en'`) y, si hay, una traducción al español. */
+const text = (original: string, translated: string | null, final: boolean): OverlayText => ({
+  original,
+  lang: 'en',
+  translations: translated === null ? [] : [{ lang: 'es', text: translated }],
+  final,
+})
+
 interface Dom {
   hidden: boolean
+  /** Líneas de arriba abajo; `original` y `main` son atajos para las pruebas de una traducción. */
+  lines: { lang: string; text: string; secondary: boolean; tag: string }[]
   original: string
   main: string
   provisional: boolean
@@ -47,14 +59,22 @@ async function dom(window: Electron.BrowserWindow): Promise<Dom> {
   return (await window.webContents.executeJavaScript(`(() => {
     const box = document.getElementById('box')
     const root = document.documentElement.style
+    const lines = [...document.querySelectorAll('#tracks .track')].map((p) => ({
+      lang: p.lang,
+      text: p.querySelector('span:last-child').textContent,
+      secondary: p.classList.contains('secondary'),
+      tag: p.querySelector('.lang-tag')?.textContent ?? '',
+    }))
+    const secondary = lines.find((l) => l.secondary)
     return {
       hidden: box.hidden,
-      original: document.getElementById('original').textContent,
-      main: document.getElementById('translated').textContent,
+      lines,
+      original: secondary ? secondary.text : '',
+      main: lines.length > 0 ? lines[lines.length - 1].text : '',
       provisional: box.classList.contains('provisional'),
       opacity: root.getPropertyValue('--opacity'),
       fontSize: root.getPropertyValue('--font-size'),
-      originalShown: getComputedStyle(document.getElementById('original')).display !== 'none',
+      originalShown: secondary !== undefined,
     }
   })()`)) as Dom
 }
@@ -69,7 +89,7 @@ function currentWindow(): Electron.BrowserWindow {
 async function colors(): Promise<{ text: string; background: string; clamp: string; truncated: boolean; height: number }> {
   return (await currentWindow().webContents.executeJavaScript(`(() => {
     const box = document.getElementById('box')
-    const t = document.getElementById('translated')
+    const t = document.querySelector('.track:not(.secondary)')
     return {
       text: getComputedStyle(box).color,
       background: getComputedStyle(box).backgroundColor,
@@ -84,7 +104,7 @@ async function moveView(): Promise<{ visible: boolean; bar: boolean; text: strin
   return (await currentWindow().webContents.executeJavaScript(`(() => ({
     visible: !document.getElementById('box').hidden,
     bar: !document.getElementById('move-bar').hidden,
-    text: document.getElementById('translated').textContent,
+    text: document.querySelector('.track span:last-child')?.textContent ?? '',
   }))()`)) as { visible: boolean; bar: boolean; text: string }
 }
 
@@ -148,15 +168,15 @@ export async function runOverlaySmoke(windows: WindowManager, settings: Settings
   ok('ubicado fuera de la región, con el ancho de los ajustes')
 
   // Texto: original + traducción; un parcial se distingue y el final lo reemplaza.
-  controller.show({ original: 'Hello, world', translated: 'Hola, mundo', final: true })
+  controller.show(text('Hello, world', 'Hola, mundo', true))
   await waitFor(async () => !(await dom(window)).hidden, 'the overlay text')
   let view = await dom(window)
   expect(view.original === 'Hello, world' && view.main === 'Hola, mundo' && !view.provisional && view.originalShown, `texto inesperado: ${JSON.stringify(view)}`)
-  controller.show({ original: 'good morn', translated: null, final: false })
+  controller.show(text('good morn', null, false))
   await waitFor(async () => (await dom(window)).provisional, 'the provisional style')
   view = await dom(window)
   expect(view.main === 'good morn' && view.original === '', 'un parcial sin traducir se muestra como principal')
-  controller.show({ original: 'good morning', translated: 'buenos días', final: true })
+  controller.show(text('good morning', 'buenos días', true))
   await waitFor(async () => !(await dom(window)).provisional, 'the final replacing the provisional')
   ok('muestra original y traducción; el final reemplaza al provisional')
 
@@ -170,13 +190,13 @@ export async function runOverlaySmoke(windows: WindowManager, settings: Settings
   await waitFor(async () => (await label()).text === 'Pausa', 'the paused label')
   controller.setMode('text')
   await waitFor(async () => (await label()).text === 'Texto', 'the text label')
-  controller.show({ original: 'a', translated: 'b', final: true })
+  controller.show(text('a', 'b', true))
   await waitFor(async () => !(await dom(window)).hidden, 'the text after the label')
   expect((await label()).text === 'Texto', 'la etiqueta acompaña al texto')
   ok('el indicador de modo muestra el nombre del modo y aparece aunque no haya texto')
 
   // La inserción es texto plano: el HTML no se interpreta.
-  controller.show({ original: '<img src=x onerror="document.title=1">', translated: '<b>negrita</b>', final: true })
+  controller.show(text('<img src=x onerror="document.title=1">', '<b>negrita</b>', true))
   await waitFor(async () => (await dom(window)).main === '<b>negrita</b>', 'the escaped text')
   expect(!(await window.webContents.executeJavaScript(`document.querySelector('#box img, #box b') !== null`)), 'el texto no crea elementos')
   ok('el texto se inserta como texto, no como HTML')
@@ -191,7 +211,7 @@ export async function runOverlaySmoke(windows: WindowManager, settings: Settings
 
   // Mostrar u ocultar la línea del original.
   settings.update({ overlay: { showOriginal: false } })
-  controller.show({ original: 'Good night', translated: 'Buenas noches', final: true })
+  controller.show(text('Good night', 'Buenas noches', true))
   await waitFor(async () => (await dom(window)).main === 'Buenas noches', 'the new text')
   expect((await dom(window)).original === '', 'sin mostrar el original esa línea queda vacía')
   settings.update({ overlay: { showOriginal: true } })
@@ -199,26 +219,89 @@ export async function runOverlaySmoke(windows: WindowManager, settings: Settings
   // Se oculta solo tras un tiempo sin traducciones nuevas.
   settings.update({ overlay: { hideAfterMs: 300 } })
   await sleep(100)
-  controller.show({ original: 'Bye', translated: 'Adiós', final: true })
+  controller.show(text('Bye', 'Adiós', true))
   await waitFor(async () => !(await dom(window)).hidden, 'the text to appear')
   await waitFor(async () => (await dom(window)).hidden, 'the text to hide itself', 3000)
   ok('se oculta solo pasado el tiempo configurado')
 
   // Colores y límite de líneas.
   expect(settings.update({ overlay: { textColor: '#ffee00', backgroundColor: '#102030', opacity: 1, maxLines: 1, fontSize: 30, width: 400, hideAfterMs: 0 } }).ok, 'cambiar colores y líneas')
-  controller.show({ original: 'Hello', translated: 'Esta es una traducción muy larga que no cabe en una sola línea de la ventana del overlay y debe cortarse', final: true })
+  controller.show(text('Hello', 'Esta es una traducción muy larga que no cabe en una sola línea de la ventana del overlay y debe cortarse', true))
   await waitFor(async () => !(await dom(window)).hidden, 'the long text')
   await waitFor(async () => (await colors()).text === 'rgb(255, 238, 0)', 'the text colour')
   const look = await colors()
   expect(look.background === 'rgb(16, 32, 48)', `fondo: ${look.background}`)
   expect(look.clamp === '1' && look.truncated && look.height <= 30 * 1.3 * 1.5, `una línea con el resto cortado: ${JSON.stringify(look)}`)
   // ±1 DIP: con escala de pantalla fraccionaria (p. ej. 150 % en Windows) el alto se redondea a píxeles físicos.
-  expect(Math.abs(window.getBounds().height - overlayHeight(30, 1)) <= 1, `el alto de la ventana sigue al límite: ${window.getBounds().height}`)
+  const plan = () => trackPlan(settings.get().targets, settings.get().overlay.showOriginal)
+  expect(Math.abs(window.getBounds().height - overlayHeight(30, 1, plan())) <= 1, `el alto de la ventana sigue al límite: ${window.getBounds().height}`)
   settings.update({ overlay: { maxLines: 3 } })
   await waitFor(async () => (await colors()).clamp === '3' && (await colors()).height > look.height * 2, 'three lines to be shown')
-  expect(Math.abs(window.getBounds().height - overlayHeight(30, 3)) <= 1, `alto con tres líneas: ${window.getBounds().height}`)
+  expect(Math.abs(window.getBounds().height - overlayHeight(30, 3, plan())) <= 1, `alto con tres líneas: ${window.getBounds().height}`)
   settings.update({ overlay: { maxLines: 2, width: 700, hideAfterMs: 300 } })
   ok('colores y límite de líneas se aplican en vivo y la ventana ajusta su alto')
+
+  // Dos subtítulos: se ven los dos, con su etiqueta de idioma, y caben en la ventana y en la pantalla.
+  const longText = 'Esta es una traducción larga que ocupa varias líneas de la ventana del overlay para comprobar que entran dos subtítulos completos'
+  const fitness = () =>
+    currentWindow().webContents.executeJavaScript(`(() => {
+      const ps = [...document.querySelectorAll('#tracks .track')]
+      const limit = window.innerHeight + 1
+      return {
+        tracks: ps.length,
+        tags: document.querySelectorAll('.lang-tag').length,
+        langs: ps.map((p) => p.lang),
+        fits: document.getElementById('box').getBoundingClientRect().bottom <= limit && ps.every((p) => p.getBoundingClientRect().bottom <= limit),
+        lines: ps.map((p) => Math.round(p.clientHeight / parseFloat(getComputedStyle(p).lineHeight))),
+        inner: window.innerHeight,
+        boxBottom: Math.round(document.getElementById('box').getBoundingClientRect().bottom),
+        bottoms: ps.map((p) => Math.round(p.getBoundingClientRect().bottom)),
+        fontSize: getComputedStyle(document.getElementById('box')).fontSize,
+      }
+    })()`) as Promise<{ tracks: number; tags: number; langs: string[]; fits: boolean; lines: number[]; inner: number; boxBottom: number; bottoms: number[]; fontSize: string }>
+  const twoSubtitles: OverlayText = {
+    original: 'Hello',
+    lang: 'en',
+    translations: [
+      { lang: 'es', text: longText },
+      { lang: 'fr', text: longText },
+    ],
+    final: true,
+  }
+  expect(settings.update({ targets: ['es', 'fr'], overlay: { showOriginal: false, fontSize: 28, maxLines: 2, width: 700, hideAfterMs: 0 } }).ok, 'dos traducciones')
+  controller.show(twoSubtitles)
+  // La ventana y el estilo llegan al renderer de forma asíncrona: se espera a que se asienten.
+  await waitFor(async () => (await fitness()).tracks === 2, 'the two subtitles')
+  await waitFor(async () => (await fitness()).fits, 'the two subtitles to fit in the window', 3000).catch(async () => {
+    throw new Error(`dos traducciones no caben: ${JSON.stringify(await fitness())}`)
+  })
+  let fit = await fitness()
+  expect(fit.langs.join() === 'es,fr' && fit.tags === 2 && fit.fits, `dos traducciones: ${JSON.stringify(fit)}`)
+  expect(fit.lines.every((n) => n === 2), `cuatro líneas en total con la fuente por defecto: ${JSON.stringify(fit)}`)
+  expect(window.getBounds().height <= primary.workArea.height * 0.45 + 1, 'el overlay no pasa del 45 % de la pantalla')
+
+  // Original más una traducción: el original va arriba, pequeño y rotulado.
+  expect(settings.update({ targets: ['es'], overlay: { showOriginal: true } }).ok, 'original y traducción')
+  controller.show({ ...twoSubtitles, translations: [{ lang: 'es', text: longText }] })
+  await waitFor(async () => (await dom(window)).lines.length === 2 && (await dom(window)).lines[0]!.secondary, 'the original above the translation')
+  view = await dom(window)
+  expect(view.lines.map((l) => l.tag).join() === 'EN,ES' && view.lines[0]!.lang === 'en' && view.lines[1]!.lang === 'es', `etiquetas: ${JSON.stringify(view.lines)}`)
+  await waitFor(async () => (await fitness()).fits, 'the original and translation to fit in the window', 3000).catch(async () => {
+    throw new Error(`original y traducción no caben: ${JSON.stringify(await fitness())}`)
+  })
+
+  // Peor caso: fuente de 96 px y 6 líneas por subtítulo. Se reducen las líneas, ambos se ven y entran.
+  expect(settings.update({ targets: ['es', 'fr'], overlay: { showOriginal: false, fontSize: 96, maxLines: 6, width: 900 } }).ok, 'peor caso')
+  controller.show(twoSubtitles)
+  await waitFor(async () => (await fitness()).tracks === 2 && (await fitness()).lines.every((n) => n < 6) && (await fitness()).fits, 'the worst case to fit', 3000).catch(async () => {
+    throw new Error(`peor caso: ambos subtítulos deben verse dentro de la ventana: ${JSON.stringify(await fitness())}`)
+  })
+  fit = await fitness()
+  expect(fit.fits && fit.lines.every((n) => n >= 1), `peor caso: ${JSON.stringify(fit)}`)
+  expect(settings.get().overlay.maxLines === 6, 'el ajuste guardado no se modifica')
+  expect(window.getBounds().height <= primary.workArea.height, `la ventana cabe en la pantalla: ${window.getBounds().height}`)
+  expect(settings.update({ targets: ['es'], overlay: { showOriginal: true, fontSize: 30, maxLines: 2, width: 700, hideAfterMs: 300 } }).ok, 'volver al estilo anterior')
+  ok('dos subtítulos: etiquetados, en orden y dentro de la ventana, también con fuente de 96 px y 6 líneas')
 
   // Modo mover: la ventana acepta el ratón, se arrastra y se fija la posición; fuera del modo no se mueve.
   const disposeIpc = registerOverlayIpc({ windows, overlay: controller, isRunning: () => true })
@@ -239,7 +322,11 @@ export async function runOverlaySmoke(windows: WindowManager, settings: Settings
   await waitFor(() => window.getBounds().y === primary.workArea.y, 'the drag to stay on screen')
   expect(window.getBounds().x + window.getBounds().width >= primary.workArea.x + 48, 'siempre queda un trozo visible')
   await window.webContents.executeJavaScript('window.trOverlay.drag(100000, 100000)')
-  await waitFor(() => window.getBounds().y <= primary.workArea.y + primary.workArea.height - 48, 'the drag to stay on screen (bottom)')
+  // Con varios monitores el límite inferior es el de la pantalla más baja, no el del principal.
+  const lowest = Math.max(...all.map((d) => d.workArea.y + d.workArea.height))
+  await waitFor(() => window.getBounds().y <= lowest - 48, 'the drag to stay on screen (bottom)').catch(() => {
+    throw new Error(`el arrastre hacia abajo no se mantiene en pantalla: ${JSON.stringify(window.getBounds())} (límite ${lowest})`)
+  })
   const atEdge = window.getBounds()
   await window.webContents.executeJavaScript('window.trOverlay.drag(-300, -300)')
   await waitFor(() => window.getBounds().x === atEdge.x - 300 && window.getBounds().y === atEdge.y - 300, 'the window to come back from the edge')

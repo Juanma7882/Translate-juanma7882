@@ -5,15 +5,21 @@ import type { InstalledModelInfo, ModelCatalog, ModelInventory, ModelStatusInfo 
 
 import { contrastRatio, MIN_CONTRAST } from '../../shared/contrast.ts'
 import type { DeleteFailure, ModelProgress } from '../../shared/ipc.ts'
-import { applyPatch } from '../../shared/settings.ts'
+import type { Mode } from '../../shared/mode.ts'
+import { applyPatch, MAX_SUBTITLES } from '../../shared/settings.ts'
 import type { Settings, SettingsPatch } from '../../shared/settings.ts'
 
 // ------------------------------------------------------------------------------------ idiomas
 
-/** Idiomas de origen que se pueden elegir: con OCR y con al menos un par de traducción. */
-export function sourceLanguages(catalog: ModelCatalog): string[] {
-  const withPairs = new Set(catalog.pairs.map((p) => p.from))
-  return catalog.ocrLanguages.filter((lang) => withPairs.has(lang)).sort()
+/**
+ * Idiomas de origen que se pueden elegir: los que el modo actual sabe leer (texto: OCR; audio: voz;
+ * automático: ambos). No hace falta ningún par de traducción: con solo el subtítulo original no se traduce.
+ */
+export function sourceLanguages(catalog: ModelCatalog, mode: Mode = 'text'): string[] {
+  const ocr = new Set(catalog.ocrLanguages)
+  const stt = new Set(catalog.sttLanguages)
+  const pool = mode === 'text' ? ocr : mode === 'audio' ? stt : new Set([...ocr].filter((lang) => stt.has(lang)))
+  return [...pool].sort()
 }
 
 /** Idiomas de destino disponibles para `from`. */
@@ -21,25 +27,62 @@ export function targetLanguages(catalog: ModelCatalog, from: string): string[] {
   return catalog.pairs.filter((p) => p.from === from).map((p) => p.to).sort()
 }
 
-/**
- * Devuelve un par válido lo más parecido posible al pedido: si `from` no tiene pares se usa el
- * primer origen disponible; si `to` no es válido para `from` se usa su primer destino.
- * `null` si el catálogo no tiene ningún par.
- */
-export function pickPair(catalog: ModelCatalog, from: string, to: string): { from: string; to: string } | null {
-  const sources = sourceLanguages(catalog)
-  const source = sources.includes(from) ? from : sources[0]
-  if (!source) return null
-  const targets = targetLanguages(catalog, source)
-  const target = targets.includes(to) ? to : targets[0]
-  return target ? { from: source, to: target } : null
+/** Mensaje de error para un origen y sus destinos, o `null` si son válidos. */
+export function languageError(catalog: ModelCatalog, from: string, targets: readonly string[]): string | null {
+  if (targets.includes(from)) return 'Elige idiomas de origen y destino distintos.'
+  const missing = targets.some((to) => !catalog.pairs.some((p) => p.from === from && p.to === to))
+  return missing ? 'No hay modelos para traducir entre esos dos idiomas.' : null
 }
 
-/** Mensaje de error para un par de idiomas, o `null` si es válido. */
-export function languageError(catalog: ModelCatalog, from: string, to: string): string | null {
-  if (from === to) return 'Elige idiomas de origen y destino distintos.'
-  const supported = catalog.pairs.some((p) => p.from === from && p.to === to)
-  return supported ? null : 'No hay modelos para traducir entre esos dos idiomas.'
+/** Los subtítulos tal como los presenta la interfaz: «Subtítulo 1» siempre y «Subtítulo 2» si está activo. */
+export interface SubtitleChoice {
+  /** Idioma del subtítulo 1 (el de origen significa el texto original). */
+  first: string
+  /** Idioma del subtítulo 2, o `null` si no está activo. */
+  second: string | null
+}
+
+/** La elección de la interfaz a partir de los ajustes: primero el original (si se muestra) y luego los destinos. */
+export function subtitlesOf(settings: Pick<Settings, 'from' | 'targets'> & { overlay: Pick<Settings['overlay'], 'showOriginal'> }): SubtitleChoice {
+  const langs = [...(settings.overlay.showOriginal ? [settings.from] : []), ...settings.targets]
+  return { first: langs[0] ?? settings.from, second: langs[1] ?? null }
+}
+
+/** Los ajustes que representan la elección: el idioma de origen es el subtítulo original; el resto, destinos. */
+export function patchForSubtitles(from: string, choice: SubtitleChoice): SettingsPatch {
+  const langs = [choice.first, ...(choice.second === null ? [] : [choice.second])]
+  return { from, targets: langs.filter((lang) => lang !== from), overlay: { showOriginal: langs.includes(from) } }
+}
+
+/** `inglés → español + francés`, o `inglés (sin traducir)` si solo se muestra el original. */
+export function languagesSummary(settings: Pick<Settings, 'from' | 'targets'>): string {
+  if (settings.targets.length === 0) return `${languageName(settings.from)} (sin traducir)`
+  return `${languageName(settings.from)} → ${settings.targets.map((lang) => languageName(lang)).join(' + ')}`
+}
+
+/** Idiomas que puede elegir un subtítulo: el original y los destinos desde `from`, menos el del otro subtítulo. */
+export function subtitleOptions(catalog: ModelCatalog, from: string, other: string | null): string[] {
+  return [from, ...targetLanguages(catalog, from)].filter((lang) => lang !== other)
+}
+
+export interface SourceChange {
+  patch: SettingsPatch
+  /** Destinos que se quitaron por no existir desde el nuevo origen. */
+  removed: string[]
+}
+
+/**
+ * Cambia el idioma de origen. Los destinos que no existen desde el nuevo origen (o que serían el propio
+ * origen) se quitan y se devuelven para avisar; si no queda ningún subtítulo se mantiene el original.
+ */
+export function changeSource(catalog: ModelCatalog, current: Settings, from: string): SourceChange {
+  const available = new Set(targetLanguages(catalog, from))
+  const kept = current.targets.filter((lang) => available.has(lang))
+  const removed = current.targets.filter((lang) => !available.has(lang))
+  const showOriginal = current.overlay.showOriginal || kept.length === 0
+  // Con el original y dos destinos serían tres subtítulos: no se da en la práctica (ya era válido antes), pero se acota.
+  const targets = kept.slice(0, MAX_SUBTITLES - (showOriginal ? 1 : 0))
+  return { patch: { from, targets, overlay: { showOriginal } }, removed }
 }
 
 /** Nombre del idioma en español (`en` -> "inglés"); si el motor de Intl no lo conoce, el propio código. */
@@ -56,6 +99,8 @@ export function languageName(code: string, locale = 'es'): string {
 const FIELD_MESSAGES: Record<string, string> = {
   'invalid from': 'El idioma de origen no es válido.',
   'invalid to': 'El idioma de destino no es válido.',
+  'invalid targets': 'Los idiomas de destino no son válidos: como máximo dos, distintos entre sí y del idioma de origen.',
+  'invalid subtitles': 'Elige uno o dos subtítulos (el original cuenta como uno): al menos uno y como máximo dos.',
   'from and to must differ': 'Elige idiomas de origen y destino distintos.',
   'invalid engines': 'Elige un conjunto de motores válido.',
   'invalid mode': 'Elige un modo válido: automático, solo texto o solo audio.',
@@ -131,7 +176,7 @@ export function checkPatch(current: Settings, patch: SettingsPatch, catalog: Mod
   const result = applyPatch(current, patch)
   if (!result.ok) return { ok: false, errors: [...new Set(result.errors.map(describeError))] }
   if (catalog) {
-    const problem = languageError(catalog, result.settings.from, result.settings.to)
+    const problem = languageError(catalog, result.settings.from, result.settings.targets)
     if (problem) return { ok: false, errors: [problem] }
   }
   return result

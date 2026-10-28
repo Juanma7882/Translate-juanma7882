@@ -5,12 +5,12 @@
 
 import type { OverlayMode, OverlayStyle, OverlayText } from '../../shared/ipc.ts'
 import { ACTIVE_LABELS } from '../../shared/mode.ts'
+import type { OverlayLine } from './view.ts'
 import { cssVariables, MODE_FLASH_MS, MOVE_PLACEHOLDER, viewFor } from './view.ts'
 
 const api = window.trOverlay
 const box = document.getElementById('box')
-const original = document.getElementById('original')
-const translated = document.getElementById('translated')
+const tracks = document.getElementById('tracks')
 const modeLabel = document.getElementById('mode')
 const moveBar = document.getElementById('move-bar')
 const moveDone = document.getElementById('move-done')
@@ -34,16 +34,32 @@ function hide(): void {
   clearTimeout(hideTimer)
   if (moving) return // en el modo "mover" la caja se queda visible
   if (box) box.hidden = true
-  if (original) original.textContent = ''
-  if (translated) translated.textContent = ''
+  tracks?.replaceChildren()
   placeholder = false
 }
 
+/** Un párrafo por subtítulo; el texto entra solo como `textContent`, nunca como HTML. */
+function track(line: OverlayLine, labeled: boolean): HTMLParagraphElement {
+  const paragraph = document.createElement('p')
+  paragraph.className = line.secondary ? 'track secondary' : 'track'
+  paragraph.lang = line.lang
+  if (labeled) {
+    const tag = document.createElement('span')
+    tag.className = 'lang-tag'
+    tag.setAttribute('aria-hidden', 'true')
+    tag.textContent = line.lang.toUpperCase()
+    paragraph.append(tag)
+  }
+  const body = document.createElement('span')
+  body.textContent = line.text
+  paragraph.append(body)
+  return paragraph
+}
+
 function show(text: OverlayText): void {
-  if (!box || !original || !translated) return
+  if (!box || !tracks) return
   const view = viewFor(text, style)
-  original.textContent = view.original
-  translated.textContent = view.main
+  tracks.replaceChildren(...view.lines.map((line) => track(line, view.labeled)))
   placeholder = false
   box.classList.toggle('provisional', view.provisional)
   box.hidden = false
@@ -73,15 +89,15 @@ function applyStyle(next: OverlayStyle): void {
 // ---------------------------------------------------------------------------- modo "mover"
 
 function setMoving(active: boolean): void {
-  if (!box || !translated || !moveBar) return
+  if (!box || !tracks || !moveBar) return
   moving = active
   box.classList.toggle('moving', active)
   moveBar.hidden = !active
   clearTimeout(hideTimer)
   if (active) {
     box.hidden = false
-    if (translated.textContent === '') {
-      translated.textContent = MOVE_PLACEHOLDER
+    if (tracks.childElementCount === 0) {
+      tracks.replaceChildren(track({ lang: document.documentElement.lang || 'es', text: MOVE_PLACEHOLDER, kind: 'translation', secondary: false }, false))
       placeholder = true
     }
   } else if (placeholder) {

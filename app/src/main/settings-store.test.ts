@@ -24,13 +24,13 @@ describe('SettingsStore', () => {
     const file = fileIn(scratch())
     const first = new SettingsStore(file)
     first.load()
-    const result = first.update({ to: 'fr', lastRegion: { x: 10, y: 20, width: 300, height: 80, monitor: 0 }, overlay: { opacity: 0.4 } })
+    const result = first.update({ targets: ['fr'], lastRegion: { x: 10, y: 20, width: 300, height: 80, monitor: 0 }, overlay: { opacity: 0.4 } })
     assert.ok(result.ok)
 
     const second = new SettingsStore(file)
     const { settings, warnings } = second.load()
     assert.deepEqual(warnings, [])
-    assert.equal(settings.to, 'fr')
+    assert.deepEqual(settings.targets, ['fr'])
     assert.deepEqual(settings.lastRegion, { x: 10, y: 20, width: 300, height: 80, monitor: 0 })
     assert.equal(settings.overlay.opacity, 0.4)
   })
@@ -68,7 +68,7 @@ describe('SettingsStore', () => {
     const file = fileIn(scratch())
     const store = new SettingsStore(file)
     store.load()
-    store.update({ to: 'fr' })
+    store.update({ targets: ['fr'] })
     const before = readFileSync(file, 'utf8')
     let notified = 0
     store.onChange(() => notified++)
@@ -94,10 +94,10 @@ describe('SettingsStore', () => {
     const store = new SettingsStore(fileIn(scratch()))
     store.load()
     const seen: string[] = []
-    const off = store.onChange((s) => seen.push(s.to))
-    store.update({ to: 'fr' })
+    const off = store.onChange((s) => seen.push(s.targets.join()))
+    store.update({ targets: ['fr'] })
     off()
-    store.update({ to: 'de' })
+    store.update({ targets: ['de'] })
     assert.deepEqual(seen, ['fr'])
   })
 
@@ -105,9 +105,9 @@ describe('SettingsStore', () => {
     const store = new SettingsStore(fileIn(scratch()))
     store.load()
     const copy = store.get()
-    copy.to = 'zz'
+    copy.targets.push('zz')
     copy.overlay.opacity = 0.1
-    assert.equal(store.get().to, defaultSettings().to)
+    assert.deepEqual(store.get().targets, defaultSettings().targets)
     assert.equal(store.get().overlay.opacity, defaultSettings().overlay.opacity)
   })
 
@@ -115,8 +115,8 @@ describe('SettingsStore', () => {
     const file = fileIn(scratch())
     const store = new SettingsStore(file)
     store.load()
-    store.update({ from: 'ja', to: 'en' })
+    store.update({ from: 'ja', targets: ['en'] })
     const saved = JSON.parse(readFileSync(file, 'utf8'))
-    assert.deepEqual(Object.keys(saved).sort(), ['audioSource', 'engines', 'fallbackSeconds', 'from', 'lastRegion', 'mode', 'modelsDir', 'overlay', 'performance', 'shortcuts', 'to', 'version'])
+    assert.deepEqual(Object.keys(saved).sort(), ['audioSource', 'engines', 'fallbackSeconds', 'from', 'lastRegion', 'mode', 'modelsDir', 'overlay', 'performance', 'shortcuts', 'targets', 'version', 'voiceThreshold'])
   })
 })
