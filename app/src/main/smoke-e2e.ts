@@ -61,7 +61,7 @@ export async function runE2eSmoke(host: EngineHost, windows: WindowManager, disp
 
   const settings = new SettingsStore(join(modelsDir, '..', `tr-e2e-settings-${process.pid}.json`))
   settings.load()
-  expect(settings.update({ engines: 'real', from: 'en', to: 'es', modelsDir }).ok, 'ajustes')
+  expect(settings.update({ engines: 'real', from: 'en', targets: ['es'], modelsDir }).ok, 'ajustes')
 
   const notices: Notice[] = []
   const shell = new AppShell({ host, windows, settings, displays, tray: noTray, shortcuts: { register: () => true, unregister: () => {} }, notify: (n) => notices.push(n), quit: () => {}, files: scriptedFiles(), openOnStart: false })
@@ -84,12 +84,12 @@ export async function runE2eSmoke(host: EngineHost, windows: WindowManager, disp
   const overlayText = async (): Promise<string> => {
     const overlay = windows.get('overlay')
     if (!overlay) return ''
-    return (await overlay.webContents.executeJavaScript(`document.getElementById('translated').textContent`)) as string
+    return (await overlay.webContents.executeJavaScript(`[...document.querySelectorAll('#tracks .track')].map((p) => p.textContent).join(' ')`)) as string
   }
   await waitFor(async () => /mundo/i.test(await overlayText()), `the translation in the overlay (avisos: ${JSON.stringify(notices)})`, 120_000)
   const translated = await overlayText()
   expect(/prueba/i.test(translated), `traducción al español: ${translated}`)
-  const original = (await windows.get('overlay')!.webContents.executeJavaScript(`document.getElementById('original').textContent`)) as string
+  const original = (await windows.get('overlay')!.webContents.executeJavaScript(`document.querySelector('#tracks .track.secondary span:last-child')?.textContent ?? ''`)) as string
   expect(original === 'Hello world, this is a test.', `texto original reconocido: ${original}`)
   ok(`el overlay muestra la traducción real: "${translated}"`)
 

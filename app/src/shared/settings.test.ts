@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 
-import { applyPatch, defaultSettings, parseSettings, SETTINGS_VERSION } from './settings.ts'
+import { applyPatch, defaultSettings, parseSettings, SETTINGS_VERSION, subtitleCount } from './settings.ts'
 
 describe('valores por defecto', () => {
   test('son válidos y no generan avisos al validarse', () => {
@@ -39,7 +39,7 @@ describe('parseSettings', () => {
     const wanted = {
       ...defaultSettings(),
       from: 'ja',
-      to: 'en-US',
+      targets: ['en-US'],
       engines: 'fake',
       modelsDir: '/data/models',
       lastRegion: { x: 10, y: 20, width: 300, height: 80, monitor: 1 },
@@ -92,8 +92,8 @@ describe('parseSettings', () => {
   })
 
   test('los idiomas iguales se rechazan', () => {
-    const { settings, warnings } = parseSettings({ ...defaultSettings(), from: 'fr', to: 'fr' })
-    assert.deepEqual([settings.from, settings.to], ['en', 'es'])
+    const { settings, warnings } = parseSettings({ ...defaultSettings(), from: 'fr', targets: ['fr'] })
+    assert.deepEqual([settings.from, settings.targets], ['en', ['es']])
     assert.deepEqual(warnings, ['from and to must differ'])
   })
 
@@ -135,10 +135,10 @@ describe('parseSettings', () => {
 
 describe('applyPatch', () => {
   test('mezcla los campos y las secciones sin perder lo demás', () => {
-    const result = applyPatch(defaultSettings(), { to: 'fr', overlay: { opacity: 0.4 } })
+    const result = applyPatch(defaultSettings(), { targets: ['fr'], overlay: { opacity: 0.4 } })
     assert.ok(result.ok)
     if (!result.ok) return
-    assert.equal(result.settings.to, 'fr')
+    assert.deepEqual(result.settings.targets, ['fr'])
     assert.equal(result.settings.overlay.opacity, 0.4)
     assert.equal(result.settings.overlay.fontSize, defaultSettings().overlay.fontSize)
     assert.equal(result.settings.from, 'en')
@@ -146,7 +146,7 @@ describe('applyPatch', () => {
 
   test('si algún campo es inválido no cambia nada y devuelve los errores', () => {
     const current = defaultSettings()
-    const result = applyPatch(current, { to: 'fr', overlay: { opacity: 99 } })
+    const result = applyPatch(current, { targets: ['fr'], overlay: { opacity: 99 } })
     assert.deepEqual(result, { ok: false, errors: ['invalid overlay.opacity'] })
     assert.deepEqual(current, defaultSettings(), 'el original no se modifica')
   })
@@ -209,5 +209,84 @@ describe('modo y fallback', () => {
   test('el atajo de modo se valida como los otros', () => {
     assert.equal(applyPatch(defaultSettings(), { shortcuts: { toggleMode: 'Alt+M' } }).ok, true)
     assert.deepEqual(applyPatch(defaultSettings(), { shortcuts: { toggleMode: 'Alt + M' } }), { ok: false, errors: ['invalid shortcuts.toggleMode'] })
+  })
+})
+
+describe('subtítulos: destinos y pista original', () => {
+  const legacy = (extra: Record<string, unknown>) => {
+    const { targets: _targets, ...rest } = defaultSettings()
+    return { ...rest, ...extra }
+  }
+
+  test('el formato anterior con un solo `to` se lee como un destino y conserva lo demás', () => {
+    const { settings, warnings } = parseSettings(legacy({ from: 'en', to: 'fr', overlay: { ...defaultSettings().overlay, fontSize: 44 } }))
+    assert.deepEqual(warnings, [])
+    assert.deepEqual(settings.targets, ['fr'])
+    assert.equal(settings.overlay.fontSize, 44)
+  })
+
+  test('sin `to` ni `targets` se usa el destino por defecto', () => {
+    assert.deepEqual(parseSettings(legacy({})).settings.targets, defaultSettings().targets)
+  })
+
+  test('un `to` antiguo inválido vuelve al destino por defecto y avisa', () => {
+    const { settings, warnings } = parseSettings(legacy({ to: 42 }))
+    assert.deepEqual(settings.targets, defaultSettings().targets)
+    assert.deepEqual(warnings, ['invalid to'])
+  })
+
+  test('las combinaciones válidas: 1 o 2 subtítulos', () => {
+    const cases: [string[], boolean][] = [
+      [[], true],
+      [['es'], false],
+      [['es'], true],
+      [['es', 'fr'], false],
+    ]
+    for (const [targets, showOriginal] of cases) {
+      const result = applyPatch(defaultSettings(), { targets, overlay: { showOriginal } })
+      assert.ok(result.ok, JSON.stringify([targets, showOriginal]))
+    }
+  })
+
+  test('el original más dos destinos son tres subtítulos y se rechaza', () => {
+    const result = applyPatch(defaultSettings(), { targets: ['es', 'fr'], overlay: { showOriginal: true } })
+    assert.deepEqual(result, { ok: false, errors: ['invalid subtitles'] })
+  })
+
+  test('sin ningún subtítulo se rechaza', () => {
+    const result = applyPatch(defaultSettings(), { targets: [], overlay: { showOriginal: false } })
+    assert.deepEqual(result, { ok: false, errors: ['invalid subtitles'] })
+  })
+
+  test('tres destinos, repetidos o un destino igual al origen se rechazan', () => {
+    for (const targets of [['es', 'fr', 'de'], ['es', 'es'], ['en']]) {
+      assert.equal(applyPatch(defaultSettings(), { targets, overlay: { showOriginal: false } }).ok, false, JSON.stringify(targets))
+    }
+  })
+
+  test('un parche de destinos reemplaza la lista entera', () => {
+    const two = applyPatch(defaultSettings(), { targets: ['es', 'fr'], overlay: { showOriginal: false } })
+    assert.ok(two.ok)
+    const one = applyPatch(two.settings, { targets: ['fr'] })
+    assert.ok(one.ok)
+    assert.deepEqual(one.settings.targets, ['fr'])
+  })
+
+  test('leyendo del disco, el exceso se corrige conservando el original y el primer destino, con aviso', () => {
+    const { settings, warnings } = parseSettings({ ...defaultSettings(), targets: ['es', 'fr'], overlay: { ...defaultSettings().overlay, showOriginal: true } })
+    assert.deepEqual(warnings, ['invalid subtitles'])
+    assert.deepEqual(settings.targets, ['es'])
+    assert.equal(settings.overlay.showOriginal, true)
+  })
+
+  test('leyendo del disco, sin ningún subtítulo se vuelve a mostrar el original, con aviso', () => {
+    const { settings, warnings } = parseSettings({ ...defaultSettings(), targets: [], overlay: { ...defaultSettings().overlay, showOriginal: false } })
+    assert.deepEqual(warnings, ['invalid subtitles'])
+    assert.equal(settings.overlay.showOriginal, true)
+  })
+
+  test('subtitleCount cuenta el original más los destinos', () => {
+    assert.equal(subtitleCount({ targets: ['es'], overlay: { showOriginal: true } }), 2)
+    assert.equal(subtitleCount({ targets: [], overlay: { showOriginal: true } }), 1)
   })
 })

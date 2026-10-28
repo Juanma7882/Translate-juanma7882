@@ -46,6 +46,11 @@ export function importSettings(text: string, current: Settings): ImportResult {
   if (!isDict(incoming)) return { ok: false, errors: ['import has no settings'] }
 
   const defaults = defaultSettings() as unknown as Record<string, unknown>
+  // Los archivos exportados antes de las pistas múltiples traen `to` (un solo destino): se leen como `targets`.
+  if ('to' in incoming && !('targets' in incoming)) {
+    const { to, ...rest } = incoming
+    return importSettings(JSON.stringify({ ...raw, settings: { ...rest, targets: typeof to === 'string' ? [to] : to } }), current)
+  }
   const errors: string[] = []
   for (const key of Object.keys(incoming)) {
     if (!(key in defaults) || key === 'version') errors.push(`unknown setting ${key}`)

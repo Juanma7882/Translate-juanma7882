@@ -39,14 +39,14 @@ export type AudioSourceRequest = { kind: 'system' } | { kind: 'app'; id: number;
 /** Órdenes de main hacia el motor. */
 export type Command =
   | { type: 'configure'; options: EngineOptions }
-  | { type: 'startRegion'; rect: Rect; from: string; to: string }
-  | { type: 'startAudio'; from: string; to: string; source?: AudioSourceRequest }
+  | { type: 'startRegion'; rect: Rect; from: string; to: string[] }
+  | { type: 'startAudio'; from: string; to: string[]; source?: AudioSourceRequest }
   | { type: 'stop' }
   | { type: 'pause' }
   | { type: 'resume' }
   | { type: 'modelCatalog' }
-  | { type: 'modelStatus'; from: string; to: string; scope?: ModelScope }
-  | { type: 'downloadModels'; from: string; to: string; scope?: ModelScope }
+  | { type: 'modelStatus'; from: string; to: string[]; scope?: ModelScope }
+  | { type: 'downloadModels'; from: string; to: string[]; scope?: ModelScope }
   | { type: 'modelInventory' }
   | { type: 'deleteModel'; modelId: string }
   | { type: 'cancelDownload' }

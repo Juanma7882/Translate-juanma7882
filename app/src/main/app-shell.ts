@@ -97,9 +97,9 @@ export class AppShell {
 
   /** Retoma lo pendiente solo cuando están listos los modelos del ámbito del modo (auto: texto y audio). */
   private async retryWhenReady(): Promise<void> {
-    const { from, to, mode } = this.deps.settings.get()
+    const { from, targets, mode } = this.deps.settings.get()
     try {
-      const statuses = await this.models.status(from, to, scopeForMode(mode))
+      const statuses = await this.models.status(from, targets, scopeForMode(mode))
       if (statuses.some((s) => s.state !== 'ready')) return // sigue faltando algo: se espera otra descarga
     } catch {
       // Si no se puede consultar, se intenta igual: el arranque informará de lo que falte.

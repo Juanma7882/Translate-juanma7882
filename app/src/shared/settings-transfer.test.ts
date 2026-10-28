@@ -28,13 +28,13 @@ describe('exportar', () => {
 
 describe('importar', () => {
   test('lo exportado se importa igual y conserva la región y la carpeta locales', () => {
-    const source = { ...withLocalData(), from: 'en', to: 'fr' }
+    const source = { ...withLocalData(), from: 'en', targets: ['fr'] }
     source.overlay.fontSize = 40
     const target = { ...defaultSettings(), modelsDir: '/otro', lastRegion: null }
     const result = importSettings(JSON.stringify(exportSettings(source)), target)
     assert.ok(result.ok)
     if (!result.ok) return
-    assert.equal(result.settings.to, 'fr')
+    assert.deepEqual(result.settings.targets, ['fr'])
     assert.equal(result.settings.overlay.fontSize, 40)
     assert.equal(result.settings.modelsDir, '/otro')
     assert.equal(result.settings.lastRegion, null)
@@ -77,7 +77,17 @@ describe('importar', () => {
   })
 
   test('los idiomas iguales rechazan la importación', () => {
-    const text = JSON.stringify({ format: EXPORT_FORMAT, version: 1, settings: { from: 'es', to: 'es' } })
+    const text = JSON.stringify({ format: EXPORT_FORMAT, version: 1, settings: { from: 'es', targets: ['es'] } })
     assert.deepEqual(importSettings(text, defaultSettings()), { ok: false, errors: ['from and to must differ'] })
+  })
+})
+
+describe('importar archivos del formato anterior', () => {
+  test('un archivo con `to` se importa como un destino', () => {
+    const text = JSON.stringify({ format: EXPORT_FORMAT, version: 1, settings: { from: 'en', to: 'fr' } })
+    const result = importSettings(text, defaultSettings())
+    assert.ok(result.ok)
+    if (!result.ok) return
+    assert.deepEqual(result.settings.targets, ['fr'])
   })
 })

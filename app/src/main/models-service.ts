@@ -61,7 +61,7 @@ export class ModelsService {
   }
 
   /** `scope`: modelos de texto (por defecto), de audio o ambos. */
-  async status(from: string, to: string, scope?: ModelScope): Promise<ModelStatusInfo[]> {
+  async status(from: string, to: string[], scope?: ModelScope): Promise<ModelStatusInfo[]> {
     await this.ensureConfigured()
     return this.host.send({ type: 'modelStatus', from, to, scope })
   }
@@ -72,7 +72,7 @@ export class ModelsService {
   }
 
   /** Descarga lo que falte; el avance llega como eventos `modelProgress` del motor. */
-  async download(from: string, to: string, scope?: ModelScope): Promise<void> {
+  async download(from: string, to: string[], scope?: ModelScope): Promise<void> {
     await this.ensureConfigured()
     await this.host.send({ type: 'downloadModels', from, to, scope })
     for (const listener of this.downloadedListeners) listener()

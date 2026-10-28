@@ -43,7 +43,7 @@ describe('audioSource', () => {
     const first = applyPatch(defaultSettings(), { audioSource: { kind: 'app', program: 'chrome.exe' } })
     assert.ok(first.ok)
     assert.deepEqual(first.settings.audioSource, { kind: 'app', program: 'chrome.exe' })
-    assert.equal(first.settings.to, defaultSettings().to)
+    assert.deepEqual(first.settings.targets, defaultSettings().targets)
     const back = applyPatch(first.settings, { audioSource: { kind: 'system' } })
     assert.ok(back.ok)
     assert.deepEqual(back.settings.audioSource, { kind: 'system' })

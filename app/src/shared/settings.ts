@@ -62,10 +62,18 @@ export interface Shortcuts {
   toggleMode: string
 }
 
+/** Máximo de subtítulos a la vez (el original cuenta como uno) y, por tanto, de idiomas de destino. */
+export const MAX_SUBTITLES = 2
+
 export interface Settings {
   version: typeof SETTINGS_VERSION
+  /** Idioma del contenido (el que leen el OCR y el reconocimiento de voz). */
   from: string
-  to: string
+  /**
+   * Idiomas de destino, en el orden en que se muestran (0 a 2, distintos entre sí y de `from`).
+   * Junto con `overlay.showOriginal` (el subtítulo original) suman entre 1 y 2 subtítulos.
+   */
+  targets: string[]
   engines: 'fake' | 'real'
   /** `auto`: texto y, si no hay, audio; `text` o `audio` fuerzan un modo. */
   mode: Mode
@@ -85,7 +93,7 @@ export function defaultSettings(): Settings {
   return {
     version: SETTINGS_VERSION,
     from: 'en',
-    to: 'es',
+    targets: ['es'],
     engines: 'real',
     mode: 'auto',
     fallbackSeconds: 3,
@@ -200,6 +208,32 @@ function readAudioSource(reader: Reader, value: unknown): AudioSourceChoice {
   return { kind: 'system' }
 }
 
+/** Cuántos subtítulos hay activos: el original (si se muestra) más un subtítulo por destino. */
+export function subtitleCount(settings: Pick<Settings, 'targets'> & { overlay: Pick<OverlaySettings, 'showOriginal'> }): number {
+  return (settings.overlay.showOriginal ? 1 : 0) + settings.targets.length
+}
+
+/**
+ * Lee los destinos. El formato anterior guardaba un único `to`: sin `targets` se interpreta como un
+ * solo destino. Un valor inválido vuelve al destino por defecto.
+ */
+function readTargets(reader: Reader, raw: Dict, fallback: string[]): string[] {
+  const value = raw['targets']
+  if (value === undefined) {
+    const legacy = raw['to']
+    if (legacy === undefined) return fallback
+    if (typeof legacy === 'string' && LANG_PATTERN.test(legacy)) return [legacy]
+    reader.warnings.push('invalid to')
+    return fallback
+  }
+  const valid = Array.isArray(value) && value.length <= MAX_SUBTITLES && value.every((code) => typeof code === 'string' && LANG_PATTERN.test(code)) && new Set(value).size === value.length
+  if (!valid) {
+    reader.warnings.push('invalid targets')
+    return fallback
+  }
+  return value as string[]
+}
+
 function readRegion(reader: Reader, value: unknown): SavedRegion | null {
   if (value === null || value === undefined) return null
   if (!isDict(value)) {
@@ -241,7 +275,7 @@ export function parseSettings(raw: unknown): ParseResult {
   const settings: Settings = {
     version: SETTINGS_VERSION,
     from: reader.pattern(raw, 'from', 'from', defaults.from, LANG_PATTERN),
-    to: reader.pattern(raw, 'to', 'to', defaults.to, LANG_PATTERN),
+    targets: readTargets(reader, raw, defaults.targets),
     engines: reader.oneOf(raw, 'engines', 'engines', defaults.engines, ['fake', 'real']),
     mode: reader.oneOf(raw, 'mode', 'mode', defaults.mode, MODES),
     fallbackSeconds: reader.number(raw, 'fallbackSeconds', 'fallbackSeconds', defaults.fallbackSeconds, 1, 60, true),
@@ -281,17 +315,27 @@ export function parseSettings(raw: unknown): ParseResult {
     settings.overlay.backgroundColor = d.backgroundColor
   }
   // Los idiomas no pueden coincidir: es una combinación sin sentido.
-  if (settings.from === settings.to) {
+  if (settings.targets.includes(settings.from)) {
     reader.warnings.push('from and to must differ')
     settings.from = defaults.from
-    settings.to = defaults.to
+    settings.targets = defaults.targets
+  }
+  // Entre 1 y 2 subtítulos: sin ninguno se muestra el original; con exceso se conservan el original
+  // y los primeros destinos que quepan.
+  const count = subtitleCount(settings)
+  if (count < 1) {
+    reader.warnings.push('invalid subtitles')
+    settings.overlay.showOriginal = true
+  } else if (count > MAX_SUBTITLES) {
+    reader.warnings.push('invalid subtitles')
+    settings.targets = settings.targets.slice(0, MAX_SUBTITLES - (settings.overlay.showOriginal ? 1 : 0))
   }
   return { settings, warnings: reader.warnings }
 }
 
 export type SettingsPatch = {
-  [K in Exclude<keyof Settings, 'audioSource'>]?: Settings[K] extends object | null ? Partial<NonNullable<Settings[K]>> | null : Settings[K]
-} & { audioSource?: AudioSourceChoice }
+  [K in Exclude<keyof Settings, 'audioSource' | 'targets'>]?: Settings[K] extends object | null ? Partial<NonNullable<Settings[K]>> | null : Settings[K]
+} & { audioSource?: AudioSourceChoice; targets?: string[] }
 
 export type UpdateResult = { ok: true; settings: Settings } | { ok: false; errors: string[] }
 

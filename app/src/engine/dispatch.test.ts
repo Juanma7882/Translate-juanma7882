@@ -15,9 +15,9 @@ function fake(extra: Record<string, unknown> = {}) {
 
 test('startAudio pasa la fuente al motor y sin fuente sigue siendo todo el sistema', async () => {
   const { engine, calls } = fake()
-  await runCommand(engine, { id: 1, type: 'startAudio', from: 'en', to: 'es', source: { kind: 'app', id: 7, name: 'firefox.exe' } })
-  await runCommand(engine, { id: 2, type: 'startAudio', from: 'en', to: 'es' })
-  assert.deepEqual(calls, [['en', 'es', { kind: 'app', id: 7, name: 'firefox.exe' }], ['en', 'es', undefined]])
+  await runCommand(engine, { id: 1, type: 'startAudio', from: 'en', to: ['es'], source: { kind: 'app', id: 7, name: 'firefox.exe' } })
+  await runCommand(engine, { id: 2, type: 'startAudio', from: 'en', to: ['es'] })
+  assert.deepEqual(calls, [['en', ['es'], { kind: 'app', id: 7, name: 'firefox.exe' }], ['en', ['es'], undefined]])
 })
 
 test('listAudioSources y voiceThreshold devuelven lo del motor', async () => {
