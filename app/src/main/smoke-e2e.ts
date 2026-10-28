@@ -96,7 +96,7 @@ export async function runE2eSmoke(host: EngineHost, windows: WindowManager, disp
   // Modo automático: sin texto en la región pasa solo a audio y, al volver el texto, regresa.
   const modeLabel = async (): Promise<string> =>
     (await windows.get('overlay')!.webContents.executeJavaScript(`document.getElementById('mode').textContent`)) as string
-  expect(shell.controller.state.mode === 'text' && (await modeLabel()) === 'Texto', 'la sesión empieza en modo texto')
+  expect(shell.controller.state.mode === 'text' && (await modeLabel()) === '', 'la sesión empieza en modo texto (sin etiqueta)')
   page.hide()
   await waitFor(() => shell.controller.state.mode === 'audio', `the fallback to audio (avisos: ${JSON.stringify(notices)})`, 60_000)
   await waitFor(async () => (await modeLabel()) === 'Audio', 'the overlay to show the audio mode')

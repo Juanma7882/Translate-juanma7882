@@ -156,7 +156,7 @@ export async function runShellSmoke(host: EngineHost, windows: WindowManager, di
 
   expect(tray.checkedMode() === 'Automático' && shell.controller.state.mode === 'text', 'en automático la sesión empieza en texto')
   expect(tray.tooltip.includes('texto'), `el tooltip indica el modo activo: ${tray.tooltip}`)
-  await waitFor(async () => (await overlayText('#mode')) === 'Texto', 'the mode label to read Texto')
+  await waitFor(async () => (await overlayText('#mode')) === '', 'no mode label in text mode')
 
   // Menú: solo audio. La sesión sigue, ahora con subtítulos del audio y la etiqueta cambia.
   let mark = 0
@@ -193,7 +193,7 @@ export async function runShellSmoke(host: EngineHost, windows: WindowManager, di
   await nextOriginals(mark, SCREEN, 'screen text after the shortcut')
   toggle()
   await waitFor(() => settings.get().mode === 'text' && shell.controller.state.mode === 'text', 'text-only mode through the shortcut')
-  await waitFor(async () => (await overlayText('#mode')) === 'Texto', 'the label in text-only mode')
+  await waitFor(async () => (await overlayText('#mode')) === '', 'no label in text-only mode')
   toggle()
   await waitFor(() => settings.get().mode === 'audio' && shell.controller.state.mode === 'audio', 'audio mode again through the shortcut')
   expect(tray.checkedMode() === 'Solo audio', 'la bandeja marca el modo del atajo')

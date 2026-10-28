@@ -67,13 +67,16 @@ function show(text: OverlayText): void {
   if (style.hideAfterMs > 0 && !moving) hideTimer = setTimeout(hide, style.hideAfterMs)
 }
 
-/** Etiqueta del modo activo; si la caja estaba oculta, se muestra unos segundos solo con la etiqueta. */
+/**
+ * Etiqueta del modo activo; si la caja estaba oculta, se muestra unos segundos solo con la etiqueta.
+ * En modo texto no hay etiqueta: es lo esperado y solo estorbaría encima de la traducción.
+ */
 function setMode(mode: OverlayMode): void {
   if (!box || !modeLabel) return
   const changed = modeLabel.dataset['mode'] !== mode
   modeLabel.dataset['mode'] = mode
-  modeLabel.textContent = ACTIVE_LABELS[mode]
-  if (changed && box.hidden) {
+  modeLabel.textContent = mode === 'text' ? '' : ACTIVE_LABELS[mode]
+  if (changed && box.hidden && modeLabel.textContent) {
     box.hidden = false
     clearTimeout(hideTimer)
     hideTimer = setTimeout(hide, MODE_FLASH_MS)

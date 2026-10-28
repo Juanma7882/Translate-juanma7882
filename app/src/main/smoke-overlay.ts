@@ -189,11 +189,11 @@ export async function runOverlaySmoke(windows: WindowManager, settings: Settings
   controller.setMode('paused')
   await waitFor(async () => (await label()).text === 'Pausa', 'the paused label')
   controller.setMode('text')
-  await waitFor(async () => (await label()).text === 'Texto', 'the text label')
+  await waitFor(async () => (await label()).text === '', 'no label in text mode')
   controller.show(text('a', 'b', true))
   await waitFor(async () => !(await dom(window)).hidden, 'the text after the label')
-  expect((await label()).text === 'Texto', 'la etiqueta acompaña al texto')
-  ok('el indicador de modo muestra el nombre del modo y aparece aunque no haya texto')
+  expect((await label()).text === '', 'en modo texto la traducción va sin etiqueta')
+  ok('el indicador muestra audio y pausa (aunque no haya texto) y no aparece en modo texto')
 
   // La inserción es texto plano: el HTML no se interpreta.
   controller.show(text('<img src=x onerror="document.title=1">', '<b>negrita</b>', true))
