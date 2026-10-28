@@ -102,6 +102,8 @@ export interface EngineOptions {
   fakeLatencyMs?: number
   /** Parámetros de rendimiento (hilos, haz, caché). */
   performance?: PerformanceOptions
+  /** Nivel RMS (0,001 a 0,5) a partir del cual el audio cuenta como voz. Por defecto, 0,01. */
+  voiceThreshold?: number
 }
 
 export interface ErrorEvent {

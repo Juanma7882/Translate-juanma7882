@@ -10,7 +10,9 @@ use std::time::Duration;
 
 use tr_adapters::perf::PerfConfig;
 use tr_core::Clock;
-use tr_core::audio::{AudioConfig, AudioPipeline, AudioProcessor, AudioRunner};
+use tr_core::audio::{
+    AudioConfig, AudioPipeline, AudioProcessor, AudioRunner, DEFAULT_VAD_THRESHOLD,
+};
 use tr_core::cache::{DEFAULT_CAPACITY, TranslationCache};
 use tr_core::clock::SystemClock;
 use tr_core::fallback::{FallbackConfig, FallbackSetup, TextOrAudioPipeline};
@@ -70,6 +72,8 @@ pub struct EngineConfig {
     /// `Some` activa el paso automático a audio cuando no hay texto en la región.
     pub fallback: Option<FallbackConfig>,
     pub cache_capacity: usize,
+    /// Nivel RMS (0..1) a partir del cual el audio cuenta como voz.
+    pub vad_threshold: f32,
     /// Parámetros de rendimiento opcionales (hilos, haz) que llegan desde la interfaz.
     pub performance: PerformanceConfig,
     /// Afinación base de los motores (lado de detección del OCR, modo de poca memoria...);
@@ -92,6 +96,7 @@ impl Default for EngineConfig {
             timing: LoopTiming::default(),
             fallback: None,
             cache_capacity: DEFAULT_CAPACITY,
+            vad_threshold: DEFAULT_VAD_THRESHOLD,
             performance: PerformanceConfig::default(),
             perf: PerfConfig::default(),
             models_dir: None,
@@ -290,7 +295,7 @@ impl Engine {
         self.active = Some(match (self.config.fallback, audio) {
             (Some(fallback), Some(audio)) => {
                 let audio_processor = AudioProcessor::new(
-                    AudioConfig::new(from, to),
+                    self.audio_config(from, to),
                     audio.stt,
                     audio.translator,
                     cache,
@@ -322,6 +327,17 @@ impl Engine {
         Ok(())
     }
 
+    /// Nivel RMS (0..1) a partir del cual este motor considera que hay voz.
+    pub fn voice_threshold(&self) -> f32 {
+        self.config.vad_threshold
+    }
+
+    fn audio_config(&self, from: Lang, to: Lang) -> AudioConfig {
+        let mut config = AudioConfig::new(from, to);
+        config.vad_threshold = self.config.vad_threshold;
+        config
+    }
+
     /// Aplicaciones que están reproduciendo audio. `Err(Capture)` con el motivo si la plataforma
     /// no puede listarlas. Solo metadatos (identificador y nombre).
     pub fn list_audio_sources(&self) -> Result<Vec<AppAudio>> {
@@ -341,7 +357,7 @@ impl Engine {
         self.stop_audio_monitor();
         self.stop();
         let processor = AudioProcessor::new(
-            AudioConfig::new(from, to),
+            self.audio_config(from, to),
             parts.stt,
             parts.translator,
             Arc::clone(&self.cache),

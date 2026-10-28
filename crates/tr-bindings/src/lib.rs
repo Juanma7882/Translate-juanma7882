@@ -20,7 +20,6 @@ use std::time::Duration;
 use napi::bindgen_prelude::AsyncTask;
 use napi::{Error, Status};
 use napi_derive::{module_init, napi};
-use tr_engine::tr_core::audio::DEFAULT_VAD_THRESHOLD;
 use tr_engine::tr_core::fallback::FallbackConfig;
 use tr_engine::tr_core::runner::LoopTiming;
 use tr_engine::tr_core::{AudioSource, CoreError, ErrorCategory, Lang, Region, panic_hook};
@@ -125,6 +124,8 @@ pub struct EngineOptions {
     pub fake_latency_ms: Option<u32>,
     /// Parámetros de rendimiento (hilos, haz, caché).
     pub performance: Option<PerformanceOptions>,
+    /// Nivel RMS (0,001 a 0,5) a partir del cual el audio cuenta como voz. Por defecto, 0,01.
+    pub voice_threshold: Option<f64>,
 }
 
 /// Convierte un error del núcleo: los argumentos inválidos se distinguen del resto de fallos.
@@ -262,6 +263,12 @@ fn build_config(options: &EngineOptions) -> napi::Result<EngineConfig> {
     }
     if let Some(performance) = &options.performance {
         apply_performance(&mut config, performance)?;
+    }
+    if let Some(threshold) = options.voice_threshold {
+        if !(0.001..=0.5).contains(&threshold) {
+            return Err(invalid_arg("voiceThreshold must be between 0.001 and 0.5"));
+        }
+        config.vad_threshold = threshold as f32;
     }
     Ok(config)
 }
@@ -408,7 +415,7 @@ pub fn list_audio_sources() -> AudioSourceList {
 /// para la marca de la barra de nivel.
 #[napi]
 pub fn audio_voice_threshold() -> f64 {
-    f64::from(DEFAULT_VAD_THRESHOLD)
+    f64::from(engine().voice_threshold())
 }
 
 /// Detiene el motor y espera a que terminen sus hilos: no se producen más eventos. Los que ya
