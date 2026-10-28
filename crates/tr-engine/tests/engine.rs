@@ -41,9 +41,9 @@ fn translations(events: &[Event]) -> Vec<(String, String)> {
         .filter_map(|e| match e {
             Event::Translation {
                 original,
-                translated,
+                translations,
                 ..
-            } => Some((original.clone(), translated.clone())),
+            } => Some((original.clone(), translations[0].text.clone())),
             _ => None,
         })
         .collect()
@@ -53,7 +53,7 @@ fn translations(events: &[Event]) -> Vec<(String, String)> {
 fn region_translation_runs_end_to_end_and_stops() {
     let (mut engine, sink) = engine(fast_config());
     engine
-        .start_region(region(), lang("en"), lang("es"))
+        .start_region(region(), lang("en"), vec![lang("es")])
         .unwrap();
     assert!(engine.is_running());
 
@@ -76,12 +76,13 @@ fn region_translation_runs_end_to_end_and_stops() {
 fn audio_subtitles_run_end_to_end_and_stop() {
     let (mut engine, sink) = engine(fast_config());
     engine
-        .start_audio(lang("en"), lang("es"), tr_core::AudioSource::System)
+        .start_audio(lang("en"), vec![lang("es")], tr_core::AudioSource::System)
         .unwrap();
     assert!(sink.wait_until(WAIT, |e| e.iter().any(|ev| matches!(
         ev,
-        Event::Subtitle { original, translated: Some(t), is_final: true, .. }
-            if original == "Good morning everyone" && t == "[es] Good morning everyone"
+        Event::Subtitle { original, translations, is_final: true, .. }
+            if original == "Good morning everyone"
+                && translations.first().is_some_and(|t| t.text == "[es] Good morning everyone")
     ))));
     engine.stop();
     let count = sink.len();
@@ -97,7 +98,7 @@ fn region_with_fallback_starts_in_text_mode() {
     };
     let (mut engine, sink) = engine(config);
     engine
-        .start_region(region(), lang("en"), lang("es"))
+        .start_region(region(), lang("en"), vec![lang("es")])
         .unwrap();
     assert!(sink.wait_until(WAIT, |e| {
         e.first() == Some(&Event::ModeChanged { mode: Mode::Text }) && !translations(e).is_empty()
@@ -109,11 +110,11 @@ fn region_with_fallback_starts_in_text_mode() {
 fn starting_again_replaces_the_running_pipeline() {
     let (mut engine, sink) = engine(fast_config());
     engine
-        .start_region(region(), lang("en"), lang("es"))
+        .start_region(region(), lang("en"), vec![lang("es")])
         .unwrap();
     assert!(sink.wait_until(WAIT, |e| !translations(e).is_empty()));
     engine
-        .start_audio(lang("en"), lang("fr"), tr_core::AudioSource::System)
+        .start_audio(lang("en"), vec![lang("fr")], tr_core::AudioSource::System)
         .unwrap();
     sink.take();
     assert!(sink.wait_until(WAIT, |e| {
@@ -140,11 +141,11 @@ fn stop_returns_quickly_even_with_long_capture_intervals() {
     for start_audio in [false, true] {
         if start_audio {
             engine
-                .start_audio(lang("en"), lang("es"), tr_core::AudioSource::System)
+                .start_audio(lang("en"), vec![lang("es")], tr_core::AudioSource::System)
                 .unwrap();
         } else {
             engine
-                .start_region(region(), lang("en"), lang("es"))
+                .start_region(region(), lang("en"), vec![lang("es")])
                 .unwrap();
         }
         std::thread::sleep(Duration::from_millis(50)); // los hilos ya están esperando su turno
@@ -164,7 +165,7 @@ fn pause_and_resume_are_safe_in_every_state() {
     engine.pause(); // sin nada en marcha
     engine.resume();
     engine
-        .start_audio(lang("en"), lang("es"), tr_core::AudioSource::System)
+        .start_audio(lang("en"), vec![lang("es")], tr_core::AudioSource::System)
         .unwrap();
     engine.pause(); // el audio puro ignora pausa
     engine.resume();
@@ -176,7 +177,7 @@ fn pause_and_resume_are_safe_in_every_state() {
 fn the_translation_cache_survives_a_restart_of_the_session() {
     let (mut engine, sink) = engine(fast_config());
     engine
-        .start_region(region(), lang("en"), lang("es"))
+        .start_region(region(), lang("en"), vec![lang("es")])
         .unwrap();
     assert!(sink.wait_until(WAIT, |e| translations(e).len() >= 2));
     engine.stop();
@@ -185,7 +186,7 @@ fn the_translation_cache_survives_a_restart_of_the_session() {
 
     // Nueva sesión con el mismo par: los mismos textos salen de la caché.
     engine
-        .start_region(region(), lang("en"), lang("es"))
+        .start_region(region(), lang("en"), vec![lang("es")])
         .unwrap();
     assert!(sink.wait_until(WAIT, |e| translations(e).len() >= 4));
     engine.stop();
@@ -231,7 +232,7 @@ fn audio_from_a_demo_application_emits_levels_and_subtitles() {
     engine
         .start_audio(
             lang("en"),
-            lang("es"),
+            vec![lang("es")],
             tr_core::AudioSource::Process {
                 id: app.id,
                 name: app.name,
@@ -253,7 +254,7 @@ fn audio_from_a_missing_application_fails_without_leaving_threads_running() {
     let error = engine
         .start_audio(
             lang("en"),
-            lang("es"),
+            vec![lang("es")],
             tr_core::AudioSource::Process {
                 id: 424_242,
                 name: "ghost.exe".into(),
@@ -271,4 +272,93 @@ fn fake_engine_lists_demo_applications() {
     let (engine, _sink) = engine(fast_config());
     let apps = engine.list_audio_sources().unwrap();
     assert!(apps.iter().all(|a| !a.name.is_empty()));
+}
+
+fn first_translation_langs(events: &[Event]) -> Option<Vec<(String, String)>> {
+    events.iter().find_map(|e| match e {
+        Event::Translation {
+            original,
+            translations,
+            ..
+        } => Some(
+            translations
+                .iter()
+                .map(|t| (t.lang.to_string(), t.text.clone()))
+                .chain([("original".to_owned(), original.clone())])
+                .collect(),
+        ),
+        _ => None,
+    })
+}
+
+#[test]
+fn two_targets_arrive_in_one_event_in_the_order_requested() {
+    let (mut engine, sink) = engine(fast_config());
+    engine
+        .start_region(region(), lang("en"), vec![lang("fr"), lang("es")])
+        .unwrap();
+    assert!(sink.wait_until(WAIT, |e| !translations_of(e).is_empty()));
+    engine.stop();
+    assert_eq!(
+        first_translation_langs(&sink.events()).unwrap(),
+        [
+            ("fr".to_owned(), "[fr] Hello, world".to_owned()),
+            ("es".to_owned(), "[es] Hello, world".to_owned()),
+            ("original".to_owned(), "Hello, world".to_owned()),
+        ]
+    );
+}
+
+fn translations_of(events: &[Event]) -> Vec<usize> {
+    events
+        .iter()
+        .filter_map(|e| match e {
+            Event::Translation { translations, .. } => Some(translations.len()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn without_targets_only_the_original_is_emitted() {
+    let (mut engine, sink) = engine(fast_config());
+    engine
+        .start_region(region(), lang("en"), Vec::new())
+        .unwrap();
+    assert!(sink.wait_until(WAIT, |e| !translations_of(e).is_empty()));
+    engine.stop();
+    assert!(translations_of(&sink.events()).iter().all(|n| *n == 0));
+}
+
+#[test]
+fn audio_without_targets_emits_untranslated_finals() {
+    let (mut engine, sink) = engine(fast_config());
+    engine
+        .start_audio(lang("en"), Vec::new(), tr_core::AudioSource::System)
+        .unwrap();
+    assert!(sink.wait_until(WAIT, |e| e.iter().any(|ev| matches!(
+        ev,
+        Event::Subtitle { is_final: true, translations, .. } if translations.is_empty()
+    ))));
+    engine.stop();
+}
+
+#[test]
+fn invalid_target_lists_are_rejected_without_starting_anything() {
+    let (mut engine, _sink) = engine(fast_config());
+    let cases: [Vec<Lang>; 3] = [
+        vec![lang("es"), lang("fr"), lang("de")],
+        vec![lang("es"), lang("es")],
+        vec![lang("en")],
+    ];
+    for targets in cases {
+        let error = engine
+            .start_region(region(), lang("en"), targets.clone())
+            .unwrap_err();
+        assert!(
+            matches!(error, tr_core::CoreError::InvalidArgument(_)),
+            "{targets:?}: {error}"
+        );
+        assert!(!engine.is_running());
+    }
 }

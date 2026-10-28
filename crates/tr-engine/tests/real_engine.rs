@@ -59,7 +59,7 @@ fn engine_sets_are_selected_by_name() {
 fn real_engines_refuse_to_start_without_models_and_list_the_missing_ones() {
     let (mut engine, sink) = real_engine("missing");
     let error = engine
-        .start_region(region(), lang("en"), lang("es"))
+        .start_region(region(), lang("en"), vec![lang("es")])
         .unwrap_err();
     let CoreError::Model(message) = error else {
         panic!("debe ser un error de modelo")
@@ -77,7 +77,7 @@ fn unsupported_languages_are_reported_before_looking_at_models() {
     let (mut engine, _sink) = real_engine("unsupported");
     for (from, to) in [("ko", "es"), ("en", "ru")] {
         let error = engine
-            .start_region(region(), lang(from), lang(to))
+            .start_region(region(), lang(from), vec![lang(to)])
             .unwrap_err();
         assert!(
             matches!(&error, CoreError::InvalidArgument(m) if m.contains("unsupported")),
@@ -90,7 +90,7 @@ fn unsupported_languages_are_reported_before_looking_at_models() {
 fn real_audio_lists_the_missing_speech_models_and_starts_nothing() {
     let (mut engine, sink) = real_engine("audio");
     let error = engine
-        .start_audio(lang("en"), lang("es"), tr_core::AudioSource::System)
+        .start_audio(lang("en"), vec![lang("es")], tr_core::AudioSource::System)
         .unwrap_err();
     let CoreError::Model(message) = error else {
         panic!("debe ser un error de modelo")
@@ -112,7 +112,7 @@ fn real_audio_rejects_unsupported_languages_before_looking_at_models() {
     let (mut engine, _sink) = real_engine("audio-lang");
     for (from, to) in [("ko", "es"), ("en", "ru")] {
         let error = engine
-            .start_audio(lang(from), lang(to), tr_core::AudioSource::System)
+            .start_audio(lang(from), vec![lang(to)], tr_core::AudioSource::System)
             .unwrap_err();
         assert!(
             matches!(&error, CoreError::InvalidArgument(m) if m.contains("unsupported")),
@@ -128,7 +128,7 @@ fn repeated_failed_real_starts_leave_nothing_running() {
     for _ in 0..3 {
         assert!(
             engine
-                .start_region(region(), lang("en"), lang("es"))
+                .start_region(region(), lang("en"), vec![lang("es")])
                 .is_err()
         );
     }
@@ -149,7 +149,7 @@ fn demo_engines_are_untouched_by_the_real_ones() {
     };
     let mut engine = Engine::new(config, Arc::new(sink.clone()));
     engine
-        .start_region(region(), lang("en"), lang("es"))
+        .start_region(region(), lang("en"), vec![lang("es")])
         .unwrap();
     assert!(sink.wait_until(std::time::Duration::from_secs(5), |e| !e.is_empty()));
     engine.stop();
@@ -159,7 +159,7 @@ fn demo_engines_are_untouched_by_the_real_ones() {
 fn the_models_service_reports_status_for_any_engine_set() {
     let (engine, _sink) = real_engine("status");
     let models = engine.models().unwrap();
-    let status = models.status(&lang("en"), &lang("es")).unwrap();
+    let status = models.status(&lang("en"), &[lang("es")]).unwrap();
     let ids: Vec<_> = status.iter().map(|s| s.id.as_str()).collect();
     assert_eq!(ids, ["ocr-ppocrv6-small", "mt-opus-en-es"]);
     assert!(
@@ -168,7 +168,7 @@ fn the_models_service_reports_status_for_any_engine_set() {
             .all(|s| s.state == tr_engine::ModelState::Missing && s.size > 1_000_000)
     );
     let audio = models
-        .status_for(&lang("en"), &lang("es"), tr_engine::ModelScope::Audio)
+        .status_for(&lang("en"), &[lang("es")], tr_engine::ModelScope::Audio)
         .unwrap();
     let ids: Vec<_> = audio.iter().map(|s| s.id.as_str()).collect();
     assert_eq!(ids, ["stt-whisper-base", "mt-opus-en-es"]);

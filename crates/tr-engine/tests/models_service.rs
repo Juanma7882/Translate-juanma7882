@@ -107,7 +107,7 @@ fn the_catalog_lists_the_languages_and_pairs_of_the_manifest() {
 fn status_lists_each_required_model_with_its_size() {
     let served = serve(false);
     let (models, _sink) = models(&served, "status");
-    let status = models.status(&lang("en"), &lang("es")).unwrap();
+    let status = models.status(&lang("en"), &[lang("es")]).unwrap();
     let summary: Vec<_> = status
         .iter()
         .map(|s| (s.id.as_str(), s.state, s.size))
@@ -122,10 +122,19 @@ fn status_lists_each_required_model_with_its_size() {
 }
 
 #[test]
+fn status_without_targets_lists_only_the_recognition_model() {
+    let served = serve(false);
+    let (models, _sink) = models(&served, "status-no-targets");
+    let status = models.status(&lang("en"), &[]).unwrap();
+    let ids: Vec<_> = status.iter().map(|s| s.id.as_str()).collect();
+    assert_eq!(ids, ["o"]);
+}
+
+#[test]
 fn download_reports_growing_progress_per_model_and_leaves_everything_ready() {
     let served = serve(false);
     let (models, sink) = models(&served, "download");
-    models.download(&lang("en"), &lang("es")).unwrap();
+    models.download(&lang("en"), &[lang("es")]).unwrap();
 
     let events = progress(&sink);
     for (id, total) in [("o", 150_000u64), ("t", 19)] {
@@ -142,7 +151,7 @@ fn download_reports_growing_progress_per_model_and_leaves_everything_ready() {
             "{id}: termina en el total"
         );
     }
-    let status = models.status(&lang("en"), &lang("es")).unwrap();
+    let status = models.status(&lang("en"), &[lang("es")]).unwrap();
     assert!(status.iter().all(|s| s.state == ModelState::Ready));
 }
 
@@ -150,9 +159,9 @@ fn download_reports_growing_progress_per_model_and_leaves_everything_ready() {
 fn downloading_again_touches_neither_the_network_nor_the_event_stream() {
     let served = serve(false);
     let (models, sink) = models(&served, "again");
-    models.download(&lang("en"), &lang("es")).unwrap();
+    models.download(&lang("en"), &[lang("es")]).unwrap();
     let (hits, events) = (served.server.total_hits(), sink.len());
-    models.download(&lang("en"), &lang("es")).unwrap();
+    models.download(&lang("en"), &[lang("es")]).unwrap();
     assert_eq!(served.server.total_hits(), hits);
     assert_eq!(sink.len(), events);
 }
@@ -162,8 +171,8 @@ fn unsupported_pairs_fail_with_a_descriptive_error() {
     let served = serve(false);
     let (models, sink) = models(&served, "unsupported");
     for result in [
-        models.status(&lang("en"), &lang("fr")).map(|_| ()),
-        models.download(&lang("ko"), &lang("es")),
+        models.status(&lang("en"), &[lang("fr")]).map(|_| ()),
+        models.download(&lang("ko"), &[lang("es")]),
     ] {
         let error = result.unwrap_err();
         assert!(
@@ -199,10 +208,10 @@ fn a_failing_server_is_reported_and_leaves_the_model_missing() {
             sink,
         )
     };
-    let error = models.download(&lang("en"), &lang("es")).unwrap_err();
+    let error = models.download(&lang("en"), &[lang("es")]).unwrap_err();
     assert!(matches!(error, CoreError::Model(_)), "{error}");
     assert_eq!(
-        models.status(&lang("en"), &lang("es")).unwrap()[0].state,
+        models.status(&lang("en"), &[lang("es")]).unwrap()[0].state,
         ModelState::Missing
     );
 }
@@ -213,7 +222,7 @@ fn cancelling_stops_the_download_and_leaves_nothing_valid() {
     let (models, sink) = models(&served, "cancel");
     let worker = {
         let models = models.clone();
-        std::thread::spawn(move || models.download(&lang("en"), &lang("es")))
+        std::thread::spawn(move || models.download(&lang("en"), &[lang("es")]))
     };
     assert!(sink.wait_until(Duration::from_secs(5), |e| e.iter().any(
         |ev| matches!(ev, Event::ModelProgress { downloaded, .. } if *downloaded > 0)
@@ -225,17 +234,17 @@ fn cancelling_stops_the_download_and_leaves_nothing_valid() {
     let count = sink.len();
     std::thread::sleep(Duration::from_millis(150));
     assert_eq!(sink.len(), count, "tras cancelar no llegan más eventos");
-    let status = models.status(&lang("en"), &lang("es")).unwrap();
+    let status = models.status(&lang("en"), &[lang("es")]).unwrap();
     assert!(
         status.iter().any(|s| s.state == ModelState::Missing),
         "quedó incompleto"
     );
 
     // Se puede reintentar: la señal de cancelación se reinicia.
-    models.download(&lang("en"), &lang("es")).unwrap();
+    models.download(&lang("en"), &[lang("es")]).unwrap();
     assert!(
         models
-            .status(&lang("en"), &lang("es"))
+            .status(&lang("en"), &[lang("es")])
             .unwrap()
             .iter()
             .all(|s| s.state == ModelState::Ready)
@@ -269,7 +278,7 @@ fn the_inventory_reports_roles_state_and_disk_usage_and_delete_frees_it() {
         ]
     );
 
-    models.download(&lang("en"), &lang("es")).unwrap();
+    models.download(&lang("en"), &[lang("es")]).unwrap();
     let full = models.inventory();
     assert_eq!(full.total_bytes, 150_019);
     assert!(full.models.iter().all(|m| m.state == ModelState::Ready));
@@ -295,7 +304,7 @@ fn a_cancelled_download_keeps_a_partial_that_shows_in_the_inventory_and_resumes(
     let (models, sink) = models(&served, "resume");
     let worker = {
         let models = models.clone();
-        std::thread::spawn(move || models.download(&lang("en"), &lang("es")))
+        std::thread::spawn(move || models.download(&lang("en"), &[lang("es")]))
     };
     assert!(sink.wait_until(Duration::from_secs(5), |e| e.iter().any(
         |ev| matches!(ev, Event::ModelProgress { downloaded, .. } if *downloaded > 20_000)
@@ -306,7 +315,7 @@ fn a_cancelled_download_keeps_a_partial_that_shows_in_the_inventory_and_resumes(
     assert!(inventory.models[0].partial_bytes > 0, "{inventory:?}");
     assert_eq!(inventory.models[0].state, ModelState::Missing);
 
-    models.download(&lang("en"), &lang("es")).unwrap();
+    models.download(&lang("en"), &[lang("es")]).unwrap();
     let inventory = models.inventory();
     assert_eq!(inventory.models[0].partial_bytes, 0);
     assert_eq!(inventory.total_bytes, 150_019);

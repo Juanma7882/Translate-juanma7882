@@ -96,7 +96,7 @@ describe('configuración de motores', () => {
     api.configure(FAST)
     const events = []
     api.onTranslation((e) => events.push(e))
-    api.startRegionTranslation(REGION, 'en', 'es')
+    api.startRegionTranslation(REGION, 'en', ['es'])
     assert.ok(await waitFor(() => events.length >= 1))
 
     assert.throws(() => api.configure({ engines: 'turbo' }), (e) => e.code === 'InvalidArg')
@@ -111,7 +111,7 @@ describe('configuración de motores', () => {
     const events = []
     api.onTranslation((e) => events.push(e))
     assert.throws(
-      () => api.startRegionTranslation(REGION, 'en', 'es'),
+      () => api.startRegionTranslation(REGION, 'en', ['es']),
       (e) => /missing models: o, t/.test(e.message),
     )
     await sleep(150)
@@ -121,16 +121,16 @@ describe('configuración de motores', () => {
   test('los motores reales rechazan un par no soportado como argumento inválido', async () => {
     api.configure({ engines: 'real', modelsDir: tempDir('pair') })
     assert.throws(
-      () => api.startRegionTranslation(REGION, 'en', 'ru'),
+      () => api.startRegionTranslation(REGION, 'en', ['ru']),
       (e) => e.code === 'InvalidArg' && /unsupported translation pair/.test(e.message),
     )
     // Los motores reales de audio también exigen sus modelos (reconocimiento de voz + traducción).
     assert.throws(
-      () => api.startAudioSubtitles('en', 'es'),
+      () => api.startAudioSubtitles('en', ['es']),
       (e) => /missing models: stt-whisper-base, mt-opus-en-es/.test(e.message),
     )
     assert.throws(
-      () => api.startAudioSubtitles('ko', 'es'),
+      () => api.startAudioSubtitles('ko', ['es']),
       (e) => e.code === 'InvalidArg' && /unsupported/.test(e.message),
     )
   })
@@ -152,7 +152,7 @@ describe('pausa y reanudación', () => {
     api.configure(FAST)
     const events = []
     api.onTranslation((e) => events.push(e))
-    api.startRegionTranslation(REGION, 'en', 'es')
+    api.startRegionTranslation(REGION, 'en', ['es'])
     assert.ok(await waitFor(() => events.length >= 1))
 
     api.pause()
@@ -169,10 +169,10 @@ describe('pausa y reanudación', () => {
     api.configure(FAST)
     const events = []
     api.onTranslation((e) => events.push(e))
-    api.startRegionTranslation(REGION, 'en', 'es')
+    api.startRegionTranslation(REGION, 'en', ['es'])
     api.pause()
     api.stop()
-    api.startRegionTranslation(REGION, 'en', 'es')
+    api.startRegionTranslation(REGION, 'en', ['es'])
     assert.ok(await waitFor(() => events.length >= 1), 'una sesión nueva no hereda la pausa')
   })
 })
@@ -181,7 +181,7 @@ describe('modelos', () => {
   test('modelStatus devuelve id, estado y tamaño de cada modelo necesario', async () => {
     const { port } = await serve(FILES)
     api.configure({ modelsDir: tempDir('status'), manifestPath: writeManifest(port, FILES) })
-    assert.deepEqual(await api.modelStatus('en', 'es'), [
+    assert.deepEqual(await api.modelStatus('en', ['es']), [
       { id: 'o', state: 'missing', size: 150_000 },
       { id: 't', state: 'missing', size: 19 },
     ])
@@ -195,13 +195,13 @@ describe('modelos', () => {
 
   test('el ámbito audio lista el modelo de voz y la traducción; un ámbito desconocido es InvalidArg', async () => {
     api.configure({ modelsDir: tempDir('scope') })
-    const ids = (scope) => api.modelStatus('en', 'es', scope).then((list) => list.map((m) => m.id))
+    const ids = (scope) => api.modelStatus('en', ['es'], scope).then((list) => list.map((m) => m.id))
     assert.deepEqual(await ids('audio'), ['stt-whisper-base', 'mt-opus-en-es'])
     assert.deepEqual(await ids('text'), ['ocr-ppocrv6-small', 'mt-opus-en-es'])
     assert.deepEqual(await ids(), await ids('text'), 'por defecto: texto')
     assert.equal((await ids('all')).length, 3)
-    await assert.rejects(api.modelStatus('en', 'es', 'video'), (e) => e.code === 'InvalidArg')
-    await assert.rejects(api.downloadModels('en', 'es', 'video'), (e) => e.code === 'InvalidArg')
+    await assert.rejects(api.modelStatus('en', ['es'], 'video'), (e) => e.code === 'InvalidArg')
+    await assert.rejects(api.downloadModels('en', ['es'], 'video'), (e) => e.code === 'InvalidArg')
     assert.ok(api.modelCatalog().sttLanguages.includes('ja'))
   })
 
@@ -216,11 +216,11 @@ describe('modelos', () => {
   test('los pares y los idiomas no soportados rechazan la promesa con un error descriptivo', async () => {
     const { port } = await serve(FILES)
     api.configure({ modelsDir: tempDir('unsupported'), manifestPath: writeManifest(port, FILES) })
-    for (const call of [() => api.modelStatus('en', 'fr'), () => api.downloadModels('ko', 'es')]) {
+    for (const call of [() => api.modelStatus('en', ['fr']), () => api.downloadModels('ko', ['es'])]) {
       await assert.rejects(call(), (e) => e.code === 'InvalidArg' && /unsupported/.test(e.message))
     }
-    await assert.rejects(api.modelStatus('english', 'es'), (e) => e.code === 'InvalidArg')
-    await assert.rejects(api.downloadModels('en', 'en'), /must differ/)
+    await assert.rejects(api.modelStatus('english', ['es']), (e) => e.code === 'InvalidArg')
+    await assert.rejects(api.downloadModels('en', ['en']), /must differ/)
   })
 
   test('downloadModels informa un progreso creciente, termina y deja todo listo', async () => {
@@ -229,7 +229,7 @@ describe('modelos', () => {
     const progress = []
     api.onModelProgress((e) => progress.push(e))
 
-    await api.downloadModels('en', 'es')
+    await api.downloadModels('en', ['es'])
 
     for (const [id, total] of [['o', 150_000], ['t', 19]]) {
       const own = progress.filter((e) => e.model === id)
@@ -238,11 +238,11 @@ describe('modelos', () => {
       assert.ok(own.every((e, i) => i === 0 || e.downloaded >= own[i - 1].downloaded), `${id}: no retrocede`)
       assert.equal(own.at(-1).downloaded, total)
     }
-    assert.ok((await api.modelStatus('en', 'es')).every((m) => m.state === 'ready'))
+    assert.ok((await api.modelStatus('en', ['es'])).every((m) => m.state === 'ready'))
 
     // Con todo listo no hay red ni eventos nuevos.
     const [requests, events] = [Object.values(hits).reduce((a, b) => a + b, 0), progress.length]
-    await api.downloadModels('en', 'es')
+    await api.downloadModels('en', ['es'])
     assert.equal(Object.values(hits).reduce((a, b) => a + b, 0), requests)
     assert.equal(progress.length, events)
   })
@@ -252,15 +252,15 @@ describe('modelos', () => {
     api.configure({ modelsDir: tempDir('idle'), manifestPath: writeManifest(port, FILES) })
     const progress = []
     api.onModelProgress((e) => progress.push(e))
-    await api.downloadModels('en', 'es') // sin startRegionTranslation
+    await api.downloadModels('en', ['es']) // sin startRegionTranslation
     assert.ok(progress.length > 0)
   })
 
   test('un fallo de descarga rechaza la promesa y deja el modelo ausente', async () => {
     const { port } = await serve({ 'b.bin': FILES['b.bin'], 'c.bin': FILES['c.bin'] }) // falta a.bin
     api.configure({ modelsDir: tempDir('fail'), manifestPath: writeManifest(port, FILES) })
-    await assert.rejects(api.downloadModels('en', 'es'), /could not download `a.bin`/)
-    assert.equal((await api.modelStatus('en', 'es'))[0].state, 'missing')
+    await assert.rejects(api.downloadModels('en', ['es']), /could not download `a.bin`/)
+    assert.equal((await api.modelStatus('en', ['es']))[0].state, 'missing')
   })
 
   test('descargar no bloquea el hilo de JS', async () => {
@@ -268,7 +268,7 @@ describe('modelos', () => {
     api.configure({ modelsDir: tempDir('nonblock'), manifestPath: writeManifest(port, FILES) })
 
     const started = performance.now()
-    const download = api.downloadModels('en', 'es')
+    const download = api.downloadModels('en', ['es'])
     assert.ok(performance.now() - started < 100, 'la llamada retorna sin esperar a la descarga')
 
     let last = performance.now()
@@ -288,7 +288,7 @@ describe('modelos', () => {
     api.configure({ modelsDir: tempDir('cancel'), manifestPath: writeManifest(port, FILES) })
     const progress = []
     api.onModelProgress((e) => progress.push(e))
-    const download = api.downloadModels('en', 'es')
+    const download = api.downloadModels('en', ['es'])
     assert.ok(await waitFor(() => progress.some((e) => e.downloaded > 0)))
     api.configure({ modelsDir: tempDir('cancel2') })
     await assert.rejects(download, /cancelled/)

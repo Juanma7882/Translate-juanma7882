@@ -146,7 +146,9 @@ mod run {
             let (mut engine, _sink) = engine(200);
             let region = Region::new(0, 0, 300, 100, 0).unwrap();
             let started = Instant::now();
-            engine.start_region(region, lang("en"), lang("es")).unwrap();
+            engine
+                .start_region(region, lang("en"), vec![lang("es")])
+                .unwrap();
             println!(
                 "arranque (cargar modelos): {:.0} ms",
                 started.elapsed().as_secs_f64() * 1000.0
@@ -172,7 +174,9 @@ mod run {
         for _ in 0..5 {
             let (mut engine, sink) = engine(100);
             let region = Region::new(i32::from(WIN_X), i32::from(WIN_Y), width, height, 0).unwrap();
-            engine.start_region(region, lang("en"), lang("es")).unwrap();
+            engine
+                .start_region(region, lang("en"), vec![lang("es")])
+                .unwrap();
             let started = Instant::now();
             while translations(&sink) == 0 && started.elapsed() < Duration::from_secs(30) {
                 std::thread::sleep(Duration::from_millis(2));

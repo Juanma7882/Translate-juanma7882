@@ -26,6 +26,7 @@ use tr_engine::tr_core::runner::LoopTiming;
 use tr_engine::tr_core::{AudioSource, CoreError, ErrorCategory, Lang, Region, panic_hook};
 use tr_engine::{
     Engine, EngineConfig, EngineKind, Manifest, ModelScope, Models, PerformanceConfig,
+    validate_targets,
 };
 
 use events::{
@@ -144,15 +145,15 @@ fn invalid_arg(message: impl Into<String>) -> Error {
     )
 }
 
-fn languages(from: &str, to: &str) -> napi::Result<(Lang, Lang)> {
-    let (from, to) = (
-        Lang::new(from).map_err(|e| to_napi(&e))?,
-        Lang::new(to).map_err(|e| to_napi(&e))?,
-    );
-    if from == to {
-        return Err(invalid_arg("source and target languages must differ"));
-    }
-    Ok((from, to))
+/// Idioma de origen y lista de destinos (0 a 2, distintos entre sí y del origen).
+fn languages(from: &str, to: &[String]) -> napi::Result<(Lang, Vec<Lang>)> {
+    let from = Lang::new(from).map_err(|e| to_napi(&e))?;
+    let targets = to
+        .iter()
+        .map(|code| Lang::new(code).map_err(|e| to_napi(&e)))
+        .collect::<napi::Result<Vec<_>>>()?;
+    validate_targets(&from, &targets).map_err(|e| to_napi(&e))?;
+    Ok((from, targets))
 }
 
 fn load_manifest(path: &str) -> napi::Result<Arc<Manifest>> {
@@ -287,8 +288,8 @@ pub fn configure(options: EngineOptions) -> napi::Result<()> {
 
 /// Traduce el texto de una región de la pantalla. Reemplaza lo que estuviera en marcha.
 #[napi]
-pub fn start_region_translation(rect: Rect, from: String, to: String) -> napi::Result<()> {
-    let (from, to) = languages(&from, &to)?;
+pub fn start_region_translation(rect: Rect, from: String, to: Vec<String>) -> napi::Result<()> {
+    let (from, targets) = languages(&from, &to)?;
     let region = Region::new(
         rect.x,
         rect.y,
@@ -298,7 +299,7 @@ pub fn start_region_translation(rect: Rect, from: String, to: String) -> napi::R
     )
     .map_err(|e| to_napi(&e))?;
     engine()
-        .start_region(region, from, to)
+        .start_region(region, from, targets)
         .map_err(|e| to_napi(&e))
 }
 
@@ -351,13 +352,13 @@ fn audio_source(input: Option<AudioSourceInput>) -> napi::Result<AudioSource> {
 #[napi]
 pub fn start_audio_subtitles(
     from: String,
-    to: String,
+    to: Vec<String>,
     source: Option<AudioSourceInput>,
 ) -> napi::Result<()> {
-    let (from, to) = languages(&from, &to)?;
+    let (from, targets) = languages(&from, &to)?;
     let source = audio_source(source)?;
     engine()
-        .start_audio(from, to, source)
+        .start_audio(from, targets, source)
         .map_err(|e| to_napi(&e))
 }
 
@@ -447,14 +448,14 @@ fn scope(name: Option<&str>) -> napi::Result<ModelScope> {
 #[napi(ts_return_type = "Promise<Array<ModelStatusInfo>>")]
 pub fn model_status(
     from: String,
-    to: String,
+    to: Vec<String>,
     scope_name: Option<String>,
 ) -> napi::Result<AsyncTask<StatusTask>> {
-    let (from, to) = languages(&from, &to)?;
+    let (from, targets) = languages(&from, &to)?;
     Ok(AsyncTask::new(StatusTask {
         models: models()?,
         from,
-        to,
+        to: targets,
         scope: scope(scope_name.as_deref())?,
     }))
 }
@@ -464,14 +465,14 @@ pub fn model_status(
 #[napi(ts_return_type = "Promise<void>")]
 pub fn download_models(
     from: String,
-    to: String,
+    to: Vec<String>,
     scope_name: Option<String>,
 ) -> napi::Result<AsyncTask<DownloadTask>> {
-    let (from, to) = languages(&from, &to)?;
+    let (from, targets) = languages(&from, &to)?;
     Ok(AsyncTask::new(DownloadTask {
         models: models()?,
         from,
-        to,
+        to: targets,
         scope: scope(scope_name.as_deref())?,
     }))
 }

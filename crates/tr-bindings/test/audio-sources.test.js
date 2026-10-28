@@ -53,7 +53,7 @@ describe('fuentes de audio', () => {
     ]
     for (const source of bad) {
       assert.throws(
-        () => api.startAudioSubtitles('en', 'es', source),
+        () => api.startAudioSubtitles('en', ['es'], source),
         (error) => error.code === 'InvalidArg',
         JSON.stringify(source),
       )
@@ -67,7 +67,7 @@ describe('fuentes de audio', () => {
     api.configure(FAST)
     const events = []
     const off = api.onSubtitle((e) => events.push(e))
-    assert.throws(() => api.startAudioSubtitles('en', 'es', { kind: 'app', id: 424242, name: 'ghost.exe' }))
+    assert.throws(() => api.startAudioSubtitles('en', ['es'], { kind: 'app', id: 424242, name: 'ghost.exe' }))
     await sleep(200)
     assert.deepEqual(events, [])
     off()
@@ -77,7 +77,7 @@ describe('fuentes de audio', () => {
     api.configure({ ...FAST, fakeLatencyMs: 0 })
     const subtitles = []
     const off = api.onSubtitle((e) => subtitles.push(e))
-    api.startAudioSubtitles('en', 'es')
+    api.startAudioSubtitles('en', ['es'])
     assert.ok(await waitFor(() => subtitles.length > 0))
     off()
   })
@@ -88,7 +88,7 @@ describe('fuentes de audio', () => {
     for (const source of [{ kind: 'system' }, { kind: 'app', id: app.id, name: app.name }]) {
       const subtitles = []
       const off = api.onSubtitle((e) => subtitles.push(e))
-      api.startAudioSubtitles('en', 'es', source)
+      api.startAudioSubtitles('en', ['es'], source)
       assert.ok(await waitFor(() => subtitles.length > 0), JSON.stringify(source))
       off()
       api.stop()
@@ -99,7 +99,7 @@ describe('fuentes de audio', () => {
     api.configure(FAST)
     const levels = []
     const off = api.onAudioLevel((e) => levels.push(e))
-    api.startAudioSubtitles('en', 'es')
+    api.startAudioSubtitles('en', ['es'])
     assert.ok(await waitFor(() => levels.length >= 3))
     for (const level of levels) {
       assert.deepEqual(Object.keys(level).sort(), ['peak', 'rms'])

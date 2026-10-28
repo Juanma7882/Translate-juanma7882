@@ -6,15 +6,15 @@ use std::sync::Arc;
 
 use crate::cache::TranslationCache;
 use crate::change::{ChangeConfig, ChangeDetector};
-use crate::ports::{Clock, EventSink, OcrEngine, ScreenCapture, Translator};
+use crate::ports::{Clock, EventSink, OcrEngine, ScreenCapture};
 use crate::runner::{CaptureLoop, Command, FrameHandler, LoopTiming};
 use crate::text::{Stabilizer, join_blocks};
+use crate::translate::{Target, translate_all};
 use crate::types::{Event, Frame, Lang, Region};
 
 #[derive(Debug, Clone)]
 pub struct RegionConfig {
     pub from: Lang,
-    pub to: Lang,
     pub change: ChangeConfig,
     /// Frames consecutivos con el mismo texto antes de emitirlo.
     pub stable_frames: usize,
@@ -23,10 +23,9 @@ pub struct RegionConfig {
 }
 
 impl RegionConfig {
-    pub fn new(from: Lang, to: Lang) -> Self {
+    pub fn new(from: Lang) -> Self {
         Self {
             from,
-            to,
             change: ChangeConfig::default(),
             stable_frames: 2,
             min_confidence: 0.3,
@@ -39,7 +38,8 @@ impl RegionConfig {
 pub struct RegionProcessor {
     config: RegionConfig,
     ocr: Box<dyn OcrEngine>,
-    translator: Arc<dyn Translator>,
+    /// Destinos de la traducción, en el orden de las líneas; vacío = solo el texto original.
+    targets: Vec<Target>,
     cache: Arc<TranslationCache>,
     sink: Arc<dyn EventSink>,
     clock: Arc<dyn Clock>,
@@ -53,7 +53,7 @@ impl RegionProcessor {
     pub fn new(
         config: RegionConfig,
         ocr: Box<dyn OcrEngine>,
-        translator: Arc<dyn Translator>,
+        targets: Vec<Target>,
         cache: Arc<TranslationCache>,
         sink: Arc<dyn EventSink>,
         clock: Arc<dyn Clock>,
@@ -63,7 +63,7 @@ impl RegionProcessor {
             stabilizer: Stabilizer::new(config.stable_frames),
             config,
             ocr,
-            translator,
+            targets,
             cache,
             sink,
             clock,
@@ -110,26 +110,21 @@ impl RegionProcessor {
     }
 
     fn translate_and_emit(&mut self, original: String) {
-        let (from, to) = (&self.config.from, &self.config.to);
-        let translated = match self.cache.get(&original, from, to) {
-            Some(hit) => hit,
-            None => match self.translator.translate(&original, from, to) {
-                Ok(translation) => {
-                    self.cache.insert(&original, from, to, translation.clone());
-                    translation
-                }
-                Err(error) => {
-                    self.sink.emit(Event::from(&error));
-                    // Reintentar en la próxima vuelta en vez de quedar sin traducción.
-                    self.stabilizer.reset();
-                    self.detector.reset();
-                    return;
-                }
-            },
-        };
+        let outcome = translate_all(&self.targets, &self.config.from, &original, &self.cache);
+        for error in &outcome.errors {
+            self.sink.emit(Event::from(error));
+        }
+        // Si todos los destinos fallaron, reintentar en la próxima vuelta en vez de quedar sin
+        // traducción. Si alguno tuvo éxito se muestra y el que falló no se reintenta hasta que
+        // cambie el texto: así un destino roto no inunda de errores a cada frame.
+        if !self.targets.is_empty() && outcome.translations.is_empty() {
+            self.stabilizer.reset();
+            self.detector.reset();
+            return;
+        }
         self.sink.emit(Event::Translation {
             original,
-            translated,
+            translations: outcome.translations,
             timestamp: self.clock.now(),
         });
     }
@@ -194,11 +189,15 @@ mod tests {
 
     fn rig() -> Rig {
         let (ocr, translator, sink) = (FakeOcr::new(), FakeTranslator::new(), RecordingSink::new());
-        let config = RegionConfig::new(Lang::new("en").unwrap(), Lang::new("es").unwrap());
+        let config = RegionConfig::new(Lang::new("en").unwrap());
+        let targets = vec![Target::new(
+            Lang::new("es").unwrap(),
+            Arc::new(translator.clone()),
+        )];
         let processor = RegionProcessor::new(
             config,
             Box::new(ocr.clone()),
-            Arc::new(translator.clone()),
+            targets,
             Arc::new(TranslationCache::default()),
             Arc::new(sink.clone()),
             Arc::new(FakeClock::new()),
@@ -222,12 +221,124 @@ mod tests {
             .filter_map(|e| match e {
                 Event::Translation {
                     original,
-                    translated,
+                    translations,
                     ..
-                } => Some((original, translated)),
+                } => Some((original, translations[0].text.clone())),
                 _ => None,
             })
             .collect()
+    }
+
+    /// Procesador con un traductor de demostración por cada código de destino.
+    fn rig_with_targets(
+        codes: &[&str],
+    ) -> (RegionProcessor, FakeOcr, RecordingSink, Vec<FakeTranslator>) {
+        let (ocr, sink) = (FakeOcr::new(), RecordingSink::new());
+        let translators: Vec<FakeTranslator> =
+            codes.iter().map(|_| FakeTranslator::new()).collect();
+        let targets = codes
+            .iter()
+            .zip(&translators)
+            .map(|(code, t)| Target::new(Lang::new(code).unwrap(), Arc::new(t.clone())))
+            .collect();
+        let processor = RegionProcessor::new(
+            RegionConfig::new(Lang::new("en").unwrap()),
+            Box::new(ocr.clone()),
+            targets,
+            Arc::new(TranslationCache::default()),
+            Arc::new(sink.clone()),
+            Arc::new(FakeClock::new()),
+        );
+        (processor, ocr, sink, translators)
+    }
+
+    fn emitted(sink: &RecordingSink) -> Vec<(String, Vec<(String, String)>)> {
+        sink.events()
+            .into_iter()
+            .filter_map(|e| match e {
+                Event::Translation {
+                    original,
+                    translations,
+                    ..
+                } => Some((
+                    original,
+                    translations
+                        .into_iter()
+                        .map(|t| (t.lang.to_string(), t.text))
+                        .collect(),
+                )),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn two_targets_emit_one_event_with_both_translations_in_order() {
+        let (mut processor, ocr, sink, translators) = rig_with_targets(&["es", "fr"]);
+        translators[0].add("hello", "hola");
+        translators[1].add("hello", "bonjour");
+        ocr.push_text("hello");
+        processor.process(&frame(10));
+        processor.process(&frame(10));
+        assert_eq!(
+            emitted(&sink),
+            [(
+                "hello".to_string(),
+                vec![
+                    ("es".into(), "hola".into()),
+                    ("fr".into(), "bonjour".into())
+                ]
+            )]
+        );
+    }
+
+    #[test]
+    fn no_targets_emits_the_original_without_calling_any_translator() {
+        let (mut processor, ocr, sink, translators) = rig_with_targets(&[]);
+        assert!(translators.is_empty());
+        ocr.push_text("hello");
+        processor.process(&frame(10));
+        processor.process(&frame(10));
+        assert_eq!(emitted(&sink), [("hello".to_string(), vec![])]);
+    }
+
+    #[test]
+    fn one_failing_target_still_emits_the_other_and_reports_the_error() {
+        let (mut processor, ocr, sink, translators) = rig_with_targets(&["es", "fr"]);
+        translators[1].fail_next(CoreError::Translation("offline".into()));
+        ocr.push_text("hello");
+        processor.process(&frame(10));
+        processor.process(&frame(10));
+        let events = sink.events();
+        assert!(events.iter().any(|e| matches!(
+            e,
+            Event::Error {
+                category: crate::ErrorCategory::Translation,
+                ..
+            }
+        )));
+        assert_eq!(
+            emitted(&sink),
+            [(
+                "hello".to_string(),
+                vec![("es".into(), "[es] hello".into())]
+            )]
+        );
+    }
+
+    #[test]
+    fn all_targets_failing_retries_instead_of_emitting_an_empty_event() {
+        let (mut processor, ocr, sink, translators) = rig_with_targets(&["es", "fr"]);
+        for t in &translators {
+            t.fail_next(CoreError::Translation("offline".into()));
+        }
+        ocr.push_text("hello");
+        processor.process(&frame(10));
+        processor.process(&frame(10));
+        assert!(emitted(&sink).is_empty());
+        processor.process(&frame(10));
+        processor.process(&frame(10));
+        assert_eq!(emitted(&sink).len(), 1, "se recupera en el reintento");
     }
 
     #[test]

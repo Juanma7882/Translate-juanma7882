@@ -53,7 +53,7 @@ export function configure(options?: EngineOptions): void
  * Lanza un error con `code === 'InvalidArg'` si la región o los idiomas no son válidos, y un error
  * descriptivo si faltan modelos (motores reales) o un motor no está disponible en este build.
  */
-export function startRegionTranslation(rect: Rect, from: string, to: string): void
+export function startRegionTranslation(rect: Rect, from: string, to: string[]): void
 
 /**
  * Subtitula el audio del sistema (captura del dispositivo de salida -> voz a texto -> traducción).
@@ -61,7 +61,7 @@ export function startRegionTranslation(rect: Rect, from: string, to: string): vo
  * estuviera en marcha. Los subtítulos llegan por `onSubtitle`: parciales (sin traducir) mientras
  * se habla y un final traducido al cerrar la frase.
  */
-export function startAudioSubtitles(from: string, to: string, source?: AudioSourceSelection): void
+export function startAudioSubtitles(from: string, to: string[], source?: AudioSourceSelection): void
 
 /** Fuente de audio: todo el sistema o una aplicación (id de proceso y nombre de programa). */
 export type AudioSourceSelection =
@@ -115,16 +115,16 @@ export function modelCatalog(): ModelCatalog
 export type ModelScope = 'text' | 'audio' | 'all'
 
 /**
- * Estado de los modelos necesarios para el par (`scope`: `text` por defecto, `audio` o `all`).
+ * Estado de los modelos necesarios para `from` y cada destino de `to` (con `to` vacío, solo el reconocimiento) (`scope`: `text` por defecto, `audio` o `all`).
  * Rechaza si el par no está soportado.
  */
-export function modelStatus(from: string, to: string, scope?: ModelScope): Promise<ModelStatusInfo[]>
+export function modelStatus(from: string, to: string[], scope?: ModelScope): Promise<ModelStatusInfo[]>
 
 /**
  * Descarga los modelos que falten para el par; el avance llega por `onModelProgress`, también
  * sin traducción en marcha. Rechaza con un error descriptivo si falla o el par no está soportado.
  */
-export function downloadModels(from: string, to: string, scope?: ModelScope): Promise<void>
+export function downloadModels(from: string, to: string[], scope?: ModelScope): Promise<void>
 
 /** Todos los modelos del manifiesto con su estado, el espacio que ocupan en disco y el total. */
 export function modelInventory(): Promise<ModelInventory>

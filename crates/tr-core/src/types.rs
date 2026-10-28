@@ -215,17 +215,27 @@ pub struct AppAudio {
     pub name: String,
 }
 
+/// La traducción de un texto a un idioma de destino.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Translated {
+    pub lang: Lang,
+    pub text: String,
+}
+
 /// Evento emitido hacia el exterior. `timestamp` es el tiempo del [`Clock`](crate::ports::Clock).
+///
+/// `translations` lleva una entrada por destino traducido, en el orden de los destinos. Está vacía
+/// si no hay destinos, si el subtítulo es parcial o si fallaron todas las traducciones.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Event {
     Translation {
         original: String,
-        translated: String,
+        translations: Vec<Translated>,
         timestamp: Duration,
     },
     Subtitle {
         original: String,
-        translated: Option<String>,
+        translations: Vec<Translated>,
         is_final: bool,
         timestamp: Duration,
     },

@@ -112,7 +112,7 @@ describe('inventario y borrado', () => {
     assert.deepEqual(empty.models[0].roles, [{ kind: 'ocr', key: 'en' }])
     assert.deepEqual(empty.models[1].roles, [{ kind: 'translate', key: 'en-es' }])
 
-    await api.downloadModels('en', 'es')
+    await api.downloadModels('en', ['es'])
     const full = await api.modelInventory()
     assert.equal(full.totalBytes, 150_019)
     assert.deepEqual(full.models.map((m) => [m.state, m.diskBytes]), [['ready', 150_000], ['ready', 19]])
@@ -130,7 +130,7 @@ describe('inventario y borrado', () => {
 
   test('borrar libera el espacio, deja el modelo ausente y no toca nada más', async () => {
     const { modelsDir } = await setup('delete')
-    await api.downloadModels('en', 'es')
+    await api.downloadModels('en', ['es'])
     fs.mkdirSync(path.join(modelsDir, 'otro'))
     fs.writeFileSync(path.join(modelsDir, 'otro', 'mio.txt'), 'mío')
     fs.writeFileSync(path.join(modelsDir, 't', 'notas.txt'), 'notas del usuario')
@@ -148,19 +148,19 @@ describe('inventario y borrado', () => {
 
   test('los ids con rutas o desconocidos se rechazan sin borrar nada', async () => {
     const { modelsDir } = await setup('badid')
-    await api.downloadModels('en', 'es')
+    await api.downloadModels('en', ['es'])
     fs.writeFileSync(path.join(modelsDir, 'fuera.txt'), 'x')
     for (const id of ['../', '..', '../o', 'o/../..', '/etc', '', 'nope', 'o/a.bin']) {
       await assert.rejects(api.deleteModel(id), (e) => e.code === 'InvalidArg', JSON.stringify(id))
     }
     assert.ok(fs.existsSync(path.join(modelsDir, 'fuera.txt')))
-    assert.deepEqual((await api.modelStatus('en', 'es')).map((m) => m.state), ['ready', 'ready'])
+    assert.deepEqual((await api.modelStatus('en', ['es'])).map((m) => m.state), ['ready', 'ready'])
   })
 
   test('no se borra mientras haya una traducción en marcha', async () => {
     const { modelsDir } = await setup('running')
-    await api.downloadModels('en', 'es')
-    api.startRegionTranslation(REGION, 'en', 'es')
+    await api.downloadModels('en', ['es'])
+    api.startRegionTranslation(REGION, 'en', ['es'])
     await assert.rejects(api.deleteModel('o'), /translation is running/)
     assert.ok(fs.existsSync(path.join(modelsDir, 'o', 'a.bin')), 'el archivo sigue ahí')
     api.stop()
@@ -171,7 +171,7 @@ describe('inventario y borrado', () => {
 describe('cancelar, reanudar y fallos de descarga', () => {
   test('cancelar rechaza la descarga, conserva el parcial y reanudar pide solo el resto', async () => {
     const { modelsDir, log } = await setup('cancel', { delay: 25 })
-    const download = api.downloadModels('en', 'es')
+    const download = api.downloadModels('en', ['es'])
     const rejected = assert.rejects(download, /cancelled/)
     const part = path.join(modelsDir, 'o', 'a.bin.part')
     assert.ok(await waitFor(() => fs.existsSync(part) && fs.statSync(part).size >= 20_000), 'empezó a descargar')
@@ -185,29 +185,29 @@ describe('cancelar, reanudar y fallos de descarga', () => {
     assert.equal(inventory.models[0].partialBytes, left)
     assert.equal(inventory.models[0].state, 'missing')
 
-    await api.downloadModels('en', 'es')
+    await api.downloadModels('en', ['es'])
     assert.deepEqual(log, [null, `bytes=${left}-`])
     assert.equal(sha256(fs.readFileSync(path.join(modelsDir, 'o', 'a.bin'))), sha256(BIG))
     assert.ok(!fs.existsSync(part))
-    assert.deepEqual((await api.modelStatus('en', 'es')).map((m) => m.state), ['ready', 'ready'])
+    assert.deepEqual((await api.modelStatus('en', ['es'])).map((m) => m.state), ['ready', 'ready'])
   })
 
   test('un corte de red deja el parcial y se reanuda desde ahí', async () => {
     const { modelsDir, log } = await setup('cut', { cutFirstAt: 60_000 })
-    await assert.rejects(api.downloadModels('en', 'es'))
+    await assert.rejects(api.downloadModels('en', ['es']))
     assert.equal(fs.statSync(path.join(modelsDir, 'o', 'a.bin.part')).size, 60_000)
     assert.ok(!fs.existsSync(path.join(modelsDir, 'o', 'a.bin')))
-    await api.downloadModels('en', 'es')
+    await api.downloadModels('en', ['es'])
     assert.deepEqual(log, [null, 'bytes=60000-'])
     assert.equal(sha256(fs.readFileSync(path.join(modelsDir, 'o', 'a.bin'))), sha256(BIG))
   })
 
   test('el progreso de una reanudación parte de lo ya descargado y no retrocede', async () => {
     await setup('progress', { cutFirstAt: 80_000 })
-    await assert.rejects(api.downloadModels('en', 'es'))
+    await assert.rejects(api.downloadModels('en', ['es']))
     const seen = []
     const off = api.onModelProgress((e) => e.model === 'o' && seen.push(e.downloaded))
-    await api.downloadModels('en', 'es')
+    await api.downloadModels('en', ['es'])
     off()
     assert.ok(seen.length > 0)
     assert.ok(seen.find((v) => v > 0) >= 80_000, `el primer avance incluye lo descargado: ${seen.slice(0, 3)}`)
@@ -217,17 +217,17 @@ describe('cancelar, reanudar y fallos de descarga', () => {
 
   test('un servidor sin Range reinicia desde cero y termina bien', async () => {
     const { modelsDir } = await setup('norange', { ranges: false, cutFirstAt: 50_000 })
-    await assert.rejects(api.downloadModels('en', 'es'))
+    await assert.rejects(api.downloadModels('en', ['es']))
     assert.equal(fs.statSync(path.join(modelsDir, 'o', 'a.bin.part')).size, 50_000)
-    await api.downloadModels('en', 'es')
+    await api.downloadModels('en', ['es'])
     assert.equal(sha256(fs.readFileSync(path.join(modelsDir, 'o', 'a.bin'))), sha256(BIG))
     assert.ok(!fs.existsSync(path.join(modelsDir, 'o', 'a.bin.part')))
   })
 
   test('un 416 al reanudar reinicia desde cero', async () => {
     const { modelsDir, log } = await setup('416', { rejectRange: true, cutFirstAt: 50_000 })
-    await assert.rejects(api.downloadModels('en', 'es'))
-    await api.downloadModels('en', 'es')
+    await assert.rejects(api.downloadModels('en', ['es']))
+    await api.downloadModels('en', ['es'])
     assert.deepEqual(log, [null, 'bytes=50000-', null])
     assert.equal(sha256(fs.readFileSync(path.join(modelsDir, 'o', 'a.bin'))), sha256(BIG))
   })
@@ -238,22 +238,22 @@ describe('cancelar, reanudar y fallos de descarga', () => {
     const bad = Buffer.from(BIG.subarray(0, 30_000))
     bad[7] ^= 0xff
     fs.writeFileSync(path.join(modelsDir, 'o', 'a.bin.part'), bad)
-    await assert.rejects(api.downloadModels('en', 'es'), /corrupt/)
+    await assert.rejects(api.downloadModels('en', ['es']), /corrupt/)
     assert.ok(!fs.existsSync(path.join(modelsDir, 'o', 'a.bin.part')), 'el parcial malo se elimina')
-    await api.downloadModels('en', 'es')
+    await api.downloadModels('en', ['es'])
     assert.equal(sha256(fs.readFileSync(path.join(modelsDir, 'o', 'a.bin'))), sha256(BIG))
   })
 
   test('cancelar sin descargas en curso no hace daño y la siguiente descarga funciona', async () => {
     await setup('idle-cancel')
     await api.cancelModelDownload()
-    await api.downloadModels('en', 'es')
-    assert.deepEqual((await api.modelStatus('en', 'es')).map((m) => m.state), ['ready', 'ready'])
+    await api.downloadModels('en', ['es'])
+    assert.deepEqual((await api.modelStatus('en', ['es'])).map((m) => m.state), ['ready', 'ready'])
   })
 
   test('no se borra un modelo mientras se descarga', async () => {
     const { modelsDir } = await setup('delete-busy', { delay: 25 })
-    const download = api.downloadModels('en', 'es')
+    const download = api.downloadModels('en', ['es'])
     const rejected = assert.rejects(download, /cancelled/)
     assert.ok(await waitFor(() => fs.existsSync(path.join(modelsDir, 'o', 'a.bin.part'))))
     await assert.rejects(api.deleteModel('o'), /being downloaded/)
@@ -302,7 +302,7 @@ describe('opciones de rendimiento', () => {
 
     const events = []
     api.onTranslation((e) => events.push(e))
-    api.startRegionTranslation(REGION, 'en', 'es')
+    api.startRegionTranslation(REGION, 'en', ['es'])
     assert.ok(await waitFor(() => events.length >= 1))
     api.stop()
     const stats = api.cacheStats()
@@ -316,7 +316,7 @@ describe('opciones de rendimiento', () => {
     api.configure({ frameIntervalMs: 5 })
     const events = []
     api.onTranslation((e) => events.push(e))
-    api.startRegionTranslation(REGION, 'en', 'es')
+    api.startRegionTranslation(REGION, 'en', ['es'])
     assert.ok(await waitFor(() => events.length >= 1))
     const bad = [
       [{ intraThreads: 0 }, /intraThreads/],

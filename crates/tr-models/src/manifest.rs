@@ -220,30 +220,39 @@ impl Manifest {
             })
     }
 
-    /// Modelos necesarios para reconocer en `from` y traducir `from` -> `to`, sin repetidos.
-    pub fn required_for(&self, from: &Lang, to: &Lang) -> Result<Vec<&ModelSpec>> {
-        let mut models = vec![self.ocr_model(from)?];
-        let translation = self.translate_model(from, to)?;
-        if !models.contains(&translation) {
-            models.push(translation);
+    /// Añade a `models` los de traducción `from` -> cada destino, sin repetidos. Sin destinos no
+    /// añade ninguno: basta el reconocimiento del idioma de origen.
+    fn with_translations<'a>(
+        &'a self,
+        mut models: Vec<&'a ModelSpec>,
+        from: &Lang,
+        targets: &[Lang],
+    ) -> Result<Vec<&'a ModelSpec>> {
+        for to in targets {
+            let translation = self.translate_model(from, to)?;
+            if !models.contains(&translation) {
+                models.push(translation);
+            }
         }
         Ok(models)
     }
 
-    /// Modelos necesarios para transcribir voz en `from` y traducir `from` -> `to`, sin repetidos.
-    pub fn required_for_audio(&self, from: &Lang, to: &Lang) -> Result<Vec<&ModelSpec>> {
-        let mut models = vec![self.stt_model(from)?];
-        let translation = self.translate_model(from, to)?;
-        if !models.contains(&translation) {
-            models.push(translation);
-        }
-        Ok(models)
+    /// Modelos necesarios para reconocer texto en `from` y traducir `from` -> cada destino, sin
+    /// repetidos. Con `targets` vacío, solo el OCR.
+    pub fn required_for(&self, from: &Lang, targets: &[Lang]) -> Result<Vec<&ModelSpec>> {
+        self.with_translations(vec![self.ocr_model(from)?], from, targets)
     }
 
-    /// Modelos de texto y de audio juntos para el par, sin repetidos.
-    pub fn required_for_all(&self, from: &Lang, to: &Lang) -> Result<Vec<&ModelSpec>> {
-        let mut models = self.required_for(from, to)?;
-        for spec in self.required_for_audio(from, to)? {
+    /// Modelos necesarios para transcribir voz en `from` y traducir `from` -> cada destino, sin
+    /// repetidos. Con `targets` vacío, solo el reconocimiento de voz.
+    pub fn required_for_audio(&self, from: &Lang, targets: &[Lang]) -> Result<Vec<&ModelSpec>> {
+        self.with_translations(vec![self.stt_model(from)?], from, targets)
+    }
+
+    /// Modelos de texto y de audio juntos para los destinos, sin repetidos.
+    pub fn required_for_all(&self, from: &Lang, targets: &[Lang]) -> Result<Vec<&ModelSpec>> {
+        let mut models = self.required_for(from, targets)?;
+        for spec in self.required_for_audio(from, targets)? {
             if !models.contains(&spec) {
                 models.push(spec);
             }
@@ -369,7 +378,7 @@ mod tests {
     fn models_for_a_pair_are_listed_exactly() {
         let m = Manifest::embedded();
         let ids: Vec<_> = m
-            .required_for(&lang("en"), &lang("es"))
+            .required_for(&lang("en"), &[lang("es")])
             .unwrap()
             .iter()
             .map(|s| s.id.as_str())
@@ -391,6 +400,46 @@ mod tests {
     }
 
     #[test]
+    fn without_targets_only_the_recognition_model_is_required() {
+        let m = Manifest::embedded();
+        let text: Vec<_> = m
+            .required_for(&lang("en"), &[])
+            .unwrap()
+            .iter()
+            .map(|s| s.id.as_str())
+            .collect();
+        assert_eq!(text, ["ocr-ppocrv6-small"]);
+        let audio: Vec<_> = m
+            .required_for_audio(&lang("en"), &[])
+            .unwrap()
+            .iter()
+            .map(|s| s.id.as_str())
+            .collect();
+        assert_eq!(audio, ["stt-whisper-base"]);
+    }
+
+    #[test]
+    fn two_targets_add_one_translation_model_each_without_repeats() {
+        let m = Manifest::embedded();
+        let ids: Vec<_> = m
+            .required_for(&lang("en"), &[lang("es"), lang("fr"), lang("es")])
+            .unwrap()
+            .iter()
+            .map(|s| s.id.as_str())
+            .collect();
+        assert_eq!(ids, ["ocr-ppocrv6-small", "mt-opus-en-es", "mt-opus-en-fr"]);
+    }
+
+    #[test]
+    fn one_unsupported_target_fails_the_whole_set() {
+        let m = Manifest::embedded();
+        assert!(matches!(
+            m.required_for(&lang("de"), &[lang("en"), lang("es")]),
+            Err(CoreError::InvalidArgument(_))
+        ));
+    }
+
+    #[test]
     fn the_languages_of_an_ocr_model_are_listed() {
         let m = Manifest::embedded();
         let langs = m.ocr_languages_for("ocr-ppocrv6-small");
@@ -405,14 +454,14 @@ mod tests {
     fn models_for_audio_are_the_speech_model_and_the_translation() {
         let m = Manifest::embedded();
         let ids: Vec<_> = m
-            .required_for_audio(&lang("es"), &lang("en"))
+            .required_for_audio(&lang("es"), &[lang("en")])
             .unwrap()
             .iter()
             .map(|s| s.id.as_str())
             .collect();
         assert_eq!(ids, ["stt-whisper-base", "mt-opus-es-en"]);
         let all: Vec<_> = m
-            .required_for_all(&lang("en"), &lang("es"))
+            .required_for_all(&lang("en"), &[lang("es")])
             .unwrap()
             .iter()
             .map(|s| s.id.as_str())
@@ -444,7 +493,8 @@ mod tests {
         let m = Manifest::embedded();
         for error in [
             m.stt_model(&lang("ko")).unwrap_err(),
-            m.required_for_audio(&lang("ja"), &lang("es")).unwrap_err(),
+            m.required_for_audio(&lang("ja"), &[lang("es")])
+                .unwrap_err(),
         ] {
             assert!(
                 matches!(&error, CoreError::InvalidArgument(msg) if msg.contains("unsupported")),
@@ -473,7 +523,7 @@ mod tests {
         for error in [
             m.ocr_model(&lang("ko")).unwrap_err(),
             m.translate_model(&lang("en"), &lang("ru")).unwrap_err(),
-            m.required_for(&lang("ja"), &lang("es")).unwrap_err(),
+            m.required_for(&lang("ja"), &[lang("es")]).unwrap_err(),
         ] {
             assert!(
                 matches!(&error, CoreError::InvalidArgument(msg) if msg.contains("unsupported")),

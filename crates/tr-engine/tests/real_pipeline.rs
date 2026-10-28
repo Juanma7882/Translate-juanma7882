@@ -120,9 +120,9 @@ fn translations(events: &[Event]) -> Vec<(String, String)> {
         .filter_map(|e| match e {
             Event::Translation {
                 original,
-                translated,
+                translations,
                 ..
-            } => Some((original.clone(), translated.clone())),
+            } => Some((original.clone(), translations[0].text.clone())),
             _ => None,
         })
         .collect()
@@ -136,7 +136,7 @@ fn a_real_screen_region_is_captured_recognized_and_translated() {
     let (mut engine, sink) = real_engine();
     let region = Region::new(i32::from(WIN_X), i32::from(WIN_Y), width, height, 0).unwrap();
     engine
-        .start_region(region, lang("en"), lang("es"))
+        .start_region(region, lang("en"), vec![lang("es")])
         .expect("arrancar con motores reales");
 
     assert!(
@@ -183,7 +183,9 @@ fn a_region_without_text_produces_no_translation_and_no_error() {
     // Pantalla sin tocar (negra): ni traducción ni error.
     let (mut engine, sink) = real_engine();
     let region = Region::new(0, 0, 300, 100, 0).unwrap();
-    engine.start_region(region, lang("en"), lang("es")).unwrap();
+    engine
+        .start_region(region, lang("en"), vec![lang("es")])
+        .unwrap();
     std::thread::sleep(Duration::from_secs(3));
     engine.stop();
     assert!(sink.is_empty(), "eventos inesperados: {:?}", sink.events());
@@ -198,7 +200,7 @@ fn an_unsupported_pair_is_refused_before_the_screen_is_touched() {
     let (mut engine, sink) = real_engine();
     let region = Region::new(i32::from(WIN_X), i32::from(WIN_Y), width, height, 0).unwrap();
     let error = engine
-        .start_region(region, lang("ja"), lang("es"))
+        .start_region(region, lang("ja"), vec![lang("es")])
         .unwrap_err();
     assert!(
         error.to_string().contains("unsupported translation pair"),

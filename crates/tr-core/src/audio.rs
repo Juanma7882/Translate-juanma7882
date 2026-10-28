@@ -12,9 +12,10 @@ use crossbeam_channel::{RecvTimeoutError, bounded};
 
 use crate::cache::TranslationCache;
 use crate::error::{CoreError, Result};
-use crate::ports::{AudioCapture, Clock, EventSink, SpeechToText, Translator};
+use crate::ports::{AudioCapture, Clock, EventSink, SpeechToText};
 use crate::text::normalize;
-use crate::types::{AudioChunk, Event, Lang, SAMPLE_RATE, Segment, SegmentKind};
+use crate::translate::{Target, translate_all};
+use crate::types::{AudioChunk, Event, Lang, SAMPLE_RATE, Segment, SegmentKind, Translated};
 
 /// Trozos pendientes entre la captura y el procesamiento. Si se llena se descartan los nuevos.
 const QUEUE_CAPACITY: usize = 64;
@@ -27,7 +28,6 @@ pub const DEFAULT_VAD_THRESHOLD: f32 = 0.01;
 #[derive(Debug, Clone)]
 pub struct AudioConfig {
     pub from: Lang,
-    pub to: Lang,
     /// Nivel RMS (0..1) a partir del cual un trozo cuenta como habla.
     pub vad_threshold: f32,
     /// Silencio continuo que cierra una intervención de habla.
@@ -41,10 +41,9 @@ pub struct AudioConfig {
 }
 
 impl AudioConfig {
-    pub fn new(from: Lang, to: Lang) -> Self {
+    pub fn new(from: Lang) -> Self {
         Self {
             from,
-            to,
             vad_threshold: DEFAULT_VAD_THRESHOLD,
             hangover: Duration::from_millis(300),
             min_speech: Duration::from_millis(100),
@@ -105,7 +104,8 @@ pub fn dedupe_overlap(prev: &str, new: &str) -> String {
 pub struct AudioProcessor {
     config: AudioConfig,
     stt: Box<dyn SpeechToText>,
-    translator: Arc<dyn Translator>,
+    /// Destinos de la traducción, en el orden de las líneas; vacío = solo la transcripción.
+    targets: Vec<Target>,
     cache: Arc<TranslationCache>,
     sink: Arc<dyn EventSink>,
     clock: Arc<dyn Clock>,
@@ -125,7 +125,7 @@ impl AudioProcessor {
     pub fn new(
         config: AudioConfig,
         stt: Box<dyn SpeechToText>,
-        translator: Arc<dyn Translator>,
+        targets: Vec<Target>,
         cache: Arc<TranslationCache>,
         sink: Arc<dyn EventSink>,
         clock: Arc<dyn Clock>,
@@ -133,7 +133,7 @@ impl AudioProcessor {
         Self {
             config,
             stt,
-            translator,
+            targets,
             cache,
             sink,
             clock,
@@ -265,15 +265,15 @@ impl AudioProcessor {
         match segment.kind {
             SegmentKind::Partial => self.sink.emit(Event::Subtitle {
                 original,
-                translated: None,
+                translations: Vec::new(),
                 is_final: false,
                 timestamp,
             }),
             SegmentKind::Final => {
-                let translated = self.translate(&original);
+                let translations = self.translate(&original);
                 self.sink.emit(Event::Subtitle {
                     original,
-                    translated,
+                    translations,
                     is_final: true,
                     timestamp,
                 });
@@ -281,22 +281,14 @@ impl AudioProcessor {
         }
     }
 
-    /// Traduce usando la caché; ante un fallo informa el error y devuelve `None`.
-    fn translate(&self, text: &str) -> Option<String> {
-        let (from, to) = (&self.config.from, &self.config.to);
-        if let Some(hit) = self.cache.get(text, from, to) {
-            return Some(hit);
+    /// Traduce a todos los destinos a la vez usando la caché; cada fallo se informa y su destino
+    /// se omite del resultado.
+    fn translate(&self, text: &str) -> Vec<Translated> {
+        let outcome = translate_all(&self.targets, &self.config.from, text, &self.cache);
+        for error in &outcome.errors {
+            self.sink.emit(Event::from(error));
         }
-        match self.translator.translate(text, from, to) {
-            Ok(translation) => {
-                self.cache.insert(text, from, to, translation.clone());
-                Some(translation)
-            }
-            Err(error) => {
-                self.sink.emit(Event::from(&error));
-                None
-            }
-        }
+        outcome.translations
     }
 }
 
@@ -439,13 +431,14 @@ mod tests {
     /// Ventana de 1 s y solape de 250 ms para que los tests sean cortos.
     fn rig() -> Rig {
         let (stt, translator, sink) = (FakeStt::new(), FakeTranslator::new(), RecordingSink::new());
-        let mut config = AudioConfig::new(lang("en"), lang("es"));
+        let mut config = AudioConfig::new(lang("en"));
         config.window = Duration::from_secs(1);
         config.overlap = Duration::from_millis(250);
+        let targets = vec![Target::new(lang("es"), Arc::new(translator.clone()))];
         let processor = AudioProcessor::new(
             config,
             Box::new(stt.clone()),
-            Arc::new(translator.clone()),
+            targets,
             Arc::new(TranslationCache::default()),
             Arc::new(sink.clone()),
             Arc::new(FakeClock::new()),
@@ -502,10 +495,14 @@ mod tests {
             .filter_map(|e| match e {
                 Event::Subtitle {
                     original,
-                    translated,
+                    translations,
                     is_final,
                     ..
-                } => Some((original, translated, is_final)),
+                } => Some((
+                    original,
+                    translations.first().map(|t| t.text.clone()),
+                    is_final,
+                )),
                 _ => None,
             })
             .collect()
@@ -538,13 +535,14 @@ mod tests {
     #[test]
     fn only_the_last_window_of_an_utterance_is_marked_as_closing() {
         let recorder = CloseRecorder::default();
-        let mut config = AudioConfig::new(lang("en"), lang("es"));
+        let mut config = AudioConfig::new(lang("en"));
         config.window = Duration::from_secs(1);
         config.overlap = Duration::from_millis(250);
+        let targets = vec![Target::new(lang("es"), Arc::new(FakeTranslator::new()))];
         let mut processor = AudioProcessor::new(
             config,
             Box::new(recorder.clone()),
-            Arc::new(FakeTranslator::new()),
+            targets,
             Arc::new(TranslationCache::default()),
             Arc::new(RecordingSink::new()),
             Arc::new(FakeClock::new()),
@@ -682,6 +680,112 @@ mod tests {
             1,
             "los parciales no se traducen"
         );
+    }
+
+    /// Procesador con un traductor de demostración por cada código de destino.
+    fn rig_with_targets(
+        codes: &[&str],
+    ) -> (AudioProcessor, FakeStt, RecordingSink, Vec<FakeTranslator>) {
+        let (stt, sink) = (FakeStt::new(), RecordingSink::new());
+        let translators: Vec<FakeTranslator> =
+            codes.iter().map(|_| FakeTranslator::new()).collect();
+        let targets = codes
+            .iter()
+            .zip(&translators)
+            .map(|(code, t)| Target::new(lang(code), Arc::new(t.clone())))
+            .collect();
+        let mut config = AudioConfig::new(lang("en"));
+        config.window = Duration::from_secs(1);
+        config.overlap = Duration::from_millis(250);
+        let processor = AudioProcessor::new(
+            config,
+            Box::new(stt.clone()),
+            targets,
+            Arc::new(TranslationCache::default()),
+            Arc::new(sink.clone()),
+            Arc::new(FakeClock::new()),
+        );
+        (processor, stt, sink, translators)
+    }
+
+    fn feed(processor: &mut AudioProcessor, amplitude: f32, count: usize) {
+        for i in 0..count {
+            let samples = vec![amplitude; duration_to_samples(Duration::from_millis(CHUNK_MS))];
+            let start = Duration::from_millis(CHUNK_MS * i as u64);
+            processor.push(AudioChunk::new(samples, start));
+        }
+    }
+
+    fn final_translations(sink: &RecordingSink) -> Vec<Vec<(String, String)>> {
+        sink.events()
+            .into_iter()
+            .filter_map(|e| match e {
+                Event::Subtitle {
+                    translations,
+                    is_final: true,
+                    ..
+                } => Some(
+                    translations
+                        .into_iter()
+                        .map(|t| (t.lang.to_string(), t.text))
+                        .collect(),
+                ),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn final_segment_carries_one_translation_per_target_in_order() {
+        let (mut processor, stt, sink, translators) = rig_with_targets(&["es", "fr"]);
+        translators[0].add("hello", "hola");
+        translators[1].add("hello", "bonjour");
+        stt.push_segments(vec![final_segment("hello")]);
+        feed(&mut processor, SPEECH, 4);
+        feed(&mut processor, 0.0, 3);
+        assert_eq!(
+            final_translations(&sink),
+            [vec![
+                ("es".into(), "hola".into()),
+                ("fr".into(), "bonjour".into())
+            ]]
+        );
+    }
+
+    #[test]
+    fn without_targets_the_final_has_no_translations_and_no_translator_runs() {
+        let (mut processor, stt, sink, translators) = rig_with_targets(&[]);
+        assert!(translators.is_empty());
+        stt.push_segments(vec![final_segment("hello")]);
+        feed(&mut processor, SPEECH, 4);
+        feed(&mut processor, 0.0, 3);
+        assert_eq!(final_translations(&sink), [vec![]]);
+        assert!(
+            !sink
+                .events()
+                .iter()
+                .any(|e| matches!(e, Event::Error { .. }))
+        );
+    }
+
+    #[test]
+    fn a_failing_target_keeps_the_other_translation_and_reports_the_error() {
+        let (mut processor, stt, sink, translators) = rig_with_targets(&["es", "fr"]);
+        translators[1].fail_next(CoreError::Translation("offline".into()));
+        stt.push_segments(vec![final_segment("hello")]);
+        feed(&mut processor, SPEECH, 4);
+        feed(&mut processor, 0.0, 3);
+        assert_eq!(
+            final_translations(&sink),
+            [vec![("es".into(), "[es] hello".into())]]
+        );
+        assert!(sink.events().iter().any(|e| matches!(
+            e,
+            Event::Error {
+                category: crate::ErrorCategory::Translation,
+                ..
+            }
+        )));
     }
 
     #[test]

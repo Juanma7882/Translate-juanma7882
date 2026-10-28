@@ -54,10 +54,12 @@ fn repeated_start_stop_leaves_no_threads_behind() {
     let baseline = thread_count();
     for round in 0..10 {
         if round % 2 == 0 {
-            engine.start_region(region, en.clone(), es.clone()).unwrap();
+            engine
+                .start_region(region, en.clone(), vec![es.clone()])
+                .unwrap();
         } else {
             engine
-                .start_audio(en.clone(), es.clone(), tr_core::AudioSource::System)
+                .start_audio(en.clone(), vec![es.clone()], tr_core::AudioSource::System)
                 .unwrap();
         }
         std::thread::sleep(Duration::from_millis(30));
@@ -70,9 +72,11 @@ fn repeated_start_stop_leaves_no_threads_behind() {
     }
 
     // Reemplazo directo sin stop intermedio.
-    engine.start_region(region, en.clone(), es.clone()).unwrap();
     engine
-        .start_audio(en, es, tr_core::AudioSource::System)
+        .start_region(region, en.clone(), vec![es.clone()])
+        .unwrap();
+    engine
+        .start_audio(en, vec![es], tr_core::AudioSource::System)
         .unwrap();
     engine.stop();
     assert_eq!(settle(baseline), baseline, "hilos colgados tras reemplazar");
@@ -81,7 +85,11 @@ fn repeated_start_stop_leaves_no_threads_behind() {
     {
         let mut running = Engine::new(EngineConfig::default(), Arc::new(sink));
         running
-            .start_region(region, Lang::new("en").unwrap(), Lang::new("es").unwrap())
+            .start_region(
+                region,
+                Lang::new("en").unwrap(),
+                vec![Lang::new("es").unwrap()],
+            )
             .unwrap();
     }
     assert_eq!(

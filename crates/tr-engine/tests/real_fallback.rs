@@ -247,7 +247,11 @@ fn text_falls_back_to_audio_subtitles_and_returns_to_text() {
     let (window, width, height) = show_image("en1.png");
     let region = Region::new(i32::from(WIN_X), i32::from(WIN_Y), width, height, 0).unwrap();
     engine
-        .start_region(region, Lang::new("en").unwrap(), Lang::new("es").unwrap())
+        .start_region(
+            region,
+            Lang::new("en").unwrap(),
+            vec![Lang::new("es").unwrap()],
+        )
         .expect("arrancar con motores reales");
     assert!(
         sink.wait_until(Duration::from_secs(60), |e| translations(e) > 0),
@@ -272,7 +276,7 @@ fn text_falls_back_to_audio_subtitles_and_returns_to_text() {
     assert!(
         sink.wait_until(Duration::from_secs(30), |events| {
             events.iter().any(|e| {
-                matches!(e, Event::Subtitle { is_final: true, translated: Some(t), .. } if !t.is_empty())
+                matches!(e, Event::Subtitle { is_final: true, translations, .. } if translations.first().is_some_and(|t| !t.text.is_empty()))
             })
         }),
         "subtítulo traducido en modo audio"
