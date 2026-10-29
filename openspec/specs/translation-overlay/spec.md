@@ -33,8 +33,12 @@ El overlay SHALL mostrar a la vez los subtítulos elegidos (uno o dos), cada uno
 - **THEN** el overlay muestra el texto parcial como provisional hasta que llegue el final
 
 #### Scenario: Sin texto
-- **WHEN** pasa un tiempo configurable sin traducciones nuevas
+- **WHEN** pasa un tiempo configurable sin traducciones nuevas y no está activo el ajuste "Mantener la traducción mientras el texto no cambie" en modo texto
 - **THEN** el overlay oculta el texto
+
+#### Scenario: Sin texto con la traducción mantenida
+- **WHEN** el ajuste "Mantener la traducción mientras el texto no cambie" está activo, el modo es texto y pasa el tiempo configurable sin traducciones nuevas
+- **THEN** el overlay no oculta el texto mientras la región conserve el mismo texto
 
 ### Requirement: Transparente, encima y sin estorbar
 El overlay SHALL ser transparente, permanecer encima de las demás ventanas, no aceptar foco y dejar pasar los clics y el teclado a la aplicación que tiene debajo.

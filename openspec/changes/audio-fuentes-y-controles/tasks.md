@@ -15,7 +15,7 @@
 - [x] 2.4 Windows: aviso de fuente perdida al cerrarse la aplicación; verificado con una aplicación de prueba que se cierra
 - [ ] 2.5 Linux: enumerar *sink-inputs* y capturar uno con la caja `pulseaudio`; probar en WSLg, o declarar "no disponible" con motivo si el protocolo no lo permite
 - [x] 2.6 macOS: tap por proceso si `cpal` lo expone; si no, "no disponible" con motivo; anotar en la lista de validación manual
-- [ ] 2.7 `CpalLoopback` y `PulseLoopback` aceptan `AudioSource::System` sin cambio de comportamiento; los tests existentes de captura siguen pasando
+- [x] 2.7 `CpalLoopback` y `PulseLoopback` aceptan `AudioSource::System` sin cambio de comportamiento; los tests existentes de captura siguen pasando
 
 ## 3. tr-engine y bindings
 
@@ -37,7 +37,7 @@
 - [ ] 5.2 Selector de fuente (Todo el sistema + aplicaciones, actualizado en vivo, aviso si la plataforma no lo permite); test de lógica y prueba manual
 - [x] 5.3 Barra de nivel con marca del umbral, bajada suave, alternativa de texto y avisos "audio muy bajo" / "no llega audio"; tests de la lógica de avisos y contraste de estilos
 - [ ] 5.4 Iniciar sin modelos: mensaje con tamaño y salto a la pestaña Idiomas; test de que el botón no queda inerte
-- [ ] 5.5 Ajustar smokes que abren la ventana (`TR_SMOKE=settings|shell|e2e`) y comprobar que pasan
+- [x] 5.5 Ajustar smokes que abren la ventana (`TR_SMOKE=settings|shell|e2e`) y comprobar que pasan
 
 ## 6. Cierre
 

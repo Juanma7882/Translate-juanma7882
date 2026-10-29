@@ -28,5 +28,5 @@
 ## 5. Verificación y cierre
 
 - [x] 5.1 Ampliar `TR_SMOKE=overlay` para comprobar: con el ajuste, la traducción sigue visible pasado `hideAfterMs`, se oculta con `textCleared`, y en audio se oculta por tiempo; ejecutar el smoke y que pase
-- [ ] 5.2 Ejecutar `TR_SMOKE=e2e` bajo `scripts/with-xvfb.sh` con el ajuste activo, pausando y reanudando con la pantalla fija, y verificar que no hay segunda traducción
+- [x] 5.2 Ejecutar `TR_SMOKE=e2e` bajo `scripts/with-xvfb.sh` con el ajuste activo, pausando y reanudando con la pantalla fija, y verificar que no hay segunda traducción (verificado en Windows nativo, sin Xvfb: el smoke activa `keepWhileUnchanged`, pausa y reanuda, y comprueba durante 5 s que no llega texto nuevo y la traducción sigue a la vista)
 - [x] 5.3 Añadir el caso a `docs/validation/windows-hito-5.md` (lista manual) y actualizar `docs/adr` con una nota breve de la decisión; guardar la decisión en Engram
