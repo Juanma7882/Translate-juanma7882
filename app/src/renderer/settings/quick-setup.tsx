@@ -30,7 +30,7 @@ export function RegionRow({ settings, busy, onChoose, onShow }: { settings: Sett
       )}
       {summary.canChange && (
         <button type="button" id="choose-region" disabled={busy} onClick={onChoose}>
-          Cambiar región
+          {summary.buttonLabel}
         </button>
       )}
     </div>
