@@ -1,6 +1,7 @@
 // Prueba de humo del overlay (TR_SMOKE=overlay): propiedades de la ventana real, colocación fuera de
 // la región, texto y estilo en vivo, ocultación automática y que nada del texto se escribe a disco.
 
+import { randomBytes } from 'node:crypto'
 import { lstatSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -25,6 +26,14 @@ function expect(condition: boolean, message: string): void {
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+// Los textos mostrados llevan una marca de esta ejecución: así el escáner de fugas no toma por fuga el
+// código de la app en la caché de Chromium ni archivos ajenos de la carpeta temporal (compartida en Windows).
+const MARK = randomBytes(4).toString('hex')
+const HELLO = `Hola, mundo ${MARK}`
+const MORNING = `buenos días ${MARK}`
+const NIGHT = `Buenas noches ${MARK}`
+const BOLD = `<b>negrita ${MARK}</b>`
 
 async function waitFor(condition: () => boolean | Promise<boolean>, what: string, ms = 5000): Promise<void> {
   const deadline = Date.now() + ms
@@ -168,15 +177,15 @@ export async function runOverlaySmoke(windows: WindowManager, settings: Settings
   ok('ubicado fuera de la región, con el ancho de los ajustes')
 
   // Texto: original + traducción; un parcial se distingue y el final lo reemplaza.
-  controller.show(text('Hello, world', 'Hola, mundo', true))
+  controller.show(text('Hello, world', HELLO, true))
   await waitFor(async () => !(await dom(window)).hidden, 'the overlay text')
   let view = await dom(window)
-  expect(view.original === 'Hello, world' && view.main === 'Hola, mundo' && !view.provisional && view.originalShown, `texto inesperado: ${JSON.stringify(view)}`)
+  expect(view.original === 'Hello, world' && view.main === HELLO && !view.provisional && view.originalShown, `texto inesperado: ${JSON.stringify(view)}`)
   controller.show(text('good morn', null, false))
   await waitFor(async () => (await dom(window)).provisional, 'the provisional style')
   view = await dom(window)
   expect(view.main === 'good morn' && view.original === '', 'un parcial sin traducir se muestra como principal')
-  controller.show(text('good morning', 'buenos días', true))
+  controller.show(text('good morning', MORNING, true))
   await waitFor(async () => !(await dom(window)).provisional, 'the final replacing the provisional')
   ok('muestra original y traducción; el final reemplaza al provisional')
 
@@ -196,8 +205,8 @@ export async function runOverlaySmoke(windows: WindowManager, settings: Settings
   ok('el indicador muestra audio y pausa (aunque no haya texto) y no aparece en modo texto')
 
   // La inserción es texto plano: el HTML no se interpreta.
-  controller.show(text('<img src=x onerror="document.title=1">', '<b>negrita</b>', true))
-  await waitFor(async () => (await dom(window)).main === '<b>negrita</b>', 'the escaped text')
+  controller.show(text('<img src=x onerror="document.title=1">', BOLD, true))
+  await waitFor(async () => (await dom(window)).main === BOLD, 'the escaped text')
   expect(!(await window.webContents.executeJavaScript(`document.querySelector('#box img, #box b') !== null`)), 'el texto no crea elementos')
   ok('el texto se inserta como texto, no como HTML')
 
@@ -211,8 +220,8 @@ export async function runOverlaySmoke(windows: WindowManager, settings: Settings
 
   // Mostrar u ocultar la línea del original.
   settings.update({ overlay: { showOriginal: false } })
-  controller.show(text('Good night', 'Buenas noches', true))
-  await waitFor(async () => (await dom(window)).main === 'Buenas noches', 'the new text')
+  controller.show(text('Good night', NIGHT, true))
+  await waitFor(async () => (await dom(window)).main === NIGHT, 'the new text')
   expect((await dom(window)).original === '', 'sin mostrar el original esa línea queda vacía')
   settings.update({ overlay: { showOriginal: true } })
 
@@ -386,13 +395,13 @@ export async function runOverlaySmoke(windows: WindowManager, settings: Settings
   ok('una posición manual sobre la región se advierte')
 
   // Nada de lo mostrado se escribe a disco: se busca el texto en la carpeta de datos de la aplicación.
-  const needles = ['Hola, mundo', 'buenos días', 'Buenas noches', 'negrita']
+  const needles = [HELLO, MORNING, NIGHT, `negrita ${MARK}`]
   const dirs = [app.getPath('userData'), app.getPath('temp')].filter((p, i, a) => a.indexOf(p) === i)
   await sleep(300)
 
   // Control positivo: el escáner debe encontrar un archivo que sí contiene el texto.
   const control = join(app.getPath('userData'), 'zz-leak-control.txt')
-  writeFileSync(control, 'Hola, mundo')
+  writeFileSync(control, HELLO)
   const detected = filesContaining(dirs, needles)
   rmSync(control)
   expect(detected.length === 1 && detected[0] === control, `el escáner de fugas no detecta un archivo sembrado: ${JSON.stringify(detected)}`)

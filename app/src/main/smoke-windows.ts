@@ -7,7 +7,7 @@ import type { BrowserWindow, WebPreferences } from 'electron'
 import type { WindowKind, WindowManager } from './windows.ts'
 
 const API_OF: Record<WindowKind, { global: string; keys: string[] }> = {
-  selector: { global: 'trSelector', keys: ['cancel', 'confirm', 'onInit'] },
+  selector: { global: 'trSelector', keys: ['cancel', 'confirm', 'nextDisplay', 'onInit'] },
   overlay: { global: 'trOverlay', keys: ['drag', 'endMove', 'onClear', 'onMode', 'onMoveMode', 'onShow', 'onStyle'] },
   settings: {
     global: 'trSettings',
@@ -34,9 +34,13 @@ const API_OF: Record<WindowKind, { global: string; keys: string[] }> = {
       'onSettingsChanged',
       'pauseSession',
       'pickModelsDir',
+      'pickOverlayPosition',
+      'pickRegion',
       'resetSettings',
       'restartSession',
       'resumeSession',
+      'showOverlayPosition',
+      'showRegion',
       'startSession',
       'stopSession',
       'updateSettings',
