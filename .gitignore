@@ -6,6 +6,15 @@ out
 /app/build/native
 models/
 
+# Temporales de `napi build` (transacción y carpetas de staging que deja si se interrumpe)
+.napi-rs-filesystem-transaction.swp/
+crates/.tr-bindings.napi-stage-*/
+crates/tr-bindings/.*.tmp
+
+# Locales de Claude Code: worktrees y permisos de cada máquina
+/.claude/worktrees/
+/.claude/settings.local.json
+
 # Salida de `pnpm dev` redirigida a archivos
 /dev.out.txt
 /dev.err.txt
