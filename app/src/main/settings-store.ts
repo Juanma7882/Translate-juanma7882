@@ -1,7 +1,7 @@
 // Persistencia de los ajustes en un archivo JSON dentro de la carpeta de datos de la aplicación.
 //
-// Es la única escritura a disco desde JS y solo contiene preferencias (nunca contenido del
-// usuario). Se escribe de forma atómica (archivo temporal + rename) para no dejar un JSON a medias.
+// Solo contiene preferencias (nunca contenido del usuario); el único contenido que JS puede escribir
+// es la transcripción, si el usuario la activa (ver `transcript-writer.ts`). Se escribe de forma atómica (archivo temporal + rename) para no dejar un JSON a medias.
 
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
@@ -63,13 +63,14 @@ export class SettingsStore {
   }
 
   /**
-   * Restablece las preferencias a sus valores por defecto. Conserva la región elegida y la carpeta
-   * de modelos: no son preferencias de aspecto y cambiarlas haría "desaparecer" lo ya instalado.
+   * Restablece las preferencias a sus valores por defecto. Conserva la región elegida y las carpetas
+   * (modelos y transcripción): no son preferencias de aspecto y cambiarlas haría "desaparecer" lo ya
+   * instalado o guardado. El guardado de la transcripción, en cambio, se desactiva.
    */
   reset(): UpdateResult {
-    const { lastRegion, modelsDir } = this.current
+    const { lastRegion, modelsDir, transcript } = this.current
     const { version: _version, ...defaults } = defaultSettings()
-    return this.update({ ...defaults, lastRegion, modelsDir })
+    return this.update({ ...defaults, lastRegion, modelsDir, transcript: { ...defaults.transcript, dir: transcript.dir } })
   }
 
   /** Sustituye las preferencias por unas ya validadas (importación). */

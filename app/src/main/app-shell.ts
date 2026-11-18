@@ -20,6 +20,9 @@ import type { FilePrompts } from './settings-ipc.ts'
 import type { SettingsStore } from './settings-store.ts'
 import { ShortcutManager } from './shortcuts.ts'
 import type { GlobalShortcutLike } from './shortcuts.ts'
+import { noticeForTranscriptFailure } from './notices.ts'
+import { bindTranscript } from './transcript-session.ts'
+import { TranscriptWriter } from './transcript-writer.ts'
 import { trayTemplate, trayTooltip } from './tray-menu.ts'
 import type { TrayActions } from './tray-menu.ts'
 import type { WindowManager } from './windows.ts'
@@ -54,6 +57,9 @@ export class AppShell {
   readonly controller: AppController
   readonly overlay: OverlayController
   readonly models: ModelsService
+  /** Guardado opcional de la transcripción (ADR 0011). */
+  readonly transcript: TranscriptWriter
+  private readonly unbindTranscript: () => void
   /** Región pendiente de iniciar cuando termine la descarga de modelos (flujo de primer uso). */
   private awaitingModels = false
   private overlayOpen = false
@@ -90,6 +96,13 @@ export class AppShell {
       this.refreshTray()
     })
     this.controller.on('notice', (notice) => this.onNotice(notice))
+    this.transcript = new TranscriptWriter({ settings })
+    this.unbindTranscript = bindTranscript(this.controller, this.transcript)
+    this.transcript.on('saving', (saving) => {
+      this.overlay.setSaving(saving)
+      this.refreshTray()
+    })
+    this.transcript.on('failed', () => this.controller.notify(noticeForTranscriptFailure()))
     settings.onChange((s) => {
       this.overlay.setRegion(s.lastRegion)
       this.applyShortcuts()
@@ -151,6 +164,8 @@ export class AppShell {
   }
 
   dispose(): void {
+    this.unbindTranscript()
+    void this.transcript.dispose()
     this.shortcutManager.dispose()
     this.disposeIpc?.()
     this.disposeOverlayIpc?.()
@@ -164,6 +179,10 @@ export class AppShell {
     translateLast: () => void this.controller.startSaved(),
     togglePause: () => void this.controller.togglePause(),
     setMode: (mode) => this.controller.setMode(mode),
+    setTranscript: (enabled) => {
+      const saved = this.deps.settings.update({ transcript: { enabled } })
+      if (!saved.ok) this.announce({ level: 'warning', message: 'Elige primero en Ajustes > General la carpeta donde guardar la transcripción' })
+    },
     stop: () => void this.controller.stop(),
     openSettings: () => void this.deps.windows.openSettings(),
     quit: () => this.deps.quit(),
@@ -193,6 +212,7 @@ export class AppShell {
       await this.overlay.open(this.deps.settings.get().lastRegion)
       const { mode, paused } = this.controller.state
       if (mode) this.overlay.setMode(paused ? 'paused' : mode)
+      this.overlay.setSaving(this.transcript.saving)
     } else if (!running && this.overlayOpen) {
       this.overlayOpen = false
       this.overlay.close()
@@ -209,6 +229,8 @@ export class AppShell {
 
   private refreshTray(): void {
     const state = this.controller.state
-    this.deps.tray.update(trayTemplate(state, this.deps.settings.get().lastRegion !== null, this.actions, this.deps.settings.get().mode), trayTooltip(state))
+    const settings = this.deps.settings.get()
+    const transcript = { enabled: settings.transcript.enabled, hasDir: settings.transcript.dir !== null, saving: this.transcript.saving }
+    this.deps.tray.update(trayTemplate(state, settings.lastRegion !== null, this.actions, settings.mode, transcript), trayTooltip(state, transcript.saving))
   }
 }

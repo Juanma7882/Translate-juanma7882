@@ -30,7 +30,8 @@ Selecciona una región de la pantalla y `translate` la lee (OCR), la traduce y m
 - **Texto en pantalla**: selector de región → captura → OCR → traducción → overlay sobre el original.
 - **Audio del sistema**: captura del audio de salida → reconocimiento de voz (Whisper) → traducción → subtítulos.
 - **Modo automático**: si la región no tiene texto, pasa solo a audio. También puedes forzar `text` o `audio` en Ajustes.
-- **Privacidad por diseño**: capturas, audio, texto y traducciones viven solo en RAM; nunca se escriben a disco ni a logs. A disco solo van los modelos y la configuración.
+- **Privacidad por diseño**: capturas, audio, texto y traducciones viven solo en RAM; nunca se escriben a disco ni a logs. A disco solo van los modelos y la configuración, y la transcripción únicamente si la activas tú.
+- **Guardar transcripción (opcional, apagado por defecto)**: en Ajustes > General o desde la bandeja. Con una carpeta elegida, cada línea final (original y traducciones, de audio y de texto en pantalla) se añade en el momento a un `.txt` y, si quieres, a un `.srt` por sesión. Mientras guarda, el overlay y la bandeja lo indican. No se exporta con las preferencias.
 - **Local por defecto**: sin red tras descargar los modelos. Los adaptadores de nube son opcionales y avisan al usuario.
 - **Gestión de modelos**: descarga con reanudación, verificación SHA-256, inventario y borrado desde Ajustes.
 - **Ajustes completos**: pares de idiomas, atajos, colores, líneas y modo mover del overlay, rendimiento.
@@ -184,7 +185,7 @@ El proyecto sigue Spec-Driven Development con [OpenSpec](https://github.com/Fiss
 
 Reglas que no se negocian:
 
-1. Todo en RAM: ningún contenido (captura, audio, texto, traducción) a disco ni a logs.
+1. Todo en RAM: ningún contenido (captura, audio, texto, traducción) a disco ni a logs. Única excepción: la transcripción, solo si el usuario la activa (ADR 0011).
 2. Local por defecto; la nube es opcional y con aviso.
 3. `core` solo conoce traits; cada motor es un adaptador.
 4. Lo pesado en Rust; la UI nunca se bloquea.

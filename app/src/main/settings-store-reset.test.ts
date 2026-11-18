@@ -29,6 +29,13 @@ test('restablecer devuelve las preferencias a su valor por defecto y conserva re
   assert.deepEqual(seen, ['es'], 'avisa una vez a los suscriptores')
 })
 
+test('restablecer desactiva el guardado de la transcripción y conserva su carpeta', () => {
+  const s = store()
+  assert.ok(s.update({ transcript: { enabled: true, dir: '/transcripciones', srt: false } }).ok)
+  assert.ok(s.reset().ok)
+  assert.deepEqual(s.get().transcript, { enabled: false, dir: '/transcripciones', srt: true })
+})
+
 test('replace aplica unas preferencias ya validadas y las guarda', () => {
   const file = join(mkdtempSync(join(tmpdir(), 'tr-replace-')), 'settings.json')
   const s = new SettingsStore(file)

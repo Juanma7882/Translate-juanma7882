@@ -1,5 +1,6 @@
 // Exportar e importar preferencias. El archivo solo lleva preferencias: nunca la región elegida,
-// ni rutas de carpetas, ni contenido capturado o traducido. Una importación es "todo o nada".
+// ni rutas de carpetas, ni contenido capturado o traducido, ni la transcripción (un archivo
+// importado no debe poder activar escrituras a disco). Una importación es "todo o nada".
 
 import { defaultSettings, parseSettings, SETTINGS_VERSION } from './settings.ts'
 import type { Settings } from './settings.ts'
@@ -10,16 +11,16 @@ export const EXPORT_FORMAT = 'translate-settings'
 export const MAX_IMPORT_BYTES = 64 * 1024
 
 /** Campos que no viajan en un archivo de preferencias (dependen del equipo o de la sesión). */
-const LOCAL_ONLY = ['lastRegion', 'modelsDir'] as const
+const LOCAL_ONLY = ['lastRegion', 'modelsDir', 'transcript'] as const
 
 export interface ExportedSettings {
   format: typeof EXPORT_FORMAT
   version: typeof SETTINGS_VERSION
-  settings: Omit<Settings, 'lastRegion' | 'modelsDir' | 'version'>
+  settings: Omit<Settings, 'lastRegion' | 'modelsDir' | 'transcript' | 'version'>
 }
 
 export function exportSettings(settings: Settings): ExportedSettings {
-  const { lastRegion: _region, modelsDir: _dir, version: _version, ...preferences } = structuredClone(settings)
+  const { lastRegion: _region, modelsDir: _dir, transcript: _transcript, version: _version, ...preferences } = structuredClone(settings)
   return { format: EXPORT_FORMAT, version: SETTINGS_VERSION, settings: preferences }
 }
 
@@ -67,6 +68,7 @@ export function importSettings(text: string, current: Settings): ImportResult {
   merged['version'] = SETTINGS_VERSION
   merged['lastRegion'] = current.lastRegion
   merged['modelsDir'] = current.modelsDir
+  merged['transcript'] = current.transcript
 
   const { settings, warnings } = parseSettings(merged)
   return warnings.length > 0 ? { ok: false, errors: warnings } : { ok: true, settings }

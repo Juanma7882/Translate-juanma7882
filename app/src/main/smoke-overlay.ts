@@ -204,6 +204,21 @@ export async function runOverlaySmoke(windows: WindowManager, settings: Settings
   expect((await label()).text === '', 'en modo texto la traducción va sin etiqueta')
   ok('el indicador muestra audio y pausa (aunque no haya texto) y no aparece en modo texto')
 
+  // Indicador de guardado de la transcripción: visible aunque la caja esté oculta, con nombre accesible.
+  const saving = () =>
+    window.webContents.executeJavaScript(
+      `(() => { const el = document.getElementById('saving'); return { hidden: el.hidden, visible: getComputedStyle(el).display !== 'none', label: el.getAttribute('aria-label') } })()`,
+    ) as Promise<{ hidden: boolean; visible: boolean; label: string | null }>
+  expect((await saving()).hidden, 'sin guardar no hay indicador')
+  controller.clear()
+  controller.setSaving(true)
+  await waitFor(async () => (await saving()).visible, 'the saving indicator')
+  expect((await saving()).label?.includes('transcripción') === true, 'el indicador tiene nombre accesible')
+  expect((await label()).hidden, 'se ve con la caja de texto oculta')
+  controller.setSaving(false)
+  await waitFor(async () => !(await saving()).visible, 'the saving indicator to go')
+  ok('el indicador de guardado de la transcripción aparece y desaparece, también sin texto')
+
   // La inserción es texto plano: el HTML no se interpreta.
   controller.show(text('<img src=x onerror="document.title=1">', BOLD, true))
   await waitFor(async () => (await dom(window)).main === BOLD, 'the escaped text')

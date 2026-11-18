@@ -142,6 +142,10 @@ function App({ api }: { api: SettingsApi }) {
       announce('No se importó nada: el archivo tiene valores no válidos.')
     }
   }
+  const pickTranscriptDir = async () => {
+    const dir = await api.pickTranscriptDir()
+    if (dir && (await save({ transcript: { dir } }))) announce('Carpeta de la transcripción elegida.')
+  }
   const toggleMove = async () => setMoving(await api.moveOverlay(!moving))
 
   return (
@@ -226,6 +230,44 @@ function App({ api }: { api: SettingsApi }) {
             )}
           </fieldset>
 
+          <fieldset id="transcript">
+            <legend>Guardar transcripción</legend>
+            <p id="transcript-enabled-hint" class="hint">
+              Desactivado por defecto. Al activarlo, cada línea final (texto original y traducciones, del audio y del texto en pantalla) se añade en el momento a un archivo nuevo por sesión
+              en la carpeta que elijas. Es lo único que el programa escribe a disco además de los modelos y los ajustes, y no se incluye al exportar las preferencias.
+            </p>
+            <p class="row">
+              <span>
+                Carpeta: <span id="transcript-dir-value">{settings.transcript.dir ?? 'ninguna elegida'}</span>
+              </span>
+              <button {...fieldProps('transcript-dir', fieldIssues)} type="button" onClick={() => void pickTranscriptDir()}>
+                Elegir carpeta…
+              </button>
+            </p>
+            <FieldError id="transcript-dir" issues={fieldIssues} />
+            <label class="inline" for="transcript-enabled">
+              <input
+                {...fieldProps('transcript-enabled', fieldIssues, 'transcript-enabled')}
+                type="checkbox"
+                checked={settings.transcript.enabled}
+                disabled={settings.transcript.dir === null && !settings.transcript.enabled}
+                onChange={(e) => void save({ transcript: { enabled: e.currentTarget.checked } })}
+              />
+              Guardar la transcripción
+            </label>
+            <FieldError id="transcript-enabled" issues={fieldIssues} />
+            <label class="inline" for="transcript-srt">
+              <input id="transcript-srt" type="checkbox" checked={settings.transcript.srt} onChange={(e) => void save({ transcript: { srt: e.currentTarget.checked } })} />
+              También en .srt (subtítulos para reproductores de vídeo)
+            </label>
+            <p class="hint" aria-live="polite">
+              {settings.transcript.enabled && appState.running
+                ? 'Guardando la transcripción de esta sesión.'
+                : settings.transcript.enabled
+                  ? 'Se guardará la próxima sesión. El cambio de .srt se aplica al empezar archivos nuevos.'
+                  : ''}
+            </p>
+          </fieldset>
         </TabPanel>
 
         <TabPanel id="models" active={tab}>
@@ -440,7 +482,7 @@ function App({ api }: { api: SettingsApi }) {
 
           <fieldset id="transfer">
             <legend>Copia de las preferencias</legend>
-            <p class="hint">Se guardan solo las preferencias (idiomas, apariencia, atajos…). Nunca la región, carpetas ni textos capturados o traducidos.</p>
+            <p class="hint">Se guardan solo las preferencias (idiomas, apariencia, atajos…). Nunca la región, carpetas, la transcripción ni textos capturados o traducidos.</p>
             <div class="row">
               <button type="button" id="export-settings" onClick={() => void exportPrefs()}>
                 Exportar…
@@ -453,7 +495,7 @@ function App({ api }: { api: SettingsApi }) {
 
           <fieldset id="reset">
             <legend>Valores por defecto</legend>
-            <p class="hint">Restablece las preferencias. No cambia la región elegida ni la carpeta de modelos.</p>
+            <p class="hint">Restablece las preferencias y desactiva el guardado de la transcripción. No cambia la región elegida ni las carpetas.</p>
             {confirmReset ? (
               <div role="group" aria-label="Confirmar restablecer" class="row">
                 <button type="button" id="confirm-reset" class="danger" onClick={() => void reset()}>

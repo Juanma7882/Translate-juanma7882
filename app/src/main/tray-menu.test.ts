@@ -11,6 +11,7 @@ function actions(calls: string[]): TrayActions {
     translateLast: record('last'),
     togglePause: record('pause'),
     setMode: record('mode'),
+    setTranscript: record('transcript'),
     stop: record('stop'),
     openSettings: record('settings'),
     quit: record('quit'),
@@ -72,6 +73,36 @@ test('el tooltip incluye el modo activo', () => {
   assert.match(trayTooltip({ running: true, paused: false, mode: 'audio' as const, phase: 'running' as const }), /audio/)
   assert.match(trayTooltip({ running: true, paused: false, mode: 'text' as const, phase: 'running' as const }), /texto/)
   assert.match(trayTooltip({ running: true, paused: true, mode: 'audio' as const, phase: 'paused' as const }), /pausa.*audio/)
+})
+
+test('la casilla de transcripción refleja el ajuste, se deshabilita sin carpeta y alterna el valor', () => {
+  const idle = { running: false, paused: false, mode: null, phase: 'idle' as const }
+  const values: boolean[] = []
+  const calls = actions([])
+  calls.setTranscript = (enabled) => void values.push(enabled)
+
+  const noDir = item(trayTemplate(idle, true, calls, 'auto', { enabled: false, hasDir: false, saving: false }), 'Guardar transcripción')
+  assert.equal(noDir.type, 'checkbox')
+  assert.equal(noDir.enabled, false)
+  assert.match(noDir.label!, /elige carpeta/)
+
+  const off = item(trayTemplate(idle, true, calls, 'auto', { enabled: false, hasDir: true, saving: false }), 'Guardar transcripción')
+  assert.equal(off.enabled, true)
+  assert.equal(off.checked, false)
+  ;(off.click as () => void)()
+
+  const running = { running: true, paused: false, mode: 'audio' as const, phase: 'running' as const }
+  const on = item(trayTemplate(running, true, calls, 'auto', { enabled: true, hasDir: true, saving: true }), 'Guardar transcripción')
+  assert.equal(on.checked, true)
+  assert.match(on.label!, /guardando/)
+  ;(on.click as () => void)()
+  assert.deepEqual(values, [true, false])
+})
+
+test('el tooltip avisa mientras se guarda la transcripción', () => {
+  const running = { running: true, paused: false, mode: 'audio' as const, phase: 'running' as const }
+  assert.match(trayTooltip(running, true), /guardando transcripción/)
+  assert.doesNotMatch(trayTooltip(running), /transcripción/)
 })
 
 test('al iniciar no se ofrece traducir otra vez y el tooltip lo dice; en espera nombra el estado', () => {

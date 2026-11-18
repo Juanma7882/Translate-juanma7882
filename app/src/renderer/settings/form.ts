@@ -133,6 +133,10 @@ const FIELD_MESSAGES: Record<string, string> = {
   'import has no settings': 'El archivo no contiene preferencias.',
   'import could not be read': 'No se pudo leer el archivo.',
   'export failed': 'No se pudo guardar el archivo.',
+  'invalid transcript': 'Las opciones de la transcripción no son válidas.',
+  'invalid transcript.enabled': 'Elige primero una carpeta donde guardar la transcripción.',
+  'invalid transcript.dir': 'La carpeta de la transcripción no es válida.',
+  'invalid transcript.srt': 'La opción del archivo .srt no es válida.',
   'invalid shortcuts.selectRegion': 'El atajo para elegir región no es válido (por ejemplo, CommandOrControl+Shift+T).',
   'invalid shortcuts.togglePause': 'El atajo para pausar no es válido (por ejemplo, CommandOrControl+Shift+P).',
   'invalid shortcuts.toggleMode': 'El atajo para cambiar de modo no es válido (por ejemplo, CommandOrControl+Shift+M).',
@@ -142,7 +146,9 @@ export function describeError(code: string): string {
   const direct = FIELD_MESSAGES[code]
   if (direct) return direct
   if (code.startsWith('invalid modelsDir: ')) return dirMessage(code.slice('invalid modelsDir: '.length))
+  if (code.startsWith('invalid transcript.dir: ')) return transcriptDirMessage(code.slice('invalid transcript.dir: '.length))
   if (code.startsWith('unknown setting ')) return 'El archivo contiene un ajuste desconocido.'
+  if (code === 'transcript is not imported') return 'El archivo contiene opciones de la transcripción, que no se importan.'
   if (code.endsWith(' is not imported')) return 'El archivo contiene datos del equipo (región o carpeta) que no se importan.'
   return 'Hay un valor no válido.'
 }
@@ -166,6 +172,22 @@ export function dirMessage(reason: string): string {
       return 'Escribe una carpeta o usa «Predeterminada».'
     default:
       return 'La carpeta de modelos no es válida.'
+  }
+}
+
+/** Motivo por el que una carpeta de transcripción no sirve, en español. */
+export function transcriptDirMessage(reason: string): string {
+  switch (reason) {
+    case 'not-absolute':
+      return 'Elige una carpeta con su ruta completa.'
+    case 'missing':
+      return 'Esa carpeta no existe. Elige otra o créala.'
+    case 'not-a-folder':
+      return 'Esa ruta es un archivo, no una carpeta.'
+    case 'not-writable':
+      return 'No se puede escribir en esa carpeta. Elige otra.'
+    default:
+      return 'La carpeta de la transcripción no es válida.'
   }
 }
 
@@ -268,6 +290,8 @@ const FIELD_IDS: Record<string, string> = {
 /** Identificador del control al que pertenece un error (para mostrarlo junto a él), o `null` si es general. */
 export function fieldOf(code: string): string | null {
   if (code.startsWith('invalid modelsDir')) return 'models-dir'
+  if (code.startsWith('invalid transcript.dir')) return 'transcript-dir'
+  if (code === 'invalid transcript.enabled') return 'transcript-enabled'
   return FIELD_IDS[code] ?? null
 }
 

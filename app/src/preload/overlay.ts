@@ -10,6 +10,7 @@ const SHOW = 'overlay:show' satisfies typeof Channel.overlayShow
 const STYLE = 'overlay:style' satisfies typeof Channel.overlayStyle
 const CLEAR = 'overlay:clear' satisfies typeof Channel.overlayClear
 const MODE = 'overlay:mode' satisfies typeof Channel.overlayMode
+const SAVING = 'overlay:saving' satisfies typeof Channel.overlaySaving
 const MOVE_MODE = 'overlay:move-mode' satisfies typeof Channel.overlayMoveMode
 const DRAG = 'overlay:drag' satisfies typeof Channel.overlayDrag
 const MOVE_DONE = 'overlay:move-done' satisfies typeof Channel.overlayMoveDone
@@ -26,6 +27,9 @@ const api: OverlayApi = {
   },
   onMode(listener) {
     ipcRenderer.on(MODE, (_event, mode: OverlayMode) => listener(mode))
+  },
+  onSaving(listener) {
+    ipcRenderer.on(SAVING, (_event, saving: boolean) => listener(saving === true))
   },
   onMoveMode(listener) {
     ipcRenderer.on(MOVE_MODE, (_event, active: boolean) => listener(active))

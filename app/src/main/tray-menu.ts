@@ -12,12 +12,25 @@ export interface TrayActions {
   togglePause(): void
   stop(): void
   setMode(mode: Mode): void
+  /** Activa o desactiva el guardado de la transcripción. */
+  setTranscript(enabled: boolean): void
   openSettings(): void
   quit(): void
 }
 
+/** Estado del guardado de la transcripción para la bandeja. */
+export interface TrayTranscript {
+  enabled: boolean
+  /** Sin carpeta elegida no se puede activar. */
+  hasDir: boolean
+  /** Se está guardando ahora (archivos abiertos). */
+  saving: boolean
+}
+
+const NO_TRANSCRIPT: TrayTranscript = { enabled: false, hasDir: false, saving: false }
+
 /** `mode` es el modo elegido en los ajustes (el activo, si lo hay, está en `state.mode`). */
-export function trayTemplate(state: AppState, hasRegion: boolean, actions: TrayActions, mode: Mode = 'auto'): MenuItemConstructorOptions[] {
+export function trayTemplate(state: AppState, hasRegion: boolean, actions: TrayActions, mode: Mode = 'auto', transcript: TrayTranscript = NO_TRANSCRIPT): MenuItemConstructorOptions[] {
   return [
     { label: 'Elegir región…', click: () => actions.chooseRegion() },
     {
@@ -33,13 +46,25 @@ export function trayTemplate(state: AppState, hasRegion: boolean, actions: TrayA
       label: 'Modo',
       submenu: MODES.map((m) => ({ label: MODE_LABELS[m], type: 'radio' as const, checked: m === mode, click: () => actions.setMode(m) })),
     },
+    {
+      label: transcript.saving ? 'Guardar transcripción (guardando)' : transcript.hasDir ? 'Guardar transcripción' : 'Guardar transcripción (elige carpeta en Ajustes)',
+      type: 'checkbox',
+      checked: transcript.enabled,
+      // Sin carpeta solo se puede desactivar (nunca debería estar activo sin ella).
+      enabled: transcript.hasDir || transcript.enabled,
+      click: () => actions.setTranscript(!transcript.enabled),
+    },
     { label: 'Ajustes…', click: () => actions.openSettings() },
     { type: 'separator' },
     { label: 'Salir', click: () => actions.quit() },
   ]
 }
 
-export function trayTooltip(state: AppState): string {
+export function trayTooltip(state: AppState, saving = false): string {
+  return `${sessionTooltip(state)}${saving ? ' · guardando transcripción' : ''}`
+}
+
+function sessionTooltip(state: AppState): string {
   if (state.phase === 'starting') return 'Traductor · iniciando'
   if (state.phase === 'waiting') return 'Traductor · en espera de la aplicación'
   if (!state.running) return 'Traductor · en reposo'

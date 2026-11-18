@@ -117,6 +117,7 @@ describe('SettingsStore', () => {
     store.load()
     store.update({ from: 'ja', targets: ['en'] })
     const saved = JSON.parse(readFileSync(file, 'utf8'))
-    assert.deepEqual(Object.keys(saved).sort(), ['audioSource', 'engines', 'fallbackSeconds', 'from', 'lastRegion', 'mode', 'modelsDir', 'overlay', 'performance', 'shortcuts', 'targets', 'version', 'voiceThreshold'])
+    assert.deepEqual(Object.keys(saved).sort(), ['audioSource', 'engines', 'fallbackSeconds', 'from', 'lastRegion', 'mode', 'modelsDir', 'overlay', 'performance', 'shortcuts', 'targets', 'transcript', 'version', 'voiceThreshold'])
+    assert.deepEqual(Object.keys(saved.transcript).sort(), ['dir', 'enabled', 'srt'], 'la transcripción solo guarda sus opciones, nunca texto')
   })
 })

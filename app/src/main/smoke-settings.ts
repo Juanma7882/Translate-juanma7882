@@ -190,6 +190,27 @@ export async function runSettingsSmoke(host: EngineHost, windows: WindowManager,
     expect(live, 'avisos con aria-live y errores con role=alert')
     ok('controles con etiqueta, grupos con leyenda, orden de tabulación natural y regiones aria-live')
 
+    // Guardar transcripción: sin carpeta no se puede activar; con una carpeta válida sí, y una inválida se rechaza junto al botón.
+    expect(await evaluate<boolean>(window, `document.getElementById('transcript-enabled').disabled && !document.getElementById('transcript-enabled').checked`), 'sin carpeta no se puede activar')
+    const transcriptDir = mkdtempSync(join(tmpdir(), 'tr-settings-transcript-'))
+    files.transcriptFolder = transcriptDir
+    await click(window, '#transcript-dir')
+    await waitFor(() => settings.get().transcript.dir === transcriptDir, 'the transcript folder')
+    await waitFor(async () => (await text(window, '#transcript-dir-value')) === transcriptDir, 'the folder shown')
+    await waitFor(() => evaluate<boolean>(window, `!document.getElementById('transcript-enabled').disabled`), 'the checkbox enabled')
+    await click(window, '#transcript-enabled')
+    await waitFor(() => settings.get().transcript.enabled, 'the transcript enabled')
+    files.transcriptFolder = join(transcriptDir, 'no-existe')
+    await click(window, '#transcript-dir')
+    await waitFor(() => evaluate<boolean>(window, `document.getElementById('transcript-dir').getAttribute('aria-invalid') === 'true'`), 'the folder error')
+    expect((await text(window, '#transcript-dir-error')).includes('no existe'), 'el error dice que la carpeta no existe')
+    expect(settings.get().transcript.dir === transcriptDir, 'una carpeta inválida no cambia la elegida')
+    expect(readdirSync(transcriptDir).length === 0, 'activarlo sin sesión no crea archivos')
+    files.transcriptFolder = transcriptDir
+    await click(window, '#transcript-dir')
+    await waitFor(() => evaluate<boolean>(window, `document.getElementById('transcript-dir').getAttribute('aria-invalid') === null`), 'the folder error cleared')
+    ok('guardar transcripción: exige carpeta, valida la elegida y se activa desde General')
+
     // Pestañas: roles WAI-ARIA, una sola en el orden de tabulación y navegación con el teclado.
     const tabs = await evaluate<string[]>(window, `[...document.querySelectorAll('[role=tab]')].map(t => t.id)`)
     expect(tabs.join() === 'tab-home,tab-languages,tab-general,tab-models,tab-appearance,tab-shortcuts,tab-advanced', `pestañas: ${tabs}`)

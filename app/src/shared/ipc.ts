@@ -38,6 +38,8 @@ export const Channel = {
   modelsCancel: 'models:cancel',
   modelsValidateDir: 'models:validate-dir',
   modelsPickDir: 'models:pick-dir',
+  transcriptPickDir: 'transcript:pick-dir',
+  overlaySaving: 'overlay:saving',
   settingsReset: 'settings:reset',
   settingsExport: 'settings:export',
   settingsImport: 'settings:import',
@@ -117,6 +119,8 @@ export interface OverlayApi {
   onClear(listener: () => void): void
   /** Modo activo (solo su nombre, nunca contenido). */
   onMode(listener: (mode: OverlayMode) => void): void
+  /** Si la transcripción se está guardando (solo un booleano). */
+  onSaving(listener: (saving: boolean) => void): void
   /** Entra o sale del modo "mover": el overlay deja de ser atravesable y muestra un asa. */
   onMoveMode(listener: (active: boolean) => void): void
   /** Desplazamiento del arrastre en píxeles de interfaz; solo se atiende en modo mover. */
@@ -215,6 +219,8 @@ export interface SettingsApi {
   validateModelsDir(path: string): Promise<DirCheck>
   /** Diálogo del sistema para elegir carpeta; `null` si se cancela. */
   pickModelsDir(): Promise<string | null>
+  /** Diálogo del sistema para elegir la carpeta de la transcripción; `null` si se cancela. */
+  pickTranscriptDir(): Promise<string | null>
   /** Activa o desactiva el modo "mover overlay"; devuelve si quedó activo. */
   moveOverlay(active: boolean): Promise<boolean>
   onMoveState(listener: (active: boolean) => void): void

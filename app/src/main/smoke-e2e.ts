@@ -3,7 +3,8 @@
 // captura, reconoce y traduce, y el overlay muestra la traducción. Bajo WSLg `xcap` no puede capturar
 // la pantalla: se ejecuta con `scripts/with-xvfb.sh` (ver `pnpm run smoke:e2e`).
 
-import { readFileSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { BrowserWindow } from 'electron'
@@ -63,7 +64,12 @@ export async function runE2eSmoke(host: EngineHost, windows: WindowManager, disp
 
   const settings = new SettingsStore(join(modelsDir, '..', `tr-e2e-settings-${process.pid}.json`))
   settings.load()
-  expect(settings.update({ engines: 'real', from: 'en', targets: ['es'], modelsDir, overlay: { keepWhileUnchanged: true } }).ok, 'ajustes')
+  // La transcripción se guarda en una carpeta temporal: al final debe tener la línea real reconocida y traducida.
+  const transcriptDir = mkdtempSync(join(tmpdir(), 'tr-e2e-transcript-'))
+  expect(
+    settings.update({ engines: 'real', from: 'en', targets: ['es'], modelsDir, overlay: { keepWhileUnchanged: true }, transcript: { enabled: true, dir: transcriptDir, srt: true } }).ok,
+    'ajustes',
+  )
 
   const notices: Notice[] = []
   const shell = new AppShell({ host, windows, settings, displays, tray: noTray, shortcuts: { register: () => true, unregister: () => {} }, notify: (n) => notices.push(n), quit: () => {}, files: scriptedFiles(), openOnStart: false })
@@ -142,6 +148,18 @@ export async function runE2eSmoke(host: EngineHost, windows: WindowManager, disp
 
   expect(notices.every((n) => n.level !== 'error'), `sin errores durante la sesión: ${JSON.stringify(notices)}`)
   await shell.controller.stop()
+  await waitFor(() => !shell.transcript.saving, 'the transcript to close')
+  // Detener cierra los archivos de forma asíncrona: se espera a que el .srt tenga su última entrada.
+  const transcriptFile = (ext: string) => readdirSync(transcriptDir).find((f) => f.endsWith(ext))
+  await waitFor(() => {
+    const srt = transcriptFile('.srt')
+    return srt !== undefined && /-->/.test(readFileSync(join(transcriptDir, srt), 'utf8'))
+  }, 'the .srt on disk')
+  const txt = readFileSync(join(transcriptDir, transcriptFile('.txt')!), 'utf8')
+  expect(/\[en\] Hello world, this is a test\./.test(txt) && /\[es\] .*mundo/i.test(txt), `el .txt tiene el original y la traducción reales`)
+  const srt = readFileSync(join(transcriptDir, transcriptFile('.srt')!), 'utf8')
+  expect(/^1\r?\n\d\d:\d\d:\d\d,\d{3} --> \d\d:\d\d:\d\d,\d{3}\r?\nHello world, this is a test\./.test(srt), `el .srt empieza con una entrada válida`)
+  ok('la transcripción real queda en .txt y .srt con el original y la traducción')
   shell.dispose()
   page.destroy()
 }

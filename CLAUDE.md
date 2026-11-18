@@ -15,7 +15,7 @@ App de escritorio (Windows, macOS, Linux) que traduce texto en pantalla (región
 
 ## Reglas no negociables
 
-1. Todo en RAM: nunca escribir capturas, audio, texto ni traducciones a disco (solo modelos y config). Los puertos pasan buffers, no rutas.
+1. Todo en RAM: nunca escribir capturas, audio, texto ni traducciones a disco (solo modelos y config). Única excepción: la transcripción, solo si el usuario activa «Guardar transcripción» y en la carpeta que eligió (ver `docs/adr/0011-guardar-transcripcion.md`). Los puertos pasan buffers, no rutas.
 2. Local por defecto; adaptadores de nube opcionales y con aviso al usuario.
 3. Patrón adapter: `core` solo conoce traits; cada motor es un adaptador. Agregar un motor no modifica `core`.
 4. Pesado en Rust; la UI de Electron nunca se bloquea.

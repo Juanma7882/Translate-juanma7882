@@ -127,6 +127,11 @@ export class AppController extends EventEmitter<ControllerEvents> {
     return { ...this.current }
   }
 
+  /** Avisa al usuario por el mismo camino que los avisos de la sesión (Ajustes y notificación). */
+  notify(notice: Notice): void {
+    this.emit('notice', notice)
+  }
+
   /** Abre el selector de región y, si el usuario elige una, abre el selector de overlay para elegir dónde mostrar la traducción. */
   async chooseRegion(): Promise<boolean> {
     const region = await this.deps.picker.pick()

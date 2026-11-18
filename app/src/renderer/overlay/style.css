@@ -38,6 +38,26 @@ body {
   margin: 0;
 }
 
+/* Indicador de que la transcripción se guarda a disco: en la esquina, fuera de la caja, siempre visible. */
+#saving {
+  position: fixed;
+  top: 2px;
+  left: 2px;
+  z-index: 1;
+  margin: 0;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(190, 30, 30, 0.85);
+  color: #ffffff;
+  font-family: Arial, sans-serif;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+#saving[hidden] {
+  display: none;
+}
+
 /* Un párrafo por subtítulo: el original (si se muestra) y cada traducción, de arriba abajo. */
 #tracks {
   display: flex;

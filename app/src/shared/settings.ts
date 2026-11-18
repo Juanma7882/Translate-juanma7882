@@ -1,6 +1,6 @@
 // Ajustes del usuario: tipos, valores por defecto y validación escrita a mano (sin dependencias).
 //
-// Solo contienen preferencias y la última región elegida: nunca contenido capturado ni traducido.
+// Solo contienen preferencias, la última región elegida y carpetas: nunca contenido capturado ni traducido.
 // Los mensajes de aviso nombran el campo, no su valor.
 
 import { hasEnoughContrast } from './contrast.ts'
@@ -61,6 +61,15 @@ export interface PerformanceSettings {
   lowMemory: boolean
 }
 
+/** Guardado opcional de la transcripción (ADR 0011). Desactivado por defecto; activarlo exige carpeta. */
+export interface TranscriptSettings {
+  enabled: boolean
+  /** Carpeta absoluta donde se escriben los archivos; `null` si aún no se eligió. */
+  dir: string | null
+  /** Además del `.txt`, escribe un `.srt`. */
+  srt: boolean
+}
+
 export interface Shortcuts {
   selectRegion: string
   togglePause: string
@@ -94,6 +103,7 @@ export interface Settings {
   overlay: OverlaySettings
   shortcuts: Shortcuts
   performance: PerformanceSettings
+  transcript: TranscriptSettings
 }
 
 export function defaultSettings(): Settings {
@@ -124,6 +134,7 @@ export function defaultSettings(): Settings {
       maxLines: 2,
     },
     performance: { intraThreads: 0, beamWidth: 0, cacheCapacity: 0, ocrMaxSide: 0, lowMemory: false },
+    transcript: { enabled: false, dir: null, srt: true },
     shortcuts: { selectRegion: 'CommandOrControl+Shift+T', togglePause: 'CommandOrControl+Shift+P', toggleMode: 'CommandOrControl+Shift+M' },
   }
 }
@@ -275,6 +286,23 @@ function readRegion(reader: Reader, value: unknown): SavedRegion | null {
   return region
 }
 
+/** Longitud máxima de una ruta de carpeta guardada. */
+const MAX_DIR_LENGTH = 1024
+
+/** Activar el guardado sin carpeta no tiene sentido: se rechaza (`transcript.enabled`) y queda desactivado. */
+function readTranscript(reader: Reader, source: Dict): TranscriptSettings {
+  const dirValue = source['dir']
+  const dirOk = dirValue === null || (typeof dirValue === 'string' && dirValue.length > 0 && dirValue.length <= MAX_DIR_LENGTH)
+  if (dirValue !== undefined && !dirOk) reader.warnings.push('invalid transcript.dir')
+  const dir = dirOk && dirValue !== undefined ? (dirValue as string | null) : null
+  let enabled = reader.boolean(source, 'enabled', 'transcript.enabled', false)
+  if (enabled && dir === null) {
+    reader.warnings.push('invalid transcript.enabled')
+    enabled = false
+  }
+  return { enabled, dir, srt: reader.boolean(source, 'srt', 'transcript.srt', true) }
+}
+
 /** Valida cualquier cosa leída del disco o recibida por IPC; cada campo inválido vuelve a su valor por defecto. */
 export function parseSettings(raw: unknown): ParseResult {
   const defaults = defaultSettings()
@@ -285,6 +313,7 @@ export function parseSettings(raw: unknown): ParseResult {
   const overlaySource = reader.section(raw, 'overlay', 'overlay')
   const shortcutSource = reader.section(raw, 'shortcuts', 'shortcuts')
   const performanceSource = reader.section(raw, 'performance', 'performance')
+  const transcriptSource = reader.section(raw, 'transcript', 'transcript')
   const d = defaults.overlay
   const modelsDirValue = raw.modelsDir
   const modelsDirOk = modelsDirValue === null || (typeof modelsDirValue === 'string' && modelsDirValue.length > 0 && modelsDirValue.length <= 1024)
@@ -323,6 +352,7 @@ export function parseSettings(raw: unknown): ParseResult {
       ocrMaxSide: readOcrSide(reader, performanceSource),
       lowMemory: reader.boolean(performanceSource, 'lowMemory', 'performance.lowMemory', false),
     },
+    transcript: readTranscript(reader, transcriptSource),
     shortcuts: {
       selectRegion: reader.pattern(shortcutSource, 'selectRegion', 'shortcuts.selectRegion', defaults.shortcuts.selectRegion, ACCELERATOR_PATTERN),
       togglePause: reader.pattern(shortcutSource, 'togglePause', 'shortcuts.togglePause', defaults.shortcuts.togglePause, ACCELERATOR_PATTERN),

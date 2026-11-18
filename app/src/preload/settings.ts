@@ -21,6 +21,7 @@ const MODELS_DELETE = 'models:delete' satisfies typeof Channel.modelsDelete
 const MODELS_CANCEL = 'models:cancel' satisfies typeof Channel.modelsCancel
 const MODELS_VALIDATE_DIR = 'models:validate-dir' satisfies typeof Channel.modelsValidateDir
 const MODELS_PICK_DIR = 'models:pick-dir' satisfies typeof Channel.modelsPickDir
+const TRANSCRIPT_PICK_DIR = 'transcript:pick-dir' satisfies typeof Channel.transcriptPickDir
 const OVERLAY_MOVE = 'overlay:move' satisfies typeof Channel.overlayMove
 const OVERLAY_MOVE_STATE = 'overlay:move-state' satisfies typeof Channel.overlayMoveState
 const APP_STATE = 'app:state' satisfies typeof Channel.appState
@@ -56,6 +57,7 @@ const api: SettingsApi = {
   cancelDownload: () => ipcRenderer.invoke(MODELS_CANCEL),
   validateModelsDir: (path) => ipcRenderer.invoke(MODELS_VALIDATE_DIR, path),
   pickModelsDir: () => ipcRenderer.invoke(MODELS_PICK_DIR),
+  pickTranscriptDir: () => ipcRenderer.invoke(TRANSCRIPT_PICK_DIR),
   moveOverlay: (active) => ipcRenderer.invoke(OVERLAY_MOVE, active),
   onMoveState(listener) {
     ipcRenderer.on(OVERLAY_MOVE_STATE, (_event, active: boolean) => listener(active))

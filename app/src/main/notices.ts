@@ -29,6 +29,14 @@ export function noticeForStartFailure(message: string): Notice {
   return notice
 }
 
+/** Falló el guardado de la transcripción. Sin contenido ni ruta: solo qué pasó y qué sigue funcionando. */
+export function noticeForTranscriptFailure(): Notice {
+  return {
+    level: 'error',
+    message: 'No se pudo guardar la transcripción (¿se borró la carpeta, está llena o sin permisos?). Se deja de guardar en esta sesión; la traducción sigue.',
+  }
+}
+
 export function noticeForCrash(restartInMs: number): Notice {
   return { level: 'warning', message: `El motor se detuvo inesperadamente; se reinicia en ${(restartInMs / 1000).toFixed(1)} s` }
 }

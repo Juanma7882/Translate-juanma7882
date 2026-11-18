@@ -106,6 +106,11 @@ export class OverlayController extends EventEmitter<OverlayEvents> {
     this.window?.webContents.send(Channel.overlayClear)
   }
 
+  /** Indicador de que la transcripción se está guardando (solo un booleano, nunca contenido). */
+  setSaving(saving: boolean): void {
+    this.window?.webContents.send(Channel.overlaySaving, saving)
+  }
+
   /** Indica si la sesión está en modo texto; el tiempo de ocultado depende de ello (ver `effectiveHideAfterMs`). */
   setTextMode(active: boolean): void {
     if (this.textMode === active) return

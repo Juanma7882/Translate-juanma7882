@@ -1,7 +1,7 @@
 // Prueba de humo del ensamblaje del producto (TR_SMOKE=shell): bandeja, atajos, overlay y primer uso,
 // con la bandeja y los atajos globales sustituidos por dobles (WSLg no los tiene) y todo lo demás real.
 
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -122,6 +122,28 @@ export async function runShellSmoke(host: EngineHost, windows: WindowManager, di
   await waitFor(async () => ((await overlay!.webContents.executeJavaScript(`[...document.querySelectorAll('#tracks .track')].map((p) => p.textContent).join(' ')`)) as string).length > 0, 'the overlay text')
   expect(tray.has('Pausar') && tray.has('Detener') && !tray.has('Traducir'), 'en marcha se puede pausar y detener')
   ok('"Traducir la última región" inicia la traducción y el overlay muestra el texto')
+
+  // Guardar transcripción: apagado no escribe; activarlo desde la bandeja en plena sesión escribe .txt y .srt; desactivarlo cierra.
+  const transcriptDir = mkdtempSync(join(tmpdir(), 'tr-shell-transcript-'))
+  expect(settings.update({ transcript: { dir: transcriptDir } }).ok, 'carpeta de la transcripción')
+  const savingShown = async () => (await overlay!.webContents.executeJavaScript(`!document.getElementById('saving').hidden`)) as boolean
+  const textsBefore = texts
+  await waitFor(() => texts > textsBefore, 'more translations while not saving')
+  expect(readdirSync(transcriptDir).length === 0 && !(await savingShown()), 'con el guardado apagado no se escribe nada ni hay indicador')
+  tray.click('Guardar transcripción')
+  await waitFor(() => shell.transcript.saving && tray.tooltip.includes('guardando transcripción'), 'saving from the tray')
+  await waitFor(savingShown, 'the overlay saving indicator')
+  const txtFile = () => readdirSync(transcriptDir).find((f) => f.endsWith('.txt'))
+  await waitFor(() => {
+    const file = txtFile()
+    return file !== undefined && /^\[\d\d:\d\d:\d\d\] \[\w+\] /m.test(readFileSync(join(transcriptDir, file), 'utf8'))
+  }, 'a transcript line on disk')
+  tray.click('Guardar transcripción')
+  await waitFor(() => !shell.transcript.saving && !settings.get().transcript.enabled, 'stop saving from the tray')
+  await waitFor(async () => !(await savingShown()), 'the saving indicator to go')
+  expect(readdirSync(transcriptDir).sort().map((f) => f.slice(-4)).join() === '.srt,.txt', `archivos de la sesión: ${readdirSync(transcriptDir)}`)
+  expect(shell.controller.state.running, 'la traducción sigue tras desactivar el guardado')
+  ok('guardar transcripción desde la bandeja en plena sesión escribe .txt y .srt, con indicador, y se desactiva sin cortar la traducción')
 
   // Pausa desde el menú y reanudación con el atajo: el motor deja de emitir y vuelve a hacerlo.
   tray.click('Pausar')

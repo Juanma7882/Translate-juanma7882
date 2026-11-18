@@ -12,6 +12,7 @@ const api = window.trOverlay
 const box = document.getElementById('box')
 const tracks = document.getElementById('tracks')
 const modeLabel = document.getElementById('mode')
+const savingLabel = document.getElementById('saving')
 const moveBar = document.getElementById('move-bar')
 const moveDone = document.getElementById('move-done')
 
@@ -145,6 +146,10 @@ if (api) {
   api.onStyle(applyStyle)
   api.onClear(hide)
   api.onMode(setMode)
+  // Visible aunque la caja de texto esté oculta: el usuario debe saber siempre que se escribe a disco.
+  api.onSaving((saving) => {
+    if (savingLabel) savingLabel.hidden = !saving
+  })
   api.onMoveMode(setMoving)
   box?.addEventListener('pointerdown', startDrag)
   box?.addEventListener('pointermove', drag)

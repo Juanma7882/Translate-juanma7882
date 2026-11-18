@@ -16,6 +16,7 @@ import type { EngineHost } from './engine-host.ts'
 import type { ModelsService } from './models-service.ts'
 import { guardedHandle, registerSessionIpc, SESSION_CHANNELS } from './session-ipc.ts'
 import type { SettingsStore } from './settings-store.ts'
+import { checkTranscriptDir } from './transcript-dir.ts'
 import type { WindowManager } from './windows.ts'
 
 /** El ámbito llega del renderer: solo se aceptan los valores conocidos (por defecto, texto). */
@@ -32,6 +33,8 @@ function parseTargets(value: unknown): string[] {
 /** Diálogos del sistema para elegir carpetas y archivos; las pruebas los sustituyen por rutas fijas. */
 export interface FilePrompts {
   pickFolder(): Promise<string | null>
+  /** Carpeta donde guardar la transcripción. */
+  pickTranscriptFolder(): Promise<string | null>
   chooseExportPath(): Promise<string | null>
   chooseImportPath(): Promise<string | null>
 }
@@ -64,6 +67,11 @@ export function registerSettingsIpc({ windows, settings, models, host, controlle
         const check = await models.validateDir(patch['modelsDir'])
         if (!check.ok) return { ok: false as const, errors: [`invalid modelsDir: ${check.reason}`] }
       }
+    }
+    // La carpeta de la transcripción se comprueba en disco (existe, es carpeta, se puede escribir).
+    if (isDict(patch) && isDict(patch['transcript']) && typeof patch['transcript']['dir'] === 'string') {
+      const check = await checkTranscriptDir(patch['transcript']['dir'])
+      if (!check.ok) return { ok: false as const, errors: [`invalid transcript.dir: ${check.reason}`] }
     }
     return settings.update(patch)
   })
@@ -99,6 +107,7 @@ export function registerSettingsIpc({ windows, settings, models, host, controlle
   handle(Channel.modelsCancel, () => models.cancelDownload())
   handle(Channel.modelsValidateDir, (path: unknown) => models.validateDir(String(path)))
   handle(Channel.modelsPickDir, () => files.pickFolder())
+  handle(Channel.transcriptPickDir, () => files.pickTranscriptFolder())
   handle(Channel.modelsCatalog, () => models.catalog())
   handle(Channel.modelsStatus, (from: string, to: unknown, scope?: unknown) => models.status(String(from), parseTargets(to), parseScope(scope)))
   handle(Channel.modelsDownload, (from: string, to: unknown, scope?: unknown) => models.download(String(from), parseTargets(to), parseScope(scope)))
@@ -149,6 +158,7 @@ export function registerSettingsIpc({ windows, settings, models, host, controlle
       Channel.modelsCancel,
       Channel.modelsValidateDir,
       Channel.modelsPickDir,
+      Channel.transcriptPickDir,
       ...SESSION_CHANNELS,
       ...MONITOR_CHANNELS,
     ]) {
@@ -165,12 +175,14 @@ export function registerSettingsIpc({ windows, settings, models, host, controlle
 }
 
 /** Diálogos guionizados para las pruebas de humo: devuelven lo que se les haya puesto. */
-export function scriptedFiles(): FilePrompts & { folder: string | null; exportTo: string | null; importFrom: string | null } {
+export function scriptedFiles(): FilePrompts & { folder: string | null; transcriptFolder: string | null; exportTo: string | null; importFrom: string | null } {
   const files = {
     folder: null as string | null,
+    transcriptFolder: null as string | null,
     exportTo: null as string | null,
     importFrom: null as string | null,
     pickFolder: () => Promise.resolve(files.folder),
+    pickTranscriptFolder: () => Promise.resolve(files.transcriptFolder),
     chooseExportPath: () => Promise.resolve(files.exportTo),
     chooseImportPath: () => Promise.resolve(files.importFrom),
   }

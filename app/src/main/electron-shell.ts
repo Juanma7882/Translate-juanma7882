@@ -55,6 +55,7 @@ function nativeFiles(windows: WindowManager): FilePrompts {
   }
   return {
     pickFolder: () => pick({ title: 'Carpeta de modelos', properties: ['openDirectory', 'createDirectory'] }),
+    pickTranscriptFolder: () => pick({ title: 'Carpeta para guardar la transcripción', properties: ['openDirectory', 'createDirectory'] }),
     chooseImportPath: () => pick({ title: 'Importar preferencias', properties: ['openFile'], filters }),
     async chooseExportPath() {
       const options = { title: 'Exportar preferencias', defaultPath: 'traductor-preferencias.json', filters }
